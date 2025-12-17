@@ -1014,8 +1014,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingBottom: 120,
-    minHeight: SCREEN_HEIGHT,
+    paddingBottom: 180,
+    flexGrow: 1,
   },
   header: {
     flexDirection: 'row',
@@ -1120,8 +1120,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: Theme.spacing.xxxl,
-    minHeight: SCREEN_HEIGHT * 0.45,
+    paddingVertical: Theme.spacing.xl,
+    minHeight: 280,
   },
   sidebar: {
     position: 'absolute',
@@ -1297,8 +1297,8 @@ const styles = StyleSheet.create({
   },
   textInputTriggerWrapper: {
     marginHorizontal: Theme.spacing.lg,
-    marginTop: Theme.spacing.xl,
-    marginBottom: Theme.spacing.lg,
+    marginTop: Theme.spacing.md,
+    marginBottom: Theme.spacing.xxl,
   },
   textInputTrigger: {
     borderRadius: Theme.radius.xl,

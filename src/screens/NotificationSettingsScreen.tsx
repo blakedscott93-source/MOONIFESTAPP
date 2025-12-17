@@ -19,9 +19,11 @@ import {
   NotificationSettings,
   scheduleNotifications,
   cancelAllNotifications,
+  areNotificationsSupported,
 } from '../utils/notifications';
 
 export default function NotificationSettingsScreen({ navigation }: any) {
+  const notificationsSupported = areNotificationsSupported();
   const [settings, setSettings] = useState<NotificationSettings>({
     enabled: true,
     morningTime: '09:00',
@@ -182,26 +184,40 @@ export default function NotificationSettingsScreen({ navigation }: any) {
           <View style={{ width: TOUCH_TARGET_MIN }} />
         </View>
 
+        {/* Expo Go Warning Banner */}
+        {!notificationsSupported && (
+          <View style={styles.warningBanner}>
+            <Ionicons name="warning" size={20} color="#FF9500" />
+            <View style={styles.warningBannerContent}>
+              <Text style={styles.warningBannerTitle}>Notifications Unavailable</Text>
+              <Text style={styles.warningBannerText}>
+                Push notifications are not supported in Expo Go on Android. Create a development build to enable notifications.
+              </Text>
+            </View>
+          </View>
+        )}
+
         {/* Main Toggle Card */}
-        <View style={styles.card}>
+        <View style={[styles.card, !notificationsSupported && styles.cardDisabled]}>
           <View style={styles.toggleContainer}>
             <View style={styles.toggleLeft}>
               <View style={[styles.iconCircle, { backgroundColor: Theme.colors.accent + '20' }]}>
-                <Ionicons name="notifications" size={24} color={Theme.colors.accent} />
+                <Ionicons name="notifications" size={24} color={notificationsSupported ? Theme.colors.accent : Theme.colors.textTertiary} />
               </View>
               <View>
-                <Text style={styles.toggleLabel}>Daily Reminders</Text>
+                <Text style={[styles.toggleLabel, !notificationsSupported && styles.textDisabled]}>Daily Reminders</Text>
                 <Text style={styles.toggleSubtext}>
-                  {settings.enabled ? '3 reminders per day' : 'Currently disabled'}
+                  {!notificationsSupported ? 'Not available in Expo Go' : settings.enabled ? '3 reminders per day' : 'Currently disabled'}
                 </Text>
               </View>
             </View>
             <Switch
-              value={settings.enabled}
+              value={settings.enabled && notificationsSupported}
               onValueChange={toggleNotifications}
               trackColor={{ false: Theme.colors.border, true: Theme.colors.accent + '40' }}
-              thumbColor={settings.enabled ? Theme.colors.accent : Theme.colors.surfaceSecondary}
+              thumbColor={settings.enabled && notificationsSupported ? Theme.colors.accent : Theme.colors.surfaceSecondary}
               ios_backgroundColor={Theme.colors.border}
+              disabled={!notificationsSupported}
             />
           </View>
         </View>
@@ -436,6 +452,37 @@ const styles = StyleSheet.create({
   headerTitle: {
     ...Theme.typography.h2,
     color: Theme.colors.textPrimary,
+  },
+  warningBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: Theme.spacing.md,
+    backgroundColor: '#FF950015',
+    padding: Theme.spacing.lg,
+    marginHorizontal: Theme.spacing.lg,
+    marginBottom: Theme.spacing.lg,
+    borderRadius: Theme.radius.lg,
+    borderWidth: 1,
+    borderColor: '#FF950030',
+  },
+  warningBannerContent: {
+    flex: 1,
+  },
+  warningBannerTitle: {
+    ...Theme.typography.bodyBold,
+    color: '#FF9500',
+    marginBottom: Theme.spacing.xs,
+  },
+  warningBannerText: {
+    ...Theme.typography.small,
+    color: Theme.colors.textSecondary,
+    lineHeight: 18,
+  },
+  cardDisabled: {
+    opacity: 0.6,
+  },
+  textDisabled: {
+    color: Theme.colors.textTertiary,
   },
   card: {
     backgroundColor: Theme.colors.surface,

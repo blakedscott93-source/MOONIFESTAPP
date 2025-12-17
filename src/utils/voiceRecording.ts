@@ -77,14 +77,13 @@ export async function startRecording(): Promise<void> {
       staysActiveInBackground: false,
     });
 
-    // Create new recording
+    // Create new recording with proper recording options
+    const recordingOptions = Platform.OS === 'ios'
+      ? Audio.RecordingOptionsPresets.HIGH_QUALITY
+      : Audio.RecordingOptionsPresets.HIGH_QUALITY;
+
     const { recording: newRecording } = await Audio.Recording.createAsync(
-      Platform.select({
-        ios: RECORDING_OPTIONS.ios,
-        android: RECORDING_OPTIONS.android,
-        web: RECORDING_OPTIONS.web,
-        default: RECORDING_OPTIONS.android,
-      }) as any
+      recordingOptions
     );
 
     recording = newRecording;

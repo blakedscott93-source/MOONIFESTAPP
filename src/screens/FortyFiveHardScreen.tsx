@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -16,11 +16,16 @@ import { AppHeader } from '../components/AppHeader';
 import { UnifiedCard } from '../components/UnifiedCard';
 import { ListRow } from '../components/ListRow';
 import { Theme, TOUCH_TARGET_MIN } from '../utils/theme';
+import { successHaptic, lightHaptic, warningHaptic, celebrationHaptic } from '../utils/haptics';
+import { DayCompleteCelebration } from '../components/DayCompleteCelebration';
 
 export default function FortyFiveHardScreen({ navigation }: any) {
-  const { getTodayProgress, updateTasks, updateAffirmations, completeMeditation, appState } = useApp();
+  const { getTodayProgress, updateTasks, completeMeditation, appState, addGlowPoints } = useApp();
   const todayProgress = getTodayProgress();
   const [newTaskText, setNewTaskText] = useState('');
+  const [showCelebration, setShowCelebration] = useState(false);
+  const hasShownCelebration = useRef(false);
+  const previousCompletionState = useRef(false);
 
   // Initialize with 3 must-do tasks if empty
   const tasks = todayProgress.tasks.length === 0
@@ -31,11 +36,51 @@ export default function FortyFiveHardScreen({ navigation }: any) {
       ]
     : todayProgress.tasks;
 
+  // Check if all daily requirements are complete
+  const mustDoTasks = tasks.filter((t) => t.isMustDo);
+  const allMustDoComplete = mustDoTasks.every((t) => t.completed && t.text.trim() !== '');
+  const allAffirmationsComplete = (todayProgress.guidedSessions?.length || 0) >= 3;
+  const meditationComplete = todayProgress.meditationCompleted === true;
+  const isDayComplete = allMustDoComplete && allAffirmationsComplete && meditationComplete;
+
+  // Watch for day completion to trigger celebration
+  useEffect(() => {
+    // Only show celebration when transitioning from incomplete to complete
+    // And only once per session
+    if (isDayComplete && !previousCompletionState.current && !hasShownCelebration.current) {
+      hasShownCelebration.current = true;
+      setShowCelebration(true);
+      celebrationHaptic();
+      
+      // Award bonus glow points for completing the day
+      if (addGlowPoints) {
+        addGlowPoints(50, 'Day Complete Bonus');
+      }
+    }
+    previousCompletionState.current = isDayComplete;
+  }, [isDayComplete]);
+
+  // Reset celebration flag at midnight (when day changes)
+  useEffect(() => {
+    hasShownCelebration.current = false;
+    previousCompletionState.current = false;
+  }, [todayProgress.date]);
+
   const toggleTask = (taskId: string) => {
+    const task = tasks.find(t => t.id === taskId);
+    const wasCompleted = task?.completed || false;
+    
     const updatedTasks = tasks.map((task) =>
       task.id === taskId ? { ...task, completed: !task.completed } : task
     );
     updateTasks(updatedTasks);
+    
+    // Haptic feedback
+    if (!wasCompleted) {
+      successHaptic(); // Task completed
+    } else {
+      lightHaptic(); // Task uncompleted
+    }
   };
 
   const updateTaskText = (taskId: string, text: string) => {
@@ -56,17 +101,20 @@ export default function FortyFiveHardScreen({ navigation }: any) {
       };
       updateTasks([...tasks, newTask]);
       setNewTaskText('');
+      lightHaptic();
     }
   };
 
   const deleteTask = (taskId: string) => {
     const task = tasks.find((t) => t.id === taskId);
     if (task?.isMustDo) {
+      warningHaptic();
       Alert.alert('Cannot Delete', 'The 3 must-do tasks cannot be deleted.');
       return;
     }
     const updatedTasks = tasks.filter((t) => t.id !== taskId);
     updateTasks(updatedTasks);
+    lightHaptic();
   };
 
   const openAffirmationEntry = (period: 'morning' | 'afternoon' | 'evening') => {
@@ -81,9 +129,12 @@ export default function FortyFiveHardScreen({ navigation }: any) {
     return null;
   };
 
-  const mustDoTasks = tasks.filter((t) => t.isMustDo);
   const optionalTasks = tasks.filter((t) => !t.isMustDo);
   const currentPeriod = getCurrentPeriod();
+
+  const handleCelebrationClose = () => {
+    setShowCelebration(false);
+  };
 
   return (
     <Screen>
@@ -103,6 +154,23 @@ export default function FortyFiveHardScreen({ navigation }: any) {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
       >
+        {/* Day Complete Banner */}
+        {isDayComplete && (
+          <UnifiedCard delay={0}>
+            <View style={styles.completeBanner}>
+              <View style={styles.completeBannerIcon}>
+                <Ionicons name="trophy" size={32} color="#FFD700" />
+              </View>
+              <View style={styles.completeBannerText}>
+                <Text style={styles.completeBannerTitle}>🎉 Day Complete!</Text>
+                <Text style={styles.completeBannerSubtitle}>
+                  Amazing work! You've completed all tasks for today.
+                </Text>
+              </View>
+            </View>
+          </UnifiedCard>
+        )}
+
         {/* Must-Do Tasks */}
         <UnifiedCard delay={0}>
           <Text style={styles.sectionTitle}>⭐ 3 Must-Do Tasks</Text>
@@ -237,6 +305,15 @@ export default function FortyFiveHardScreen({ navigation }: any) {
 
         <View style={{ height: Theme.spacing.xxxl }} />
       </ScrollView>
+
+      {/* Day Complete Celebration Modal */}
+      <DayCompleteCelebration
+        visible={showCelebration}
+        onClose={handleCelebrationClose}
+        dayNumber={appState.totalDays}
+        streakCount={appState.currentStreak}
+        glowPointsEarned={50}
+      />
     </Screen>
   );
 }
@@ -340,5 +417,35 @@ const styles = StyleSheet.create({
     minHeight: TOUCH_TARGET_MIN,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  completeBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 215, 0, 0.15)',
+    borderRadius: Theme.radius.md,
+    padding: Theme.spacing.lg,
+    borderWidth: 2,
+    borderColor: 'rgba(255, 215, 0, 0.4)',
+    gap: Theme.spacing.md,
+  },
+  completeBannerIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: 'rgba(255, 215, 0, 0.25)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  completeBannerText: {
+    flex: 1,
+  },
+  completeBannerTitle: {
+    ...Theme.typography.h3,
+    color: Theme.colors.gold,
+    marginBottom: Theme.spacing.xs,
+  },
+  completeBannerSubtitle: {
+    ...Theme.typography.caption,
+    color: Theme.colors.textSecondary,
   },
 });

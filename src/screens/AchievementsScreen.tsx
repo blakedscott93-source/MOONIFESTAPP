@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen } from '../components/Screen';
@@ -22,6 +23,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
 import { shareAchievement, shareStreak, shareProgress } from '../utils/sharing';
 import { useToast } from '../context/ToastContext';
+import { Confetti } from '../components/Confetti';
+import { celebrationHaptic, successHaptic, lightHaptic } from '../utils/haptics';
 
 const UNLOCKED_ACHIEVEMENTS_KEY = '@unlocked_achievements';
 
@@ -31,11 +34,16 @@ interface UnlockedAchievement extends Achievement {
 
 export default function AchievementsScreen({ navigation }: any) {
   const { appState, glowPoints, getTodayCheckInCount } = useApp();
-  const { showSuccess, showInfo } = useToast();
+  const { showSuccess, showInfo, showAchievement } = useToast();
   const [unlockedAchievements, setUnlockedAchievements] = useState<UnlockedAchievement[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<Achievement['category'] | 'all'>('all');
   const [showCalendar, setShowCalendar] = useState(false);
   const [completedDates, setCompletedDates] = useState<string[]>([]);
+  const [showConfetti, setShowConfetti] = useState(false);
+  const [newlyUnlockedId, setNewlyUnlockedId] = useState<string | null>(null);
+  
+  // Animation for newly unlocked achievements
+  const pulseAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     loadUnlockedAchievements();
@@ -123,8 +131,24 @@ export default function AchievementsScreen({ navigation }: any) {
       setUnlockedAchievements(updated);
       await AsyncStorage.setItem(UNLOCKED_ACHIEVEMENTS_KEY, JSON.stringify(updated));
 
-      // Award glow points
-      // Note: This should be called from AppContext to properly track points
+      // Show celebration effects
+      setNewlyUnlockedId(achievement.id);
+      setShowConfetti(true);
+      celebrationHaptic();
+      
+      // Pulse animation for the newly unlocked achievement
+      Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 1.05, duration: 150, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 0.95, duration: 150, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1, duration: 150, useNativeDriver: true }),
+      ]).start();
+      
+      // Show toast notification
+      showAchievement?.(achievement.title, `+${achievement.glowReward} Glow Points!`);
+      
+      // Clear newly unlocked state after animation
+      setTimeout(() => setNewlyUnlockedId(null), 3000);
+
       console.log(`🏆 Achievement Unlocked: ${achievement.title} (+${achievement.glowReward} Glow)`);
     } catch (error) {
       console.error('Error unlocking achievement:', error);
@@ -203,13 +227,14 @@ export default function AchievementsScreen({ navigation }: any) {
     const isUnlocked = isAchievementUnlocked(achievement.id);
     const currentValue = getCurrentValue(achievement);
     const progress = calculateAchievementProgress(achievement, currentValue);
+    const isNewlyUnlocked = newlyUnlockedId === achievement.id;
 
-    return (
+    const cardContent = (
       <View
-        key={achievement.id}
         style={[
           styles.achievementCard,
           !isUnlocked && styles.achievementCardLocked,
+          isNewlyUnlocked && styles.achievementCardNewlyUnlocked,
         ]}
       >
         <View style={styles.achievementContent}>
@@ -277,7 +302,7 @@ export default function AchievementsScreen({ navigation }: any) {
           {isUnlocked && (
             <View style={styles.achievementActions}>
               <TouchableOpacity
-                onPress={() => handleShareAchievement(achievement)}
+                onPress={() => handleShareAchievementWithHaptic(achievement)}
                 style={[styles.shareIconButton, { backgroundColor: achievement.color + '20' }]}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
@@ -291,10 +316,41 @@ export default function AchievementsScreen({ navigation }: any) {
         </View>
       </View>
     );
+    
+    // Wrap newly unlocked achievements in animated view
+    if (isNewlyUnlocked) {
+      return (
+        <Animated.View 
+          key={achievement.id}
+          style={{ transform: [{ scale: pulseAnim }] }}
+        >
+          {cardContent}
+        </Animated.View>
+      );
+    }
+    
+    return <View key={achievement.id}>{cardContent}</View>;
+  };
+
+  const handleCategoryPress = (categoryId: Achievement['category'] | 'all') => {
+    lightHaptic();
+    setSelectedCategory(categoryId);
+  };
+
+  const handleShareAchievementWithHaptic = async (achievement: Achievement) => {
+    successHaptic();
+    await handleShareAchievement(achievement);
   };
 
   return (
     <Screen>
+      {/* Celebration Confetti */}
+      <Confetti 
+        active={showConfetti} 
+        onComplete={() => setShowConfetti(false)}
+        pieceCount={60}
+      />
+      
       <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
         {/* Header */}
         <View style={styles.header}>
@@ -379,7 +435,7 @@ export default function AchievementsScreen({ navigation }: any) {
                 styles.categoryChip,
                 selectedCategory === category.id && styles.categoryChipActive,
               ]}
-              onPress={() => setSelectedCategory(category.id)}
+              onPress={() => handleCategoryPress(category.id)}
             >
               <Ionicons
                 name={category.icon as any}
@@ -519,6 +575,14 @@ const styles = StyleSheet.create({
   },
   achievementCardLocked: {
     opacity: 0.7,
+  },
+  achievementCardNewlyUnlocked: {
+    borderWidth: 2,
+    borderColor: Theme.colors.gold,
+    shadowColor: Theme.colors.gold,
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    elevation: 8,
   },
   achievementContent: {
     flexDirection: 'row',

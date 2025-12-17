@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  RefreshControl,
 } from 'react-native';
 import { useApp } from '../context/AppContext';
 import { Ionicons } from '@expo/vector-icons';
@@ -16,6 +17,11 @@ import { ListRow } from '../components/ListRow';
 import { Theme } from '../utils/theme';
 import { MoodCheckIn } from '../components/MoodCheckIn';
 import { MoodType, EnergyLevel, getMoodOption, getEnergyOption } from '../data/moodTracking';
+import { DailySpin, DailySpinButton } from '../components/DailySpin';
+import { getQuoteOfTheDay, Quote } from '../data/quotes';
+import { canSpinToday, DailySpinReward, getNextStreakMilestone, getDaysUntilMilestone } from '../utils/rewards';
+import { mediumHaptic, successHaptic } from '../utils/haptics';
+import { Confetti } from '../components/Confetti';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const GOAL_MESSAGES: Record<string, string> = {
@@ -28,16 +34,35 @@ const GOAL_MESSAGES: Record<string, string> = {
 };
 
 export default function HomeScreen({ navigation }: any) {
-  const { appState, getTodayProgress, saveMoodEntry, getTodayMood } = useApp();
+  const { appState, getTodayProgress, saveMoodEntry, getTodayMood, addGlowPoints } = useApp();
   const todayProgress = getTodayProgress();
   const [showMoodModal, setShowMoodModal] = useState(false);
+  const [showSpinModal, setShowSpinModal] = useState(false);
+  const [hasSpunToday, setHasSpunToday] = useState(true);
   const [todayMoodEntry, setTodayMoodEntry] = useState<any>(null);
   const [userName, setUserName] = useState<string>('');
   const [userGoal, setUserGoal] = useState<string>('');
+  const [dailyQuote, setDailyQuote] = useState<Quote | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [showConfetti, setShowConfetti] = useState(false);
 
   useEffect(() => {
-    loadTodayMood();
-    loadOnboardingData();
+    loadInitialData();
+  }, []);
+
+  const loadInitialData = async () => {
+    await Promise.all([
+      loadTodayMood(),
+      loadOnboardingData(),
+      checkSpinStatus(),
+    ]);
+    setDailyQuote(getQuoteOfTheDay());
+  };
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await loadInitialData();
+    setRefreshing(false);
   }, []);
 
   const loadTodayMood = async () => {
@@ -58,9 +83,35 @@ export default function HomeScreen({ navigation }: any) {
     }
   };
 
+  const checkSpinStatus = async () => {
+    const canSpin = await canSpinToday();
+    setHasSpunToday(!canSpin);
+  };
+
   const handleMoodSubmit = async (mood: MoodType, energy: EnergyLevel, note?: string) => {
     await saveMoodEntry(mood, energy, note);
     await loadTodayMood();
+    successHaptic();
+  };
+
+  const handleSpinReward = async (reward: DailySpinReward) => {
+    // Add points based on reward type
+    if (reward.type === 'points' && addGlowPoints) {
+      await addGlowPoints(reward.value, `Daily spin reward: ${reward.label}`);
+    }
+    
+    // Show confetti for rare rewards
+    if (reward.rarity === 'rare' || reward.rarity === 'legendary') {
+      setShowConfetti(true);
+    }
+    
+    setHasSpunToday(true);
+    successHaptic();
+  };
+
+  const handleOpenSpin = () => {
+    mediumHaptic();
+    setShowSpinModal(true);
   };
 
   const today = new Date();
@@ -74,6 +125,10 @@ export default function HomeScreen({ navigation }: any) {
   // Get must-do tasks (first 3 tasks)
   const mustDoTasks = todayProgress.tasks.filter(t => t.isMustDo);
   const mustDoCompleted = mustDoTasks.filter(t => t.completed).length;
+
+  // Next milestone info
+  const nextMilestone = getNextStreakMilestone(appState.currentStreak);
+  const daysUntilMilestone = getDaysUntilMilestone(appState.currentStreak);
 
   const dailyPractices = [
     {
@@ -137,6 +192,14 @@ export default function HomeScreen({ navigation }: any) {
         style={styles.scrollView}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={Theme.colors.accent}
+            colors={[Theme.colors.accent]}
+          />
+        }
       >
         {/* Personalized Welcome Message */}
         {(userName || userGoal) && (
@@ -147,19 +210,20 @@ export default function HomeScreen({ navigation }: any) {
           </UnifiedCard>
         )}
 
-        {/* Streak Card */}
-        <TouchableOpacity
-          onPress={() => navigation.navigate('AchievementsScreen')}
-          activeOpacity={0.8}
-        >
-          <UnifiedCard delay={0} style={styles.streakCard}>
-            <LinearGradient
-              colors={['#C77DFF', '#9D4EDD']}
-              style={styles.streakGradient}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-            >
-              <View style={styles.streakContent}>
+        {/* Streak Card with Daily Spin */}
+        <UnifiedCard delay={0} style={styles.streakCard}>
+          <LinearGradient
+            colors={['#C77DFF', '#9D4EDD']}
+            style={styles.streakGradient}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+          >
+            <View style={styles.streakContent}>
+              <TouchableOpacity
+                onPress={() => navigation.navigate('AchievementsScreen')}
+                activeOpacity={0.8}
+                style={styles.streakTouchable}
+              >
                 <View style={styles.streakLeft}>
                   <Ionicons name="flame" size={40} color={Theme.colors.textInverse} />
                   <View style={styles.streakInfo}>
@@ -167,22 +231,34 @@ export default function HomeScreen({ navigation }: any) {
                     <Text style={styles.streakLabel}>Day Streak</Text>
                   </View>
                 </View>
-                <View style={styles.streakRight}>
+                <View style={styles.streakMiddle}>
                   <Text style={styles.streakMessage}>
                     {appState.currentStreak === 0
-                      ? 'Start your journey today!'
+                      ? 'Start today!'
                       : appState.currentStreak < 7
                       ? 'Keep going! 🌟'
                       : appState.currentStreak < 21
-                      ? 'Amazing progress! 💫'
-                      : 'You\'re unstoppable! ✨'}
+                      ? 'Amazing! 💫'
+                      : 'Unstoppable! ✨'}
                   </Text>
-                  <Ionicons name="chevron-forward" size={20} color={Theme.colors.textInverse} style={{ opacity: 0.7 }} />
+                  {nextMilestone && daysUntilMilestone && daysUntilMilestone <= 7 && (
+                    <Text style={styles.milestoneHint}>
+                      {daysUntilMilestone}d to {nextMilestone.emoji}
+                    </Text>
+                  )}
                 </View>
+              </TouchableOpacity>
+              
+              {/* Daily Spin Button */}
+              <View style={styles.spinButtonWrapper}>
+                <DailySpinButton 
+                  onPress={handleOpenSpin} 
+                  hasSpun={hasSpunToday}
+                />
               </View>
-            </LinearGradient>
-          </UnifiedCard>
-        </TouchableOpacity>
+            </View>
+          </LinearGradient>
+        </UnifiedCard>
 
         {/* Mood Check-In Card */}
         <TouchableOpacity
@@ -323,10 +399,15 @@ export default function HomeScreen({ navigation }: any) {
         {/* Motivational Quote */}
         <UnifiedCard delay={200}>
           <View style={styles.quoteContainer}>
-            <Ionicons name="quote" size={24} color={Theme.colors.accent} />
-            <Text style={styles.quoteText}>
-              "Your thoughts create your reality. Focus on what you want, not what you fear."
-            </Text>
+            <Ionicons name="chatbubble-ellipses-outline" size={24} color={Theme.colors.accent} />
+            <View style={styles.quoteContent}>
+              <Text style={styles.quoteText}>
+                "{dailyQuote?.text || 'Your thoughts create your reality. Focus on what you want, not what you fear.'}"
+              </Text>
+              <Text style={styles.quoteAuthor}>
+                — {dailyQuote?.author || 'Unknown'}
+              </Text>
+            </View>
           </View>
         </UnifiedCard>
 
@@ -338,6 +419,19 @@ export default function HomeScreen({ navigation }: any) {
         visible={showMoodModal}
         onClose={() => setShowMoodModal(false)}
         onSubmit={handleMoodSubmit}
+      />
+
+      {/* Daily Spin Modal */}
+      <DailySpin
+        visible={showSpinModal}
+        onClose={() => setShowSpinModal(false)}
+        onRewardClaimed={handleSpinReward}
+      />
+
+      {/* Celebration Confetti */}
+      <Confetti 
+        active={showConfetti} 
+        onComplete={() => setShowConfetti(false)}
       />
     </Screen>
   );
@@ -370,13 +464,17 @@ const styles = StyleSheet.create({
   },
   streakContent: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  streakTouchable: {
+    flex: 1,
+    flexDirection: 'row',
     alignItems: 'center',
   },
   streakLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Theme.spacing.lg,
+    gap: Theme.spacing.md,
   },
   streakInfo: {
     gap: Theme.spacing.xs,
@@ -390,14 +488,23 @@ const styles = StyleSheet.create({
     color: Theme.colors.textInverse,
     opacity: 0.9,
   },
-  streakRight: {
+  streakMiddle: {
     flex: 1,
-    marginLeft: Theme.spacing.lg,
+    marginLeft: Theme.spacing.md,
+    gap: Theme.spacing.xs,
   },
   streakMessage: {
-    ...Theme.typography.bodyBold,
+    ...Theme.typography.caption,
     color: Theme.colors.textInverse,
-    textAlign: 'right',
+    fontWeight: '600',
+  },
+  milestoneHint: {
+    ...Theme.typography.small,
+    color: Theme.colors.textInverse,
+    opacity: 0.8,
+  },
+  spinButtonWrapper: {
+    marginLeft: Theme.spacing.md,
   },
   progressHeader: {
     flexDirection: 'row',
@@ -426,11 +533,12 @@ const styles = StyleSheet.create({
   },
   quickActionsGrid: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: Theme.spacing.md,
     marginTop: Theme.spacing.md,
   },
   quickActionCard: {
-    flex: 1,
+    width: '47%',
     borderRadius: Theme.radius.md,
     overflow: 'hidden',
     ...Theme.shadow.medium,
@@ -451,12 +559,20 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: Theme.spacing.md,
   },
-  quoteText: {
+  quoteContent: {
     flex: 1,
+    gap: Theme.spacing.sm,
+  },
+  quoteText: {
     ...Theme.typography.body,
     color: Theme.colors.textPrimary,
     fontStyle: 'italic',
     lineHeight: 22,
+  },
+  quoteAuthor: {
+    ...Theme.typography.caption,
+    color: Theme.colors.textSecondary,
+    textAlign: 'right',
   },
   moodCard: {
     flexDirection: 'row',

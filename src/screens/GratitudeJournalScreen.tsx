@@ -21,6 +21,7 @@ import { IncompleteDayModal } from '../components/IncompleteDayModal';
 import { Theme, TOUCH_TARGET_MIN } from '../utils/theme';
 import { GratitudeCheckIn } from '../utils/dayRollover';
 import { IncompleteDayInfo } from '../utils/dayRolloverManager';
+import { successHaptic, celebrationHaptic } from '../utils/haptics';
 
 const DAILY_PROMPTS = [
   { text: "Write about one thing you like about your appearance today.", emoji: "✨" },

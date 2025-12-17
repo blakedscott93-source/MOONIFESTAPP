@@ -10,6 +10,10 @@ import {
   Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Screen } from '../components/Screen';
+import { Theme, TOUCH_TARGET_MIN } from '../utils/theme';
+import { useNavigation } from '@react-navigation/native';
 
 interface Message {
   id: string;
@@ -49,7 +53,7 @@ const CHATBOT_RESPONSES: { [key: string]: { text: string; options?: string[] } }
     ],
   },
   'how do i use this app?': {
-    text: "Let me show you around! 🗺️\n\n🏠 Tasks Tab: Your daily overview\n⭐ 45 NOW Tab: Complete your daily requirements\n📖 Journal: Write gratitude entries\n📊 Progress: Track your journey\n🛠️ Tools: Extras like this chat!\n\nEach day, complete:\n1. Your 3 must-do tasks\n2. 369 affirmations (morning, afternoon, evening)\n3. Guided meditation\n4. Gratitude journaling\n\nMiss a day? You start over. That's what makes you mentally tough!\n\nWhat would you like to explore?",
+    text: "Let me show you around! 🗺️\n\n🏠 Today Tab: Your daily overview\n✨ Affirmations: Guided audio sessions\n📖 Journal: Write gratitude entries\n⭐ 45 NOW: Complete your daily tasks\n\nEach day, complete:\n1. Your 3 must-do tasks\n2. 3 Guided affirmation sessions\n3. Guided meditation\n4. 3 Gratitude check-ins\n\nMiss a day? You start over. That's what makes you mentally tough!\n\nWhat would you like to explore?",
     options: [
       'How to write good affirmations?',
       'What are must-do tasks?',
@@ -97,6 +101,7 @@ const CHATBOT_RESPONSES: { [key: string]: { text: string; options?: string[] } }
 };
 
 export default function ChatbotScreen() {
+  const navigation = useNavigation();
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '1',
@@ -180,183 +185,245 @@ export default function ChatbotScreen() {
   };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={90}
-    >
-      <View style={styles.header}>
-        <View style={styles.avatarContainer}>
-          <Ionicons name="sparkles" size={24} color="#FFD700" />
-        </View>
-        <View>
-          <Text style={styles.headerTitle}>Moonifest Guide</Text>
-          <Text style={styles.headerSubtitle}>Your manifestation assistant</Text>
-        </View>
-      </View>
-
-      <ScrollView
-        ref={scrollViewRef}
-        style={styles.messagesContainer}
-        contentContainerStyle={styles.messagesContent}
+    <Screen style={styles.container}>
+      <KeyboardAvoidingView
+        style={styles.keyboardView}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={90}
       >
-        {messages.map((message) => (
-          <View key={message.id}>
-            <View
-              style={[
-                styles.messageBubble,
-                message.sender === 'user' ? styles.userBubble : styles.botBubble,
-              ]}
-            >
-              <Text
+        {/* Header */}
+        <View style={styles.header}>
+          <TouchableOpacity
+            onPress={() => navigation.goBack()}
+            style={styles.backButton}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Ionicons name="chevron-back" size={24} color={Theme.colors.textPrimary} />
+          </TouchableOpacity>
+          <View style={styles.headerContent}>
+            <View style={styles.avatarContainer}>
+              <LinearGradient
+                colors={[Theme.colors.accent, Theme.colors.accentDark]}
+                style={styles.avatarGradient}
+              >
+                <Ionicons name="sparkles" size={24} color="#FFFFFF" />
+              </LinearGradient>
+            </View>
+            <View>
+              <Text style={styles.headerTitle}>Moonifest Guide</Text>
+              <Text style={styles.headerSubtitle}>Your manifestation assistant</Text>
+            </View>
+          </View>
+          <View style={{ width: TOUCH_TARGET_MIN }} />
+        </View>
+
+        {/* Messages */}
+        <ScrollView
+          ref={scrollViewRef}
+          style={styles.messagesContainer}
+          contentContainerStyle={styles.messagesContent}
+          showsVerticalScrollIndicator={false}
+        >
+          {messages.map((message) => (
+            <View key={message.id}>
+              <View
                 style={[
-                  styles.messageText,
-                  message.sender === 'user' ? styles.userText : styles.botText,
+                  styles.messageBubble,
+                  message.sender === 'user' ? styles.userBubble : styles.botBubble,
                 ]}
               >
-                {message.text}
-              </Text>
-            </View>
-
-            {message.options && message.sender === 'bot' && (
-              <View style={styles.optionsContainer}>
-                {message.options.map((option, index) => (
-                  <TouchableOpacity
-                    key={index}
-                    style={styles.optionButton}
-                    onPress={() => handleOptionPress(option)}
-                  >
-                    <Text style={styles.optionText}>{option}</Text>
-                    <Ionicons name="chevron-forward" size={16} color="#8B7DD8" />
-                  </TouchableOpacity>
-                ))}
+                <Text
+                  style={[
+                    styles.messageText,
+                    message.sender === 'user' ? styles.userText : styles.botText,
+                  ]}
+                >
+                  {message.text}
+                </Text>
               </View>
-            )}
-          </View>
-        ))}
-      </ScrollView>
 
-      <View style={styles.inputContainer}>
-        <TextInput
-          style={styles.input}
-          placeholder="Type a message..."
-          placeholderTextColor="#666"
-          value={inputText}
-          onChangeText={setInputText}
-          onSubmitEditing={handleSendMessage}
-        />
-        <TouchableOpacity style={styles.sendButton} onPress={handleSendMessage}>
-          <Ionicons name="send" size={20} color="#FFF" />
-        </TouchableOpacity>
-      </View>
-    </KeyboardAvoidingView>
+              {message.options && message.sender === 'bot' && (
+                <View style={styles.optionsContainer}>
+                  {message.options.map((option, index) => (
+                    <TouchableOpacity
+                      key={index}
+                      style={styles.optionButton}
+                      onPress={() => handleOptionPress(option)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.optionText}>{option}</Text>
+                      <Ionicons name="chevron-forward" size={16} color={Theme.colors.accent} />
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+            </View>
+          ))}
+        </ScrollView>
+
+        {/* Input */}
+        <View style={styles.inputContainer}>
+          <TextInput
+            style={styles.input}
+            placeholder="Type a message..."
+            placeholderTextColor={Theme.colors.textTertiary}
+            value={inputText}
+            onChangeText={setInputText}
+            onSubmitEditing={handleSendMessage}
+          />
+          <TouchableOpacity 
+            style={styles.sendButton} 
+            onPress={handleSendMessage}
+            activeOpacity={0.7}
+          >
+            <LinearGradient
+              colors={[Theme.colors.accent, Theme.colors.accentDark]}
+              style={styles.sendButtonGradient}
+            >
+              <Ionicons name="send" size={18} color="#FFFFFF" />
+            </LinearGradient>
+          </TouchableOpacity>
+        </View>
+      </KeyboardAvoidingView>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0F0B1F',
+    backgroundColor: Theme.colors.bg,
+  },
+  keyboardView: {
+    flex: 1,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 20,
-    backgroundColor: '#1F1B2F',
+    paddingHorizontal: Theme.spacing.lg,
+    paddingTop: Theme.spacing.xl,
+    paddingBottom: Theme.spacing.lg,
+    backgroundColor: Theme.colors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: '#8B7DD8',
-    gap: 15,
+    borderBottomColor: Theme.colors.border,
+    ...Theme.shadow.subtle,
+  },
+  backButton: {
+    width: TOUCH_TARGET_MIN,
+    height: TOUCH_TARGET_MIN,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerContent: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Theme.spacing.md,
   },
   avatarContainer: {
+    ...Theme.shadow.medium,
+  },
+  avatarGradient: {
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: '#FFD70020',
     alignItems: 'center',
     justifyContent: 'center',
   },
   headerTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#FFF',
+    ...Theme.typography.h3,
+    color: Theme.colors.textPrimary,
   },
   headerSubtitle: {
-    fontSize: 13,
-    color: '#8B7DD8',
+    ...Theme.typography.caption,
+    color: Theme.colors.textSecondary,
   },
   messagesContainer: {
     flex: 1,
   },
   messagesContent: {
-    padding: 20,
+    padding: Theme.spacing.lg,
+    paddingBottom: Theme.spacing.xxl,
   },
   messageBubble: {
-    maxWidth: '80%',
-    padding: 15,
-    borderRadius: 16,
-    marginBottom: 10,
+    maxWidth: '85%',
+    padding: Theme.spacing.lg,
+    borderRadius: Theme.radius.lg,
+    marginBottom: Theme.spacing.md,
+    ...Theme.shadow.subtle,
   },
   userBubble: {
     alignSelf: 'flex-end',
-    backgroundColor: '#8B7DD8',
-    borderBottomRightRadius: 4,
+    backgroundColor: Theme.colors.accent,
+    borderBottomRightRadius: Theme.radius.sm,
   },
   botBubble: {
     alignSelf: 'flex-start',
-    backgroundColor: '#1F1B2F',
-    borderBottomLeftRadius: 4,
+    backgroundColor: Theme.colors.surface,
+    borderBottomLeftRadius: Theme.radius.sm,
+    borderWidth: 1,
+    borderColor: Theme.colors.border,
   },
   messageText: {
-    fontSize: 15,
+    ...Theme.typography.body,
     lineHeight: 22,
   },
   userText: {
-    color: '#FFF',
+    color: Theme.colors.textInverse,
   },
   botText: {
-    color: '#FFF',
+    color: Theme.colors.textPrimary,
   },
   optionsContainer: {
-    marginBottom: 20,
-    gap: 8,
+    marginBottom: Theme.spacing.lg,
+    gap: Theme.spacing.sm,
   },
   optionButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#1F1B2F',
-    padding: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#8B7DD8',
+    backgroundColor: Theme.colors.surface,
+    padding: Theme.spacing.lg,
+    borderRadius: Theme.radius.md,
+    borderWidth: 1.5,
+    borderColor: Theme.colors.accentSoft,
+    ...Theme.shadow.subtle,
   },
   optionText: {
-    color: '#FFF',
-    fontSize: 14,
+    ...Theme.typography.body,
+    color: Theme.colors.textPrimary,
     flex: 1,
   },
   inputContainer: {
     flexDirection: 'row',
-    padding: 15,
-    backgroundColor: '#1F1B2F',
+    padding: Theme.spacing.lg,
+    backgroundColor: Theme.colors.surface,
     borderTopWidth: 1,
-    borderTopColor: '#333',
-    gap: 10,
+    borderTopColor: Theme.colors.border,
+    gap: Theme.spacing.md,
+    ...Theme.shadow.subtle,
   },
   input: {
     flex: 1,
-    backgroundColor: '#0F0B1F',
-    borderRadius: 20,
-    paddingHorizontal: 15,
-    paddingVertical: 10,
-    color: '#FFF',
-    fontSize: 15,
+    backgroundColor: Theme.colors.surfaceSecondary,
+    borderRadius: Theme.radius.full,
+    paddingHorizontal: Theme.spacing.lg,
+    paddingVertical: Theme.spacing.md,
+    ...Theme.typography.body,
+    color: Theme.colors.textPrimary,
+    borderWidth: 1,
+    borderColor: Theme.colors.border,
   },
   sendButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#8B7DD8',
+    width: TOUCH_TARGET_MIN,
+    height: TOUCH_TARGET_MIN,
+    borderRadius: TOUCH_TARGET_MIN / 2,
+    overflow: 'hidden',
+    ...Theme.shadow.medium,
+  },
+  sendButtonGradient: {
+    width: '100%',
+    height: '100%',
     alignItems: 'center',
     justifyContent: 'center',
   },
