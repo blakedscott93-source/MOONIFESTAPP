@@ -5,6 +5,8 @@
  * Each affirmation is unique, powerful, and designed for deep impact
  */
 
+import { GoalCategory } from '../types/goals';
+
 export interface AffirmationCategory {
   id: string;
   name: string;
@@ -12,6 +14,7 @@ export interface AffirmationCategory {
   color: string;
   description: string;
   affirmations: string[];
+  goalCategories?: GoalCategory[]; // Which goals this affirmation category supports
 }
 
 export const AFFIRMATION_CATEGORIES: AffirmationCategory[] = [
@@ -21,6 +24,7 @@ export const AFFIRMATION_CATEGORIES: AffirmationCategory[] = [
     icon: 'cash-outline',
     color: '#FFD700',
     description: 'Attract financial prosperity and abundance',
+    goalCategories: ['wealth', 'career', 'freedom'],
     affirmations: [
       // Core abundance mindset
       'I am a powerful money magnet and prosperity flows to me from multiple sources.',
@@ -89,6 +93,7 @@ export const AFFIRMATION_CATEGORIES: AffirmationCategory[] = [
     icon: 'heart-outline',
     color: '#FF6B6B',
     description: 'Nurture your body, mind, and spirit',
+    goalCategories: ['health', 'happiness', 'growth'],
     affirmations: [
       // Physical health
       'Every cell in my body radiates perfect health, vitality, and youthful energy.',
@@ -157,6 +162,7 @@ export const AFFIRMATION_CATEGORIES: AffirmationCategory[] = [
     icon: 'heart',
     color: '#FF69B4',
     description: 'Manifest deep connections and authentic love',
+    goalCategories: ['love', 'happiness', 'growth'],
     affirmations: [
       // Self-love foundation
       'I love and accept myself completely, exactly as I am in this moment.',
@@ -225,6 +231,7 @@ export const AFFIRMATION_CATEGORIES: AffirmationCategory[] = [
     icon: 'trophy-outline',
     color: '#9B59B6',
     description: 'Unlock your potential and achieve your goals',
+    goalCategories: ['career', 'wealth', 'growth'],
     affirmations: [
       // Achievement mindset
       'I am capable of achieving anything I set my mind to with focus and determination.',
@@ -293,6 +300,7 @@ export const AFFIRMATION_CATEGORIES: AffirmationCategory[] = [
     icon: 'star-outline',
     color: '#F39C12',
     description: 'Build unshakeable self-confidence',
+    goalCategories: ['growth', 'happiness', 'career'],
     affirmations: [
       // Core confidence
       'I am confident, capable, and worthy of all the good things life offers.',
@@ -361,6 +369,7 @@ export const AFFIRMATION_CATEGORIES: AffirmationCategory[] = [
     icon: 'leaf-outline',
     color: '#00D9A3',
     description: 'Find inner peace and tranquility',
+    goalCategories: ['happiness', 'health', 'growth'],
     affirmations: [
       // Inner peace
       'I am calm, centered, and at peace with myself and the world around me.',
@@ -429,6 +438,7 @@ export const AFFIRMATION_CATEGORIES: AffirmationCategory[] = [
     icon: 'briefcase-outline',
     color: '#3498DB',
     description: 'Align with your purpose and career success',
+    goalCategories: ['career', 'wealth', 'growth'],
     affirmations: [
       // Purpose alignment
       'I am aligned with my true purpose and my work is an extension of my soul.',
@@ -497,6 +507,7 @@ export const AFFIRMATION_CATEGORIES: AffirmationCategory[] = [
     icon: 'happy-outline',
     color: '#E74C3C',
     description: 'Cultivate appreciation and happiness',
+    goalCategories: ['happiness', 'growth', 'love'],
     affirmations: [
       // Gratitude practice
       'I am deeply grateful for all the blessings, lessons, and love in my life.',

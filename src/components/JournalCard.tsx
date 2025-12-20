@@ -10,7 +10,7 @@ interface JournalCardProps {
   testID?: string;
 }
 
-export const JournalCard: React.FC<JournalCardProps> = ({
+export const JournalCard: React.FC<JournalCardProps> = React.memo(({
   children,
   onPress,
   style,
@@ -62,7 +62,7 @@ export const JournalCard: React.FC<JournalCardProps> = ({
   }
 
   return content;
-};
+});
 
 const styles = StyleSheet.create({
   card: {

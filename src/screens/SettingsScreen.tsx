@@ -7,12 +7,15 @@ import {
   TouchableOpacity,
   Switch,
   Alert,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as StoreReview from 'expo-store-review';
 import { Screen } from '../components/Screen';
 import { Theme, TOUCH_TARGET_MIN } from '../utils/theme';
 import { useTheme } from '../context/ThemeContext';
 import { getColors } from '../utils/themeColors';
+import { openSupportEmail } from '../utils/contactSupport';
 
 export default function SettingsScreen({ navigation }: any) {
   const { themeMode, setThemeMode, isDark } = useTheme();
@@ -90,9 +93,7 @@ export default function SettingsScreen({ navigation }: any) {
           icon: 'analytics',
           label: 'Mood & Progress Insights',
           type: 'navigate' as const,
-          onPress: () => {
-            Alert.alert('Coming Soon', 'Mood tracking insights will be available soon!');
-          },
+          onPress: () => navigation.navigate('MoodInsightsScreen'),
         },
       ],
     },
@@ -115,9 +116,7 @@ export default function SettingsScreen({ navigation }: any) {
           icon: 'bookmarks',
           label: 'Saved Affirmations',
           type: 'navigate' as const,
-          onPress: () => {
-            Alert.alert('Coming Soon', 'Your saved affirmations collection!');
-          },
+          onPress: () => navigation.navigate('SavedAffirmationsScreen'),
         },
       ],
     },
@@ -129,15 +128,47 @@ export default function SettingsScreen({ navigation }: any) {
           label: 'Backup & Sync',
           type: 'navigate' as const,
           onPress: () => {
-            Alert.alert('Coming Soon', 'Cloud backup and sync will be available soon!');
+            Alert.alert(
+              'Backup & Sync',
+              'Cloud backup and sync is coming soon! For now, you can export your data using the "Export My Data" option below.\n\nYour data is currently stored securely on your device.',
+              [{ text: 'OK' }]
+            );
           },
         },
         {
           icon: 'download',
           label: 'Export My Data',
           type: 'navigate' as const,
-          onPress: () => {
-            Alert.alert('Export Data', 'Export all your journal entries, progress, and achievements.');
+          onPress: async () => {
+            try {
+              const { shareExportedData, getDataSummary } = await import('../utils/dataExport');
+              const summary = await getDataSummary();
+              
+              Alert.alert(
+                'Export Your Data',
+                `Export all your Moonifest data including:\n\n• ${summary.streak} day streak\n• ${summary.totalDays} total days\n• ${summary.glowPoints} glow points\n• ${summary.moodEntries} mood entries\n• ${summary.gratitudeCheckIns} gratitude check-ins\n• ${summary.visionBoardItems} vision board items\n• ${summary.achievements} achievements\n\nYour data will be exported as a JSON file.`,
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  {
+                    text: 'Export',
+                    onPress: async () => {
+                      try {
+                        const success = await shareExportedData();
+                        if (success) {
+                          Alert.alert('Success', 'Your data has been exported!');
+                        } else {
+                          Alert.alert('Export Complete', 'Your data file has been saved. You can share it from your device.');
+                        }
+                      } catch (error) {
+                        Alert.alert('Error', 'Failed to export data. Please try again.');
+                      }
+                    },
+                  },
+                ]
+              );
+            } catch (error) {
+              Alert.alert('Error', 'Failed to load export options. Please try again.');
+            }
           },
         },
       ],
@@ -149,24 +180,39 @@ export default function SettingsScreen({ navigation }: any) {
           icon: 'help-circle',
           label: 'Help & FAQ',
           type: 'navigate' as const,
-          onPress: () => {
-            Alert.alert('Help & FAQ', 'Get answers to common questions.');
-          },
+          onPress: () => navigation.navigate('HelpFAQScreen'),
         },
         {
           icon: 'mail',
           label: 'Contact Support',
           type: 'navigate' as const,
-          onPress: () => {
-            Alert.alert('Contact Support', 'Reach out to our support team.');
+          onPress: async () => {
+            await openSupportEmail();
           },
         },
         {
           icon: 'star',
           label: 'Rate the App',
           type: 'navigate' as const,
-          onPress: () => {
-            Alert.alert('Rate Moonifest', 'Love the app? Leave us a review!');
+          onPress: async () => {
+            try {
+              const isAvailable = await StoreReview.isAvailableAsync();
+              if (isAvailable) {
+                await StoreReview.requestReview();
+              } else {
+                Alert.alert(
+                  'Rate Moonifest',
+                  'Thank you for using Moonifest! If you love the app, please leave us a review on the App Store or Play Store.',
+                  [{ text: 'OK' }]
+                );
+              }
+            } catch (error) {
+              Alert.alert(
+                'Rate Moonifest',
+                'Thank you for using Moonifest! Please leave us a review on the App Store or Play Store.',
+                [{ text: 'OK' }]
+              );
+            }
           },
         },
       ],
@@ -178,17 +224,13 @@ export default function SettingsScreen({ navigation }: any) {
           icon: 'document-text',
           label: 'Privacy Policy',
           type: 'navigate' as const,
-          onPress: () => {
-            Alert.alert('Privacy Policy', 'View our privacy policy.');
-          },
+          onPress: () => navigation.navigate('PrivacyPolicyScreen'),
         },
         {
           icon: 'document-text',
           label: 'Terms of Service',
           type: 'navigate' as const,
-          onPress: () => {
-            Alert.alert('Terms of Service', 'View our terms of service.');
-          },
+          onPress: () => navigation.navigate('TermsOfServiceScreen'),
         },
       ],
     },

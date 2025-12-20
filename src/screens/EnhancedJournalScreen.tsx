@@ -32,7 +32,7 @@ const MOOD_OPTIONS = [
 
 export default function EnhancedJournalScreen() {
   const { getTodayProgress, updateGratitudeEntry, appState } = useApp();
-  const todayProgress = getTodayProgress();
+  const todayProgress = useMemo(() => getTodayProgress(), [getTodayProgress]);
 
   const [gratitude1, setGratitude1] = useState('');
   const [gratitude2, setGratitude2] = useState('');

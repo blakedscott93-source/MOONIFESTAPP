@@ -2,17 +2,25 @@ import React from 'react';
 import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import { useApp } from '../context/AppContext';
 import { Ionicons } from '@expo/vector-icons';
+import { CHALLENGE_DURATION_DAYS, PROGRESS_MILESTONES } from '../utils/constants';
 
 export default function ProgressScreen() {
   const { appState } = useApp();
 
-  const milestones = [
-    { day: 7, title: 'Week Warrior', icon: 'trophy', reached: appState.totalDays >= 7 },
-    { day: 14, title: 'Fortnight Focus', icon: 'medal', reached: appState.totalDays >= 14 },
-    { day: 21, title: 'Habit Hero', icon: 'ribbon', reached: appState.totalDays >= 21 },
-    { day: 30, title: 'Month Master', icon: 'star', reached: appState.totalDays >= 30 },
-    { day: 45, title: '45 NOW Complete!', icon: 'checkmark-circle', reached: appState.totalDays >= 45 },
-  ];
+  const iconMap: Record<number, string> = {
+    7: 'trophy',
+    14: 'medal',
+    21: 'ribbon',
+    30: 'star',
+    45: 'checkmark-circle',
+  };
+
+  const milestones = PROGRESS_MILESTONES.map(milestone => ({
+    day: milestone.day,
+    title: milestone.title,
+    icon: iconMap[milestone.day] || 'star',
+    reached: appState.totalDays >= milestone.day,
+  }));
 
   return (
     <ScrollView style={styles.container}>
@@ -37,7 +45,7 @@ export default function ProgressScreen() {
 
         <View style={styles.statCard}>
           <Ionicons name="trending-up" size={32} color="#4ECDC4" />
-          <Text style={styles.statNumber}>{Math.round((appState.totalDays / 45) * 100)}%</Text>
+          <Text style={styles.statNumber}>{Math.round((appState.totalDays / CHALLENGE_DURATION_DAYS) * 100)}%</Text>
           <Text style={styles.statLabel}>Complete</Text>
         </View>
       </View>
@@ -92,7 +100,7 @@ export default function ProgressScreen() {
               Your journey begins today! The first step is always the hardest, but you've got this.
             </Text>
           </>
-        ) : appState.totalDays < 45 ? (
+        ) : appState.totalDays < CHALLENGE_DURATION_DAYS ? (
           <>
             <Ionicons name="sparkles" size={32} color="#FFD700" />
             <Text style={styles.motivationText}>

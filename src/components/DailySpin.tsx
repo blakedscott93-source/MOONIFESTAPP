@@ -529,7 +529,12 @@ export const DailySpinButton: React.FC<DailySpinButtonProps> = ({
   }, [hasSpun]);
 
   return (
-    <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
+    <Animated.View 
+      style={[
+        { transform: [{ scale: pulseAnim }] },
+        styles2.container,
+      ]}
+    >
       <TouchableOpacity
         onPress={onPress}
         style={[
@@ -547,18 +552,23 @@ export const DailySpinButton: React.FC<DailySpinButtonProps> = ({
             size={20}
             color="#FFFFFF"
           />
-          {!hasSpun && (
-            <View style={styles2.badge}>
-              <Text style={styles2.badgeText}>!</Text>
-            </View>
-          )}
         </LinearGradient>
       </TouchableOpacity>
+      {!hasSpun && (
+        <View style={styles2.badge}>
+          <Text style={styles2.badgeText}>!</Text>
+        </View>
+      )}
     </Animated.View>
   );
 };
 
 const styles2 = StyleSheet.create({
+  container: {
+    position: 'relative',
+    width: 50,
+    height: 50,
+  },
   button: {
     width: 50,
     height: 50,
@@ -574,19 +584,23 @@ const styles2 = StyleSheet.create({
     height: '100%',
     alignItems: 'center',
     justifyContent: 'center',
+    borderRadius: 25,
   },
   badge: {
     position: 'absolute',
-    top: -2,
-    right: -2,
+    top: -4,
+    right: -4,
     width: 18,
     height: 18,
     borderRadius: 9,
     backgroundColor: '#FF4444',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: Theme.colors.surface,
+    borderWidth: 2.5,
+    borderColor: '#FFFFFF',
+    zIndex: 10,
+    ...Theme.shadow.medium,
+    elevation: 8,
   },
   badgeText: {
     color: '#FFFFFF',

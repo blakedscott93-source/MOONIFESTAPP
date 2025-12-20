@@ -8,9 +8,11 @@ import {
   Image,
   Alert,
   Dimensions,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Screen } from '../components/Screen';
 import { AppHeader } from '../components/AppHeader';
@@ -43,6 +45,9 @@ export default function VisionBoardScreen({ navigation }: any) {
   const { showSuccess, showError, showPoints } = useToast();
   const [items, setItems] = useState<VisionBoardItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showTitleModal, setShowTitleModal] = useState(false);
+  const [pendingImageUri, setPendingImageUri] = useState<string | null>(null);
+  const [titleInput, setTitleInput] = useState('');
 
   useEffect(() => {
     loadItems();
@@ -71,18 +76,49 @@ export default function VisionBoardScreen({ navigation }: any) {
     }
   };
 
-  const addImage = () => {
+  const requestPermissions = async () => {
+    if (Platform.OS !== 'web') {
+      const { status: cameraStatus } = await ImagePicker.requestCameraPermissionsAsync();
+      const { status: mediaLibraryStatus } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      
+      if (cameraStatus !== 'granted' || mediaLibraryStatus !== 'granted') {
+        Alert.alert(
+          'Permissions Required',
+          'We need camera and photo library permissions to add images to your vision board.',
+          [{ text: 'OK' }]
+        );
+        return false;
+      }
+    }
+    return true;
+  };
+
+  const addImage = async () => {
     Alert.alert(
       'Add Image',
       'Choose an option',
       [
         {
-          text: 'Sample Image (Demo)',
-          onPress: () => addSampleImage(),
+          text: 'Take Photo',
+          onPress: async () => {
+            const hasPermission = await requestPermissions();
+            if (hasPermission) {
+              await pickImageFromCamera();
+            }
+          },
         },
         {
-          text: 'Camera/Gallery (Coming Soon)',
-          onPress: () => Alert.alert('Coming Soon', 'Camera and gallery access will be available soon!'),
+          text: 'Choose from Gallery',
+          onPress: async () => {
+            const hasPermission = await requestPermissions();
+            if (hasPermission) {
+              await pickImageFromGallery();
+            }
+          },
+        },
+        {
+          text: 'Sample Image (Demo)',
+          onPress: () => addSampleImage(),
         },
         {
           text: 'Cancel',
@@ -93,28 +129,94 @@ export default function VisionBoardScreen({ navigation }: any) {
     );
   };
 
-  const addSampleImage = () => {
-    Alert.prompt(
-      'Add Title',
-      'Give this vision a title',
-      async (title) => {
-        if (title && title.trim()) {
-          const randomImage = PLACEHOLDER_IMAGES[Math.floor(Math.random() * PLACEHOLDER_IMAGES.length)];
-          const newItem: VisionBoardItem = {
-            id: Date.now().toString(),
-            imageUri: randomImage,
-            title: title.trim(),
-            createdAt: new Date().toISOString(),
-          };
+  const pickImageFromCamera = async () => {
+    try {
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
 
-          const updatedItems = [...items, newItem];
-          await saveItems(updatedItems);
-          await addGlowPoints(15, 'Added vision to vision board');
-          showSuccess('Vision Added!', 'Your vision has been added to the board.');
-          showPoints(15, 'Added vision to vision board');
-        }
+      if (!result.canceled && result.assets && result.assets[0]) {
+        await handleImageSelected(result.assets[0].uri);
       }
-    );
+    } catch (error) {
+      console.error('Error picking image from camera:', error);
+      showError('Error', 'Failed to take photo. Please try again.');
+    }
+  };
+
+  const pickImageFromGallery = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets && result.assets[0]) {
+        await handleImageSelected(result.assets[0].uri);
+      }
+    } catch (error) {
+      console.error('Error picking image from gallery:', error);
+      showError('Error', 'Failed to select image. Please try again.');
+    }
+  };
+
+  const handleImageSelected = async (imageUri: string) => {
+    setPendingImageUri(imageUri);
+    setTitleInput('');
+    setShowTitleModal(true);
+  };
+
+  const handleSaveTitle = async () => {
+    if (!pendingImageUri || !titleInput.trim()) {
+      showError('Error', 'Please enter a title for your vision.');
+      return;
+    }
+
+    try {
+      // Check if we're editing an existing item
+      const existingItem = items.find(item => item.imageUri === pendingImageUri && item.id);
+      if (existingItem) {
+        // Update existing item
+        const updatedItems = items.map((i) =>
+          i.id === existingItem.id ? { ...i, title: titleInput.trim() } : i
+        );
+        await saveItems(updatedItems);
+        showSuccess('Updated!', 'Vision title updated.');
+      } else {
+        // Create new item
+        const newItem: VisionBoardItem = {
+          id: Date.now().toString(),
+          imageUri: pendingImageUri,
+          title: titleInput.trim(),
+          createdAt: new Date().toISOString(),
+        };
+
+        const updatedItems = [...items, newItem];
+        await saveItems(updatedItems);
+        await addGlowPoints(15, 'Added vision to vision board');
+        showSuccess('Vision Added!', 'Your vision has been added to the board.');
+        showPoints(15, 'Added vision to vision board');
+      }
+      
+      setShowTitleModal(false);
+      setPendingImageUri(null);
+      setTitleInput('');
+    } catch (error) {
+      console.error('Error saving vision:', error);
+      showError('Error', 'Failed to save vision. Please try again.');
+    }
+  };
+
+  const addSampleImage = () => {
+    const randomImage = PLACEHOLDER_IMAGES[Math.floor(Math.random() * PLACEHOLDER_IMAGES.length)];
+    setPendingImageUri(randomImage);
+    setTitleInput('');
+    setShowTitleModal(true);
   };
 
   const deleteItem = (id: string) => {
@@ -139,20 +241,9 @@ export default function VisionBoardScreen({ navigation }: any) {
   };
 
   const editItem = (item: VisionBoardItem) => {
-    Alert.prompt(
-      'Edit Title',
-      'Update the title for this vision',
-      async (newTitle) => {
-        if (newTitle && newTitle.trim()) {
-          const updatedItems = items.map((i) =>
-            i.id === item.id ? { ...i, title: newTitle.trim() } : i
-          );
-          await saveItems(updatedItems);
-        }
-      },
-      'plain-text',
-      item.title
-    );
+    setPendingImageUri(item.imageUri);
+    setTitleInput(item.title);
+    setShowTitleModal(true);
   };
 
   if (loading) {
@@ -441,5 +532,82 @@ const styles = StyleSheet.create({
     ...Theme.typography.caption,
     color: Theme.colors.textSecondary,
     flex: 1,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'flex-end',
+  },
+  modalContainer: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: Theme.colors.surface,
+    borderTopLeftRadius: Theme.radius.xl,
+    borderTopRightRadius: Theme.radius.xl,
+    padding: Theme.spacing.xl,
+    paddingBottom: Theme.spacing.xxxl,
+    ...Theme.shadow.large,
+  },
+  modalTitle: {
+    ...Theme.typography.h2,
+    color: Theme.colors.textPrimary,
+    marginBottom: Theme.spacing.xs,
+  },
+  modalSubtitle: {
+    ...Theme.typography.body,
+    color: Theme.colors.textSecondary,
+    marginBottom: Theme.spacing.lg,
+  },
+  modalPreview: {
+    width: '100%',
+    height: 200,
+    borderRadius: Theme.radius.md,
+    marginBottom: Theme.spacing.lg,
+    backgroundColor: Theme.colors.surfaceSecondary,
+  },
+  modalInput: {
+    ...Theme.typography.body,
+    color: Theme.colors.textPrimary,
+    backgroundColor: Theme.colors.bg,
+    borderRadius: Theme.radius.md,
+    padding: Theme.spacing.md,
+    marginBottom: Theme.spacing.lg,
+    borderWidth: 1,
+    borderColor: Theme.colors.border,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: Theme.spacing.md,
+  },
+  modalCancelButton: {
+    flex: 1,
+    paddingVertical: Theme.spacing.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: Theme.radius.md,
+    backgroundColor: Theme.colors.surfaceSecondary,
+  },
+  modalCancelText: {
+    ...Theme.typography.bodyBold,
+    color: Theme.colors.textSecondary,
+  },
+  modalSaveButton: {
+    flex: 1,
+    borderRadius: Theme.radius.md,
+    overflow: 'hidden',
+  },
+  modalSaveButtonDisabled: {
+    opacity: 0.5,
+  },
+  modalSaveGradient: {
+    paddingVertical: Theme.spacing.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalSaveText: {
+    ...Theme.typography.bodyBold,
+    color: Theme.colors.textInverse,
   },
 });

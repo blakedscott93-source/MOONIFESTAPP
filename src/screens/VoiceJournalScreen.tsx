@@ -122,6 +122,7 @@ export default function VoiceJournalScreen({ navigation }: any) {
   const [showTextInput, setShowTextInput] = useState(false);
   const [recordingUri, setRecordingUri] = useState<string | null>(null);
   const [recordingDuration, setRecordingDuration] = useState<number>(0);
+  const [isTranscribing, setIsTranscribing] = useState(false);
   const [userGoal, setUserGoal] = useState<string>('');
   const [activePrompts, setActivePrompts] = useState<string[]>(MANIFESTATION_PROMPTS);
 
@@ -336,73 +337,124 @@ export default function VoiceJournalScreen({ navigation }: any) {
   };
 
   // Handle press in (start recording)
-  const handlePressIn = async () => {
-    try {
-      // Request permission first
-      const hasPermission = await requestMicrophonePermission();
-      if (!hasPermission) {
-        Alert.alert(
-          'Microphone Permission',
-          'Moonifest needs microphone access to record voice journals. Please enable it in your device settings.',
-          [{ text: 'OK' }]
-        );
-        return;
+  const handlePressIn = () => {
+    console.log('🎤 Press in detected - starting animations immediately');
+    
+    // Start animations IMMEDIATELY (before async permission check)
+    setIsPressing(true);
+    setIsRecording(true);
+
+    // Scale up button with spring
+    Animated.spring(micButtonPressScale, {
+      toValue: 1.15,
+      tension: 100,
+      friction: 7,
+      useNativeDriver: true,
+    }).start();
+
+    // Soft glow animation
+    Animated.timing(glowRingOpacity, {
+      toValue: 0.25,
+      duration: 400,
+      useNativeDriver: true,
+    }).start();
+
+    // Gentle pulse (less intense)
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, {
+          toValue: 1.04,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseAnim, {
+          toValue: 1,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+
+    startWaveformAnimation();
+
+    // Now do async permission check and recording start
+    (async () => {
+      try {
+        // Request permission first
+        const hasPermission = await requestMicrophonePermission();
+        if (!hasPermission) {
+          console.warn('⚠️ Microphone permission denied');
+          Alert.alert(
+            'Microphone Permission',
+            Platform.OS === 'web' 
+              ? 'Please allow microphone access in your browser settings and refresh the page.'
+              : 'Moonifest needs microphone access to record voice journals. Please enable it in your device settings.',
+            [{ 
+              text: 'OK',
+              onPress: () => {
+                // Reset state if permission denied
+                setIsPressing(false);
+                setIsRecording(false);
+                Animated.spring(micButtonPressScale, {
+                  toValue: 1,
+                  tension: 100,
+                  friction: 7,
+                  useNativeDriver: true,
+                }).start();
+                pulseAnim.stopAnimation();
+                stopWaveformAnimation();
+                startIdleAnimations();
+              }
+            }]
+          );
+          return;
+        }
+
+        // Start actual voice recording
+        await startRecording();
+        console.log('🎤 Recording started successfully');
+
+        // Update recording duration every 100ms
+        const durationInterval = setInterval(async () => {
+          try {
+            const duration = await getRecordingDuration();
+            setRecordingDuration(duration);
+          } catch (durationError) {
+            console.warn('Error getting recording duration:', durationError);
+          }
+        }, 100);
+
+        // Store interval ID to clear it later
+        (handlePressIn as any).durationInterval = durationInterval;
+      } catch (error) {
+        console.error('❌ Failed to start recording:', error);
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        
+        // Reset state on error
+        setIsPressing(false);
+        setIsRecording(false);
+        
+        // Reset animations
+        Animated.spring(micButtonPressScale, {
+          toValue: 1,
+          tension: 100,
+          friction: 7,
+          useNativeDriver: true,
+        }).start();
+        
+        pulseAnim.stopAnimation();
+        stopWaveformAnimation();
+        startIdleAnimations();
+        
+        // Show user-friendly error message
+        const errorAlert = Platform.OS === 'web'
+          ? 'Voice recording on web requires HTTPS or localhost. Please:\n\n1. Use Chrome or Edge browser\n2. Allow microphone permissions\n3. Or test on iOS/Android for full functionality'
+          : `Failed to start recording: ${errorMessage}\n\nPlease check:\n• Microphone permissions\n• Microphone is not being used by another app\n• Try restarting the app`;
+        
+        Alert.alert('Recording Error', errorAlert, [{ text: 'OK' }]);
+        showError('Recording Error', 'Failed to start recording. Check console for details.');
       }
-
-      setIsPressing(true);
-      setIsRecording(true);
-
-      // Scale up button with spring
-      Animated.spring(micButtonPressScale, {
-        toValue: 1.15,
-        tension: 100,
-        friction: 7,
-        useNativeDriver: true,
-      }).start();
-
-      // Soft glow animation
-      Animated.timing(glowRingOpacity, {
-        toValue: 0.25,
-        duration: 400,
-        useNativeDriver: true,
-      }).start();
-
-      // Gentle pulse (less intense)
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseAnim, {
-            toValue: 1.04,
-            duration: 800,
-            useNativeDriver: true,
-          }),
-          Animated.timing(pulseAnim, {
-            toValue: 1,
-            duration: 800,
-            useNativeDriver: true,
-          }),
-        ])
-      ).start();
-
-      startWaveformAnimation();
-
-      // Start actual voice recording
-      await startRecording();
-      console.log('🎤 Started recording...');
-
-      // Update recording duration every 100ms
-      const durationInterval = setInterval(async () => {
-        const duration = await getRecordingDuration();
-        setRecordingDuration(duration);
-      }, 100);
-
-      // Store interval ID to clear it later
-      (handlePressIn as any).durationInterval = durationInterval;
-    } catch (error) {
-      console.error('Failed to start recording:', error);
-      showError('Recording Error', 'Failed to start recording. Please try again.');
-      setIsPressing(false);
-      setIsRecording(false);
-    }
+    })();
   };
 
   // Handle press out (stop recording)
@@ -444,77 +496,87 @@ export default function VoiceJournalScreen({ navigation }: any) {
         setRecordingUri(uri);
         const duration = formatDuration(recordingDuration);
 
-        // Show transcribing alert
-        Alert.alert('✨ Transcribing...', 'Converting your voice to text...');
+        // Start transcribing
+        setIsTranscribing(true);
+        showInfo('Transcribing', 'Converting your voice to text...');
 
-        // Transcribe audio to text
-        const transcriptionResult = await transcribeAudio(uri, {
-          language: 'en-US',
-          hints: ['gratitude', 'manifestation', 'abundance', 'grateful'],
-        });
+        try {
+          // Transcribe audio to text
+          const transcriptionResult = await transcribeAudio(uri, {
+            language: 'en-US',
+            hints: ['gratitude', 'manifestation', 'abundance', 'grateful'],
+          });
+          
+          setIsTranscribing(false);
 
-        if (transcriptionResult.error) {
-          // Transcription failed - offer to save voice-only
-          Alert.alert(
-            'Transcription Error',
-            `Could not transcribe audio: ${transcriptionResult.error}\n\nWould you like to save as voice-only entry?`,
-            [
-              {
-                text: 'Save Voice Entry',
-                onPress: async () => {
-                  const voiceOnlyText = `🎤 Voice journal entry (${duration})`;
-                  await saveEntry(voiceOnlyText);
-                  setRecordingUri(null);
-                  setRecordingDuration(0);
+          if (transcriptionResult.error) {
+            // Transcription failed - offer to save voice-only
+            showError('Transcription Error', `Could not transcribe audio: ${transcriptionResult.error}`);
+            Alert.alert(
+              'Transcription Error',
+              `Could not transcribe audio: ${transcriptionResult.error}\n\nWould you like to save as voice-only entry?`,
+              [
+                {
+                  text: 'Save Voice Entry',
+                  onPress: async () => {
+                    const voiceOnlyText = `🎤 Voice journal entry (${duration})`;
+                    await saveEntry(voiceOnlyText);
+                    setRecordingUri(null);
+                    setRecordingDuration(0);
+                  },
                 },
-              },
-              {
-                text: 'Re-record',
-                onPress: () => {
-                  setRecordingUri(null);
-                  setRecordingDuration(0);
+                {
+                  text: 'Re-record',
+                  onPress: () => {
+                    setRecordingUri(null);
+                    setRecordingDuration(0);
+                  },
+                  style: 'cancel',
                 },
-                style: 'cancel',
-              },
-            ]
-          );
-        } else {
-          // Transcription successful - show preview
-          const transcribedText = transcriptionResult.text;
-          const confidence = transcriptionResult.confidence ? ` (${Math.round(transcriptionResult.confidence * 100)}% confidence)` : '';
+              ]
+            );
+          } else {
+            // Transcription successful - show preview
+            const transcribedText = transcriptionResult.text;
+            const confidence = transcriptionResult.confidence ? ` (${Math.round(transcriptionResult.confidence * 100)}% confidence)` : '';
 
-          Alert.alert(
-            '✅ Transcription Complete!',
-            `"${transcribedText}"\n\n${duration} recording${confidence}`,
-            [
-              {
-                text: 'Save',
-                onPress: async () => {
-                  await saveEntry(transcribedText);
-                  setRecordingUri(null);
-                  setRecordingDuration(0);
+            Alert.alert(
+              '✅ Transcription Complete!',
+              `"${transcribedText}"\n\n${duration} recording${confidence}`,
+              [
+                {
+                  text: 'Save',
+                  onPress: async () => {
+                    await saveEntry(transcribedText);
+                    setRecordingUri(null);
+                    setRecordingDuration(0);
+                  },
                 },
-              },
-              {
-                text: 'Edit',
-                onPress: () => {
-                  // Pre-fill text input with transcribed text
-                  setTextEntry(transcribedText);
-                  setShowTextInput(true);
-                  setRecordingUri(null);
-                  setRecordingDuration(0);
+                {
+                  text: 'Edit',
+                  onPress: () => {
+                    // Pre-fill text input with transcribed text
+                    setTextEntry(transcribedText);
+                    setShowTextInput(true);
+                    setRecordingUri(null);
+                    setRecordingDuration(0);
+                  },
                 },
-              },
-              {
-                text: 'Re-record',
-                onPress: () => {
-                  setRecordingUri(null);
-                  setRecordingDuration(0);
+                {
+                  text: 'Re-record',
+                  onPress: () => {
+                    setRecordingUri(null);
+                    setRecordingDuration(0);
+                  },
+                  style: 'cancel',
                 },
-                style: 'cancel',
-              },
-            ]
-          );
+              ]
+            );
+          }
+        } catch (error) {
+          setIsTranscribing(false);
+          console.error('Error during transcription:', error);
+          showError('Error', 'Failed to transcribe audio. Please try again.');
         }
       } else {
         // Recording was too short or failed
@@ -805,12 +867,16 @@ export default function VoiceJournalScreen({ navigation }: any) {
               <Pressable
                 onPressIn={handlePressIn}
                 onPressOut={handlePressOut}
-                disabled={isSaving}
-                style={styles.micButtonPressable}
+                disabled={isSaving || isTranscribing}
+                style={[
+                  styles.micButtonPressable,
+                  (isSaving || isTranscribing) && styles.micButtonDisabled,
+                ]}
                 accessible={true}
                 accessibilityLabel={isPressing ? "Recording. Release to save" : "Hold to record"}
                 accessibilityRole="button"
-                accessibilityState={{ disabled: isSaving }}
+                accessibilityState={{ disabled: isSaving || isTranscribing }}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               >
                 <Animated.View
                   style={[
@@ -1169,6 +1235,9 @@ const styles = StyleSheet.create({
     height: 120,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  micButtonDisabled: {
+    opacity: 0.5,
   },
   micButton: {
     width: 120,

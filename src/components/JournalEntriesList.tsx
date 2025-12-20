@@ -15,7 +15,7 @@ interface JournalEntriesListProps {
   searchText?: string;
 }
 
-export const JournalEntriesList: React.FC<JournalEntriesListProps> = ({
+export const JournalEntriesList: React.FC<JournalEntriesListProps> = React.memo(({
   entries,
   onEntryPress,
   searchText = '',
@@ -81,7 +81,7 @@ export const JournalEntriesList: React.FC<JournalEntriesListProps> = ({
       ))}
     </View>
   );
-};
+});
 
 const styles = StyleSheet.create({
   container: {

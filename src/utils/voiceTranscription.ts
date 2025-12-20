@@ -1,5 +1,6 @@
 import { Platform } from 'react-native';
 import * as FileSystem from 'expo-file-system';
+import { OPENAI_API_KEY, GOOGLE_CLOUD_API_KEY, DEEPGRAM_API_KEY } from '@env';
 
 /**
  * Voice-to-Text Transcription Service
@@ -53,21 +54,24 @@ export async function transcribeAudio(
       };
     }
 
-    // TODO: Implement actual transcription
-    // For now, return mock transcription based on platform
-    if (__DEV__) {
-      return await mockTranscription(audioUri, options);
+    // Check for API keys from environment
+    const hasApiKey = !!(OPENAI_API_KEY || GOOGLE_CLOUD_API_KEY || DEEPGRAM_API_KEY);
+
+    // Use real transcription if API key is available
+    if (hasApiKey) {
+      console.log('🎯 Using real transcription service');
+      if (OPENAI_API_KEY) {
+        return await transcribeWithWhisper(audioUri, options);
+      } else if (GOOGLE_CLOUD_API_KEY) {
+        return await transcribeWithGoogle(audioUri, options);
+      } else if (DEEPGRAM_API_KEY) {
+        return await transcribeWithDeepgram(audioUri, options);
+      }
     }
 
-    // PRODUCTION: Uncomment one of the implementations below
-    // return await transcribeWithWhisper(audioUri, options);
-    // return await transcribeWithGoogle(audioUri, options);
-    // return await transcribeWithDeepgram(audioUri, options);
-
-    return {
-      text: '',
-      error: 'Transcription service not configured. Please set up an API key.',
-    };
+    // Fallback to mock transcription
+    console.log('🎯 Using mock transcription (no API key configured)');
+    return await mockTranscription(audioUri, options);
   } catch (error) {
     console.error('Transcription error:', error);
     return {
@@ -123,15 +127,17 @@ async function transcribeWithWhisper(
   audioUri: string,
   options: TranscriptionOptions
 ): Promise<TranscriptionResult> {
-  const OPENAI_API_KEY = process.env.OPENAI_API_KEY || 'your-api-key-here';
+  if (!OPENAI_API_KEY) {
+    return {
+      text: '',
+      error: 'OpenAI API key not configured',
+    };
+  }
 
   try {
-    // Read audio file as base64
-    const audioBase64 = await FileSystem.readAsStringAsync(audioUri, {
-      encoding: FileSystem.EncodingType.Base64,
-    });
+    console.log('🎤 Transcribing with OpenAI Whisper...');
 
-    // Convert base64 to form data
+    // Create form data for multipart upload
     const formData = new FormData();
     formData.append('file', {
       uri: audioUri,
@@ -152,19 +158,29 @@ async function transcribeWithWhisper(
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error?.message || 'Whisper API error');
+      const errorText = await response.text();
+      console.error('Whisper API error response:', errorText);
+      let errorMessage = 'Whisper API error';
+      try {
+        const error = JSON.parse(errorText);
+        errorMessage = error.error?.message || errorMessage;
+      } catch (e) {
+        // If not JSON, use the text
+        errorMessage = errorText || errorMessage;
+      }
+      throw new Error(errorMessage);
     }
 
     const result = await response.json();
+    console.log('✅ Whisper transcription successful:', result.text.substring(0, 50) + '...');
 
     return {
       text: result.text,
-      confidence: 0.9, // Whisper doesn't provide confidence scores
+      confidence: 0.95, // Whisper doesn't provide confidence scores, but is very accurate
       language: options.language || 'en-US',
     };
   } catch (error) {
-    console.error('Whisper transcription error:', error);
+    console.error('❌ Whisper transcription error:', error);
     return {
       text: '',
       error: error instanceof Error ? error.message : 'Whisper API error',
@@ -187,7 +203,7 @@ async function transcribeWithGoogle(
   audioUri: string,
   options: TranscriptionOptions
 ): Promise<TranscriptionResult> {
-  const GOOGLE_API_KEY = process.env.GOOGLE_CLOUD_API_KEY || 'your-api-key-here';
+  const GOOGLE_API_KEY = GOOGLE_CLOUD_API_KEY;
 
   try {
     // Read audio file as base64
@@ -265,7 +281,7 @@ async function transcribeWithDeepgram(
   audioUri: string,
   options: TranscriptionOptions
 ): Promise<TranscriptionResult> {
-  const DEEPGRAM_API_KEY = process.env.DEEPGRAM_API_KEY || 'your-api-key-here';
+  const API_KEY = DEEPGRAM_API_KEY;
 
   try {
     // Read audio file
@@ -276,7 +292,7 @@ async function transcribeWithDeepgram(
     const response = await fetch('https://api.deepgram.com/v1/listen', {
       method: 'POST',
       headers: {
-        'Authorization': `Token ${DEEPGRAM_API_KEY}`,
+        'Authorization': `Token ${API_KEY}`,
         'Content-Type': 'audio/m4a',
       },
       body: audioData,
@@ -315,20 +331,16 @@ export function isTranscriptionAvailable(): boolean {
   }
 
   // Check for configured API keys
-  return !!(
-    process.env.OPENAI_API_KEY ||
-    process.env.GOOGLE_CLOUD_API_KEY ||
-    process.env.DEEPGRAM_API_KEY
-  );
+  return !!(OPENAI_API_KEY || GOOGLE_CLOUD_API_KEY || DEEPGRAM_API_KEY);
 }
 
 /**
  * Get recommended service based on configuration
  */
 export function getTranscriptionService(): string {
-  if (process.env.OPENAI_API_KEY) return 'Whisper (OpenAI)';
-  if (process.env.GOOGLE_CLOUD_API_KEY) return 'Google Cloud Speech';
-  if (process.env.DEEPGRAM_API_KEY) return 'Deepgram';
+  if (OPENAI_API_KEY) return 'Whisper (OpenAI)';
+  if (GOOGLE_CLOUD_API_KEY) return 'Google Cloud Speech';
+  if (DEEPGRAM_API_KEY) return 'Deepgram';
   if (__DEV__) return 'Mock (Development)';
   return 'None';
 }

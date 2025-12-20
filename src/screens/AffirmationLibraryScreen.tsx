@@ -249,7 +249,7 @@ export default function AffirmationLibraryScreen({ navigation }: any) {
                   {
                     text: 'View',
                     onPress: () => {
-                      // Navigate to saved affirmations view (to be implemented)
+                      navigation.navigate('SavedAffirmationsScreen');
                     },
                   },
                   { text: 'Cancel', style: 'cancel' },

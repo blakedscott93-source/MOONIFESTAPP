@@ -34,6 +34,7 @@ interface UnlockedAchievement extends Achievement {
 
 export default function AchievementsScreen({ navigation }: any) {
   const { appState, glowPoints, getTodayCheckInCount } = useApp();
+  // Note: appState is needed for rating prompts
   const { showSuccess, showInfo, showAchievement } = useToast();
   const [unlockedAchievements, setUnlockedAchievements] = useState<UnlockedAchievement[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<Achievement['category'] | 'all'>('all');
@@ -85,9 +86,38 @@ export default function AchievementsScreen({ navigation }: any) {
   const calculateLongestStreak = (): number => {
     if (completedDates.length === 0) return appState.currentStreak;
 
-    // For now, use current streak as longest
-    // TODO: Calculate from historical data
-    return Math.max(appState.currentStreak, appState.totalDays);
+    // Sort dates chronologically
+    const sortedDates = [...completedDates].sort((a, b) => 
+      new Date(a).getTime() - new Date(b).getTime()
+    );
+
+    if (sortedDates.length === 0) return 0;
+
+    let longestStreak = 1;
+    let currentStreak = 1;
+
+    // Calculate consecutive days
+    for (let i = 1; i < sortedDates.length; i++) {
+      const prevDate = new Date(sortedDates[i - 1]);
+      const currDate = new Date(sortedDates[i]);
+      
+      // Calculate days between dates
+      const daysDiff = Math.floor(
+        (currDate.getTime() - prevDate.getTime()) / (1000 * 60 * 60 * 24)
+      );
+
+      if (daysDiff === 1) {
+        // Consecutive day
+        currentStreak++;
+        longestStreak = Math.max(longestStreak, currentStreak);
+      } else {
+        // Streak broken
+        currentStreak = 1;
+      }
+    }
+
+    // Return the maximum of calculated longest streak and current streak
+    return Math.max(longestStreak, appState.currentStreak);
   };
 
   // Share handlers
@@ -148,6 +178,18 @@ export default function AchievementsScreen({ navigation }: any) {
       
       // Clear newly unlocked state after animation
       setTimeout(() => setNewlyUnlockedId(null), 3000);
+
+      // Prompt for rating after achievement unlock (first achievement only)
+      if (unlockedAchievements.length === 0) {
+        setTimeout(async () => {
+          const { promptForRating } = await import('../utils/appRating');
+          await promptForRating({
+            streak: appState.currentStreak,
+            totalDays: appState.totalDays,
+            achievementUnlocked: true,
+          });
+        }, 2000);
+      }
 
       console.log(`🏆 Achievement Unlocked: ${achievement.title} (+${achievement.glowReward} Glow)`);
     } catch (error) {

@@ -19,8 +19,9 @@ interface ListRowProps {
  * Unified ListRow component
  * Used for rows like "Guided Meditation", task lists, etc.
  * Consistent height, padding, and right chevron style
+ * Memoized to prevent unnecessary re-renders
  */
-export const ListRow: React.FC<ListRowProps> = ({
+export const ListRow: React.FC<ListRowProps> = React.memo(({
   title,
   subtitle,
   icon,
@@ -87,7 +88,7 @@ export const ListRow: React.FC<ListRowProps> = ({
   }
 
   return <View style={styles.row}>{content}</View>;
-};
+});
 
 const styles = StyleSheet.create({
   row: {

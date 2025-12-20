@@ -1,8 +1,10 @@
 import { MediaCardData } from '../components/MediaCard';
+import { GoalCategory } from '../types/goals';
 
 export interface MeditationSession extends MediaCardData {
   type: 'morning' | 'midday' | 'sleep';
   duration: number; // in seconds
+  goalCategories?: GoalCategory[]; // Which goals this meditation supports
 }
 
 export const MEDITATION_SESSIONS: MeditationSession[] = [
@@ -17,6 +19,7 @@ export const MEDITATION_SESSIONS: MeditationSession[] = [
     icon: 'sunny',
     locked: false,
     playButton: true,
+    goalCategories: ['growth', 'happiness', 'career'],
   },
   {
     id: 'morning-2',
@@ -28,6 +31,7 @@ export const MEDITATION_SESSIONS: MeditationSession[] = [
     icon: 'sunny-outline',
     locked: false,
     playButton: true,
+    goalCategories: ['health', 'happiness', 'career'],
   },
   {
     id: 'morning-3',
@@ -39,6 +43,7 @@ export const MEDITATION_SESSIONS: MeditationSession[] = [
     icon: 'bulb',
     locked: true,
     playButton: true,
+    goalCategories: ['career', 'growth', 'creativity'],
   },
 
   // Midday Meditations
@@ -52,6 +57,7 @@ export const MEDITATION_SESSIONS: MeditationSession[] = [
     icon: 'partly-sunny',
     locked: false,
     playButton: true,
+    goalCategories: ['happiness', 'health', 'career'],
   },
   {
     id: 'midday-2',
@@ -63,6 +69,7 @@ export const MEDITATION_SESSIONS: MeditationSession[] = [
     icon: 'cloud',
     locked: false,
     playButton: true,
+    goalCategories: ['happiness', 'health', 'love'],
   },
   {
     id: 'midday-3',
@@ -74,6 +81,7 @@ export const MEDITATION_SESSIONS: MeditationSession[] = [
     icon: 'rocket',
     locked: true,
     playButton: true,
+    goalCategories: ['career', 'wealth', 'creativity'],
   },
 
   // Sleep Meditations
@@ -87,6 +95,7 @@ export const MEDITATION_SESSIONS: MeditationSession[] = [
     icon: 'moon',
     locked: false,
     playButton: true,
+    goalCategories: ['health', 'happiness', 'growth'],
   },
   {
     id: 'sleep-2',
@@ -98,6 +107,7 @@ export const MEDITATION_SESSIONS: MeditationSession[] = [
     icon: 'moon-outline',
     locked: false,
     playButton: true,
+    goalCategories: ['happiness', 'health', 'love'],
   },
   {
     id: 'sleep-3',
@@ -109,12 +119,44 @@ export const MEDITATION_SESSIONS: MeditationSession[] = [
     icon: 'star',
     locked: true,
     playButton: true,
+    goalCategories: ['creativity', 'growth', 'freedom'],
   },
 ];
 
 export const getMeditationsByType = (type: 'morning' | 'midday' | 'sleep'): MeditationSession[] => {
   return MEDITATION_SESSIONS.filter(session => session.type === type);
 };
+
+/**
+ * Filter meditations by user goals
+ */
+export const getMeditationsByGoals = (goalCategories: GoalCategory[]): MeditationSession[] => {
+  if (goalCategories.length === 0) return MEDITATION_SESSIONS;
+
+  return MEDITATION_SESSIONS.filter(session => {
+    if (!session.goalCategories || session.goalCategories.length === 0) return true;
+    return session.goalCategories.some(goal => goalCategories.includes(goal));
+  });
+};
+
+/**
+ * Prioritize meditations based on user goals (most relevant first)
+ */
+export const prioritizeMeditationsByGoals = (
+  meditations: MeditationSession[],
+  goalCategories: GoalCategory[]
+): MeditationSession[] => {
+  if (goalCategories.length === 0) return meditations;
+
+  return [...meditations].sort((a, b) => {
+    const aMatches = a.goalCategories?.filter(goal => goalCategories.includes(goal)).length || 0;
+    const bMatches = b.goalCategories?.filter(goal => goalCategories.includes(goal)).length || 0;
+    return bMatches - aMatches;
+  });
+};
+
+
+
 
 
 

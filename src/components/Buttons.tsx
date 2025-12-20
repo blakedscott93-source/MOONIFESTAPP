@@ -80,6 +80,7 @@ export const SecondaryButton: React.FC<SecondaryButtonProps> = ({
       testID={testID}
       accessibilityRole="button"
       accessibilityLabel={title}
+      accessibilityHint={disabled ? 'Button is disabled' : undefined}
     >
       {icon && (
         <Ionicons
@@ -135,9 +136,10 @@ export const Chip: React.FC<ChipProps> = ({
         activeOpacity={0.7}
         testID={testID}
         accessibilityRole="button"
-        accessibilityLabel={label}
-      >
-        {content}
+      accessibilityLabel={label}
+      accessibilityHint={onPress ? undefined : 'This chip is not interactive'}
+    >
+      {content}
       </TouchableOpacity>
     );
   }
@@ -219,6 +221,9 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
 });
+
+
+
 
 
 

@@ -25,7 +25,7 @@ interface AffirmationEntryScreenProps {
 export default function AffirmationEntryScreen({ route, navigation }: AffirmationEntryScreenProps) {
   const { period } = route.params;
   const { getTodayProgress, updateAffirmations } = useApp();
-  const todayProgress = getTodayProgress();
+  const todayProgress = useMemo(() => getTodayProgress(), [getTodayProgress]);
 
   const affirmationCounts = {
     morning: 3,

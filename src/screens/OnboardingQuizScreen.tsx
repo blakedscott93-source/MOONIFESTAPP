@@ -12,6 +12,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Theme } from '../utils/theme';
+import { GoalCategory } from '../types/goals';
+import { getAllGoalCategories } from '../data/goalCategories';
+import { createGoal } from '../utils/goalManager';
 
 const { width } = Dimensions.get('window');
 
@@ -23,6 +26,12 @@ interface OnboardingData {
   biggestObstacle: string;
   manifestationStyle: string;
   name?: string;
+  manifestationGoal1?: GoalCategory;
+  manifestationGoal2?: GoalCategory;
+  manifestationGoal3?: GoalCategory;
+  goal1Description?: string;
+  goal2Description?: string;
+  goal3Description?: string;
 }
 
 const QUESTIONS = [
@@ -116,6 +125,62 @@ const QUESTIONS = [
     placeholder: 'Enter your name or nickname',
     skipButton: 'Skip for now',
   },
+  // Goal Selection Flow
+  {
+    id: 'goalIntro',
+    type: 'intro',
+    title: 'Set Your 3 Main Goals 🎯',
+    subtitle: 'The power of focused intention',
+    description: 'Research shows that focusing on 2-3 specific goals dramatically increases success. Let\'s choose your top 3 manifestation goals.',
+  },
+  {
+    id: 'manifestationGoal1',
+    type: 'goal-choice',
+    title: 'Goal #1: Your PRIMARY Focus',
+    subtitle: 'What matters most to you right now?',
+    priority: 1,
+  },
+  {
+    id: 'goal1Description',
+    type: 'goal-text',
+    title: 'Describe Goal #1',
+    subtitle: 'Be specific - what exactly do you want to manifest?',
+    placeholder: 'E.g., "Earn $100k/year" or "Find my soulmate" or "Lose 20 pounds"',
+    skipButton: 'Skip for now',
+    goalNumber: 1,
+  },
+  {
+    id: 'manifestationGoal2',
+    type: 'goal-choice',
+    title: 'Goal #2: Your SECONDARY Focus',
+    subtitle: 'What else is important to you?',
+    priority: 2,
+  },
+  {
+    id: 'goal2Description',
+    type: 'goal-text',
+    title: 'Describe Goal #2',
+    subtitle: 'Be specific - what exactly do you want to manifest?',
+    placeholder: 'E.g., "Build successful business" or "Improve fitness" or "Find inner peace"',
+    skipButton: 'Skip for now',
+    goalNumber: 2,
+  },
+  {
+    id: 'manifestationGoal3',
+    type: 'goal-choice',
+    title: 'Goal #3: Your THIRD Focus',
+    subtitle: 'One more area to transform',
+    priority: 3,
+  },
+  {
+    id: 'goal3Description',
+    type: 'goal-text',
+    title: 'Describe Goal #3',
+    subtitle: 'Be specific - what exactly do you want to manifest?',
+    placeholder: 'E.g., "Learn new skill" or "Travel the world" or "Start creative project"',
+    skipButton: 'Skip for now',
+    goalNumber: 3,
+  },
 ];
 
 export default function OnboardingQuizScreen({ navigation }: any) {
@@ -168,6 +233,63 @@ export default function OnboardingQuizScreen({ navigation }: any) {
     try {
       await AsyncStorage.setItem('@onboarding_completed', 'true');
       await AsyncStorage.setItem('@onboarding_data', JSON.stringify(answers));
+
+      // Save user's 3 manifestation goals
+      const goalPromises = [];
+
+      if (answers.manifestationGoal1) {
+        const goalCategory = getAllGoalCategories().find(
+          (cat) => cat.id === answers.manifestationGoal1
+        );
+        if (goalCategory) {
+          goalPromises.push(
+            createGoal(
+              answers.manifestationGoal1,
+              goalCategory.title,
+              answers.goal1Description || goalCategory.examples[0],
+              1,
+              answers.goal1Description
+            )
+          );
+        }
+      }
+
+      if (answers.manifestationGoal2) {
+        const goalCategory = getAllGoalCategories().find(
+          (cat) => cat.id === answers.manifestationGoal2
+        );
+        if (goalCategory) {
+          goalPromises.push(
+            createGoal(
+              answers.manifestationGoal2,
+              goalCategory.title,
+              answers.goal2Description || goalCategory.examples[0],
+              2,
+              answers.goal2Description
+            )
+          );
+        }
+      }
+
+      if (answers.manifestationGoal3) {
+        const goalCategory = getAllGoalCategories().find(
+          (cat) => cat.id === answers.manifestationGoal3
+        );
+        if (goalCategory) {
+          goalPromises.push(
+            createGoal(
+              answers.manifestationGoal3,
+              goalCategory.title,
+              answers.goal3Description || goalCategory.examples[0],
+              3,
+              answers.goal3Description
+            )
+          );
+        }
+      }
+
+      await Promise.all(goalPromises);
+      console.log('✅ Saved', goalPromises.length, 'manifestation goals');
 
       // Navigate to main app
       navigation.replace('MainTabs');
@@ -325,6 +447,127 @@ export default function OnboardingQuizScreen({ navigation }: any) {
     </View>
   );
 
+  const renderGoalChoice = () => {
+    const goalCategories = getAllGoalCategories();
+    const selectedGoals = [
+      answers.manifestationGoal1,
+      answers.manifestationGoal2,
+      answers.manifestationGoal3,
+    ].filter(Boolean);
+
+    return (
+      <View style={styles.choiceContainer}>
+        <Text style={styles.questionTitle}>{currentQuestion.title}</Text>
+        <Text style={styles.questionSubtitle}>{currentQuestion.subtitle}</Text>
+
+        <ScrollView showsVerticalScrollIndicator={false} style={styles.optionsScroll}>
+          {goalCategories.map((category) => {
+            const isSelected = answers[currentQuestion.id as keyof OnboardingData] === category.id;
+            const isAlreadySelected = selectedGoals.includes(category.id) && !isSelected;
+
+            return (
+              <TouchableOpacity
+                key={category.id}
+                style={[
+                  styles.optionCard,
+                  isSelected && styles.optionCardSelected,
+                  isAlreadySelected && styles.optionCardDisabled,
+                ]}
+                onPress={() => !isAlreadySelected && handleChoice(category.id)}
+                activeOpacity={isAlreadySelected ? 1 : 0.7}
+                disabled={isAlreadySelected}
+              >
+                <View style={[styles.optionIcon, { backgroundColor: category.color + '20' }]}>
+                  <Text style={styles.optionEmoji}>{category.emoji}</Text>
+                </View>
+                <View style={styles.optionContent}>
+                  <Text style={[styles.optionLabel, isSelected && styles.optionLabelSelected]}>
+                    {category.title}
+                  </Text>
+                  <Text style={styles.optionSubtitle}>{category.description}</Text>
+                </View>
+                {isSelected && (
+                  <Ionicons name="checkmark-circle" size={24} color={category.color} />
+                )}
+                {isAlreadySelected && (
+                  <Text style={styles.alreadySelectedText}>Already selected</Text>
+                )}
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      </View>
+    );
+  };
+
+  const renderGoalText = () => {
+    const goalNumber = (currentQuestion as any).goalNumber;
+    const selectedGoalCategory = answers[`manifestationGoal${goalNumber}` as keyof OnboardingData] as GoalCategory;
+    const goalCategory = selectedGoalCategory
+      ? getAllGoalCategories().find((cat) => cat.id === selectedGoalCategory)
+      : null;
+
+    return (
+      <View style={styles.textContainer}>
+        {goalCategory && (
+          <View style={[styles.selectedGoalBadge, { backgroundColor: goalCategory.color + '20' }]}>
+            <Text style={styles.selectedGoalEmoji}>{goalCategory.emoji}</Text>
+            <Text style={[styles.selectedGoalText, { color: goalCategory.color }]}>
+              {goalCategory.title}
+            </Text>
+          </View>
+        )}
+
+        <Text style={styles.questionTitle}>{currentQuestion.title}</Text>
+        <Text style={styles.questionSubtitle}>{currentQuestion.subtitle}</Text>
+
+        {goalCategory && (
+          <View style={styles.examplesContainer}>
+            <Text style={styles.examplesTitle}>Examples:</Text>
+            {goalCategory.examples.slice(0, 3).map((example, index) => (
+              <TouchableOpacity
+                key={index}
+                style={styles.exampleChip}
+                onPress={() => setTextInput(example)}
+              >
+                <Text style={styles.exampleText}>{example}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+
+        <TextInput
+          style={styles.textInput}
+          placeholder={currentQuestion.placeholder}
+          placeholderTextColor="#999"
+          value={textInput}
+          onChangeText={setTextInput}
+          autoFocus
+          multiline
+        />
+
+        <TouchableOpacity style={styles.primaryButton} onPress={handleTextSubmit} activeOpacity={0.8}>
+          <LinearGradient
+            colors={['#C77DFF', '#9D4EDD']}
+            style={styles.primaryButtonGradient}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+          >
+            <Text style={styles.primaryButtonText}>
+              {currentStep === QUESTIONS.length - 1 ? 'Complete Setup' : 'Continue'}
+            </Text>
+          </LinearGradient>
+        </TouchableOpacity>
+
+        {currentQuestion.skipButton && (
+          <TouchableOpacity onPress={handleSkip} style={styles.skipButton}>
+            <Text style={styles.skipButtonText}>{currentQuestion.skipButton}</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    );
+  };
+
   return (
     <View style={styles.container}>
       {/* Progress Bar */}
@@ -355,6 +598,8 @@ export default function OnboardingQuizScreen({ navigation }: any) {
         {currentQuestion.type === 'intro' && renderIntro()}
         {(currentQuestion.type === 'choice' || currentQuestion.type === 'multi-choice') && renderChoice()}
         {currentQuestion.type === 'text' && renderText()}
+        {currentQuestion.type === 'goal-choice' && renderGoalChoice()}
+        {currentQuestion.type === 'goal-text' && renderGoalText()}
       </ScrollView>
     </View>
   );
@@ -584,5 +829,55 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#999',
     textDecorationLine: 'underline',
+  },
+  // Goal selection styles
+  optionEmoji: {
+    fontSize: 24,
+  },
+  optionCardDisabled: {
+    opacity: 0.4,
+  },
+  alreadySelectedText: {
+    fontSize: 12,
+    color: '#999',
+    fontStyle: 'italic',
+  },
+  selectedGoalBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    marginBottom: 16,
+    gap: 8,
+  },
+  selectedGoalEmoji: {
+    fontSize: 20,
+  },
+  selectedGoalText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  examplesContainer: {
+    marginBottom: 16,
+  },
+  examplesTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#666',
+    marginBottom: 8,
+  },
+  exampleChip: {
+    backgroundColor: '#F0F0F0',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 16,
+    marginBottom: 8,
+    alignSelf: 'flex-start',
+  },
+  exampleText: {
+    fontSize: 14,
+    color: '#666',
   },
 });

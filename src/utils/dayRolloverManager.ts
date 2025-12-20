@@ -5,6 +5,7 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getLocalDayKey, getYesterdayLocalDayKey, DayCompletionStatus, GratitudeCheckIn } from './dayRollover';
+import { MIN_CHECKINS_FOR_COMPLETION } from './constants';
 
 const LAST_SEEN_DAY_KEY = 'lastSeenDayKey';
 const GRATITUDE_CHECKINS_KEY = 'gratitudeCheckIns';
@@ -94,10 +95,10 @@ export async function saveLastSeenDayKey(localDayKey: string): Promise<void> {
 }
 
 /**
- * Check if a day is complete (has 3+ check-ins)
+ * Check if a day is complete (has minimum required check-ins)
  */
 export function isDayComplete(checkInCount: number): boolean {
-  return checkInCount >= 3;
+  return checkInCount >= MIN_CHECKINS_FOR_COMPLETION;
 }
 
 /**
@@ -184,6 +185,7 @@ export async function recordMissedDay(localDayKey: string): Promise<void> {
 
   await saveDayCompletionStatuses(statuses);
 }
+
 
 
 

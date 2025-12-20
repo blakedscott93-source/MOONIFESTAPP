@@ -8,7 +8,7 @@ interface GratitudeCheckInCardProps {
   checkIn: GratitudeCheckIn;
 }
 
-export const GratitudeCheckInCard: React.FC<GratitudeCheckInCardProps> = ({ checkIn }) => {
+export const GratitudeCheckInCard: React.FC<GratitudeCheckInCardProps> = React.memo(({ checkIn }) => {
   const [expanded, setExpanded] = useState(false);
   
   const preview = checkIn.text.split('\n').slice(0, 2).join('\n');
@@ -50,7 +50,7 @@ export const GratitudeCheckInCard: React.FC<GratitudeCheckInCardProps> = ({ chec
       </Text>
     </TouchableOpacity>
   );
-};
+});
 
 const styles = StyleSheet.create({
   card: {
@@ -83,6 +83,9 @@ const styles = StyleSheet.create({
     lineHeight: Theme.typography.body.lineHeight,
   },
 });
+
+
+
 
 
 

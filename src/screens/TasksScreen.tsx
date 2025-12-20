@@ -1,11 +1,11 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { useApp } from '../context/AppContext';
 import { Ionicons } from '@expo/vector-icons';
 
 export default function TasksScreen({ navigation }: any) {
   const { getTodayProgress } = useApp();
-  const todayProgress = getTodayProgress();
+  const todayProgress = useMemo(() => getTodayProgress(), [getTodayProgress]);
 
   const mustDoTasks = todayProgress.tasks.filter((t) => t.isMustDo);
   const completedMustDos = mustDoTasks.filter((t) => t.completed).length;

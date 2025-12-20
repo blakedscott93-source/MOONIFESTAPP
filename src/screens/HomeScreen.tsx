@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -19,10 +19,13 @@ import { MoodCheckIn } from '../components/MoodCheckIn';
 import { MoodType, EnergyLevel, getMoodOption, getEnergyOption } from '../data/moodTracking';
 import { DailySpin, DailySpinButton } from '../components/DailySpin';
 import { getQuoteOfTheDay, Quote } from '../data/quotes';
+import { SkeletonLoader } from '../components/SkeletonLoader';
 import { canSpinToday, DailySpinReward, getNextStreakMilestone, getDaysUntilMilestone } from '../utils/rewards';
 import { mediumHaptic, successHaptic } from '../utils/haptics';
 import { Confetti } from '../components/Confetti';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { REQUIRED_DAILY_AFFIRMATION_SESSIONS, REQUIRED_DAILY_MUST_DO_TASKS } from '../utils/constants';
+import { getGoalCategory } from '../data/goalCategories';
 
 const GOAL_MESSAGES: Record<string, string> = {
   wealth: "Let's manifest abundance",
@@ -34,8 +37,9 @@ const GOAL_MESSAGES: Record<string, string> = {
 };
 
 export default function HomeScreen({ navigation }: any) {
-  const { appState, getTodayProgress, saveMoodEntry, getTodayMood, addGlowPoints } = useApp();
-  const todayProgress = getTodayProgress();
+  const { appState, getTodayProgress, saveMoodEntry, getTodayMood, addGlowPoints, userGoals, goalCategories } = useApp();
+  // Memoize todayProgress to prevent recalculation on every render
+  const todayProgress = useMemo(() => getTodayProgress(), [getTodayProgress]);
   const [showMoodModal, setShowMoodModal] = useState(false);
   const [showSpinModal, setShowSpinModal] = useState(false);
   const [hasSpunToday, setHasSpunToday] = useState(true);
@@ -45,32 +49,14 @@ export default function HomeScreen({ navigation }: any) {
   const [dailyQuote, setDailyQuote] = useState<Quote | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
 
-  useEffect(() => {
-    loadInitialData();
-  }, []);
-
-  const loadInitialData = async () => {
-    await Promise.all([
-      loadTodayMood(),
-      loadOnboardingData(),
-      checkSpinStatus(),
-    ]);
-    setDailyQuote(getQuoteOfTheDay());
-  };
-
-  const onRefresh = useCallback(async () => {
-    setRefreshing(true);
-    await loadInitialData();
-    setRefreshing(false);
-  }, []);
-
-  const loadTodayMood = async () => {
+  const loadTodayMood = useCallback(async () => {
     const mood = await getTodayMood();
     setTodayMoodEntry(mood);
-  };
+  }, [getTodayMood]);
 
-  const loadOnboardingData = async () => {
+  const loadOnboardingData = useCallback(async () => {
     try {
       const data = await AsyncStorage.getItem('@onboarding_data');
       if (data) {
@@ -81,20 +67,44 @@ export default function HomeScreen({ navigation }: any) {
     } catch (error) {
       console.error('Error loading onboarding data:', error);
     }
-  };
+  }, []);
 
-  const checkSpinStatus = async () => {
+  const checkSpinStatus = useCallback(async () => {
     const canSpin = await canSpinToday();
     setHasSpunToday(!canSpin);
-  };
+  }, []);
 
-  const handleMoodSubmit = async (mood: MoodType, energy: EnergyLevel, note?: string) => {
+  const loadInitialData = useCallback(async () => {
+    setIsInitialLoading(true);
+    try {
+      await Promise.all([
+        loadTodayMood(),
+        loadOnboardingData(),
+        checkSpinStatus(),
+      ]);
+      setDailyQuote(getQuoteOfTheDay());
+    } finally {
+      setIsInitialLoading(false);
+    }
+  }, [loadTodayMood, loadOnboardingData, checkSpinStatus]);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await loadInitialData();
+    setRefreshing(false);
+  }, [loadInitialData]);
+
+  useEffect(() => {
+    loadInitialData();
+  }, [loadInitialData]);
+
+  const handleMoodSubmit = useCallback(async (mood: MoodType, energy: EnergyLevel, note?: string) => {
     await saveMoodEntry(mood, energy, note);
     await loadTodayMood();
     successHaptic();
-  };
+  }, [saveMoodEntry]);
 
-  const handleSpinReward = async (reward: DailySpinReward) => {
+  const handleSpinReward = useCallback(async (reward: DailySpinReward) => {
     // Add points based on reward type
     if (reward.type === 'points' && addGlowPoints) {
       await addGlowPoints(reward.value, `Daily spin reward: ${reward.label}`);
@@ -107,12 +117,12 @@ export default function HomeScreen({ navigation }: any) {
     
     setHasSpunToday(true);
     successHaptic();
-  };
+  }, [addGlowPoints]);
 
-  const handleOpenSpin = () => {
+  const handleOpenSpin = useCallback(() => {
     mediumHaptic();
     setShowSpinModal(true);
-  };
+  }, []);
 
   const today = new Date();
   const greeting = () => {
@@ -122,31 +132,70 @@ export default function HomeScreen({ navigation }: any) {
     return 'Good Evening';
   };
 
-  // Get must-do tasks (first 3 tasks)
-  const mustDoTasks = todayProgress.tasks.filter(t => t.isMustDo);
-  const mustDoCompleted = mustDoTasks.filter(t => t.completed).length;
+  // Memoize expensive calculations
+  const mustDoTasks = useMemo(() => 
+    todayProgress.tasks.filter(t => t.isMustDo), 
+    [todayProgress.tasks]
+  );
+  const mustDoCompleted = useMemo(() => 
+    mustDoTasks.filter(t => t.completed).length,
+    [mustDoTasks]
+  );
 
-  // Next milestone info
-  const nextMilestone = getNextStreakMilestone(appState.currentStreak);
-  const daysUntilMilestone = getDaysUntilMilestone(appState.currentStreak);
+  // Next milestone info (memoized)
+  const nextMilestone = useMemo(() => 
+    getNextStreakMilestone(appState.currentStreak),
+    [appState.currentStreak]
+  );
+  const daysUntilMilestone = useMemo(() => 
+    getDaysUntilMilestone(appState.currentStreak),
+    [appState.currentStreak]
+  );
 
-  const dailyPractices = [
+  // Track previous streak to detect milestone changes
+  const previousStreak = useRef(appState.currentStreak);
+
+  // Check for rating prompt on streak milestones
+  useEffect(() => {
+    const checkRatingPrompt = async () => {
+      // Only prompt when streak reaches a milestone (not every time)
+      if (
+        [7, 14, 21, 30, 45].includes(appState.currentStreak) &&
+        previousStreak.current !== appState.currentStreak
+      ) {
+        previousStreak.current = appState.currentStreak;
+        
+        // Delay to avoid interrupting user flow
+        setTimeout(async () => {
+          const { promptForRating } = await import('../utils/appRating');
+          await promptForRating({
+            streak: appState.currentStreak,
+            totalDays: appState.totalDays,
+          });
+        }, 3000);
+      }
+    };
+    checkRatingPrompt();
+  }, [appState.currentStreak, appState.totalDays]);
+
+  // Memoize daily practices array to prevent recreation on every render
+  const dailyPractices = useMemo(() => [
     {
       id: 'must-do-tasks',
-      title: '3 Must-Do Tasks',
-      subtitle: `${mustDoCompleted}/3 completed`,
+      title: `${REQUIRED_DAILY_MUST_DO_TASKS} Must-Do Tasks`,
+      subtitle: `${mustDoCompleted}/${REQUIRED_DAILY_MUST_DO_TASKS} completed`,
       icon: 'star',
       color: Theme.colors.gold,
-      completed: mustDoCompleted === 3,
+      completed: mustDoCompleted === REQUIRED_DAILY_MUST_DO_TASKS,
       action: () => navigation.navigate('45 NOW'),
     },
     {
       id: 'guided-affirmations',
       title: 'Guided Affirmations',
-      subtitle: `${todayProgress.guidedSessions?.length || 0}/3 sessions`,
+      subtitle: `${todayProgress.guidedSessions?.length || 0}/${REQUIRED_DAILY_AFFIRMATION_SESSIONS} sessions`,
       icon: 'sparkles',
       color: Theme.colors.accent,
-      completed: (todayProgress.guidedSessions?.length || 0) >= 3,
+      completed: (todayProgress.guidedSessions?.length || 0) >= REQUIRED_DAILY_AFFIRMATION_SESSIONS,
       action: () => navigation.navigate('Affirmations'),
     },
     {
@@ -167,10 +216,22 @@ export default function HomeScreen({ navigation }: any) {
       completed: todayProgress.meditationCompleted,
       action: () => navigation.navigate('MeditationScreen'),
     },
-  ];
+  ], [
+    mustDoCompleted,
+    todayProgress.guidedSessions?.length,
+    todayProgress.gratitudeEntry,
+    todayProgress.meditationCompleted,
+    navigation,
+  ]);
 
-  const completedCount = dailyPractices.filter(p => p.completed).length;
-  const progressPercentage = (completedCount / dailyPractices.length) * 100;
+  const completedCount = useMemo(() => 
+    dailyPractices.filter(p => p.completed).length,
+    [dailyPractices]
+  );
+  const progressPercentage = useMemo(() => 
+    (completedCount / dailyPractices.length) * 100,
+    [completedCount, dailyPractices.length]
+  );
 
   return (
     <Screen>
@@ -200,6 +261,7 @@ export default function HomeScreen({ navigation }: any) {
             colors={[Theme.colors.accent]}
           />
         }
+        scrollEventThrottle={16}
       >
         {/* Personalized Welcome Message */}
         {(userName || userGoal) && (
@@ -207,6 +269,72 @@ export default function HomeScreen({ navigation }: any) {
             <Text style={styles.welcomeText}>
               {userName ? `Hi ${userName}` : 'Welcome'}{userGoal ? `, ${GOAL_MESSAGES[userGoal]}` : ''}! ✨
             </Text>
+          </UnifiedCard>
+        )}
+
+        {/* User's 3 Main Goals */}
+        {userGoals && userGoals.length > 0 && (
+          <UnifiedCard delay={50} style={styles.goalsCard}>
+            <TouchableOpacity
+              onPress={() => navigation.navigate('SettingsScreen')}
+              activeOpacity={0.8}
+              style={styles.goalsHeader}
+            >
+              <Text style={styles.goalsTitle}>Your Goals</Text>
+              <Ionicons name="chevron-forward" size={20} color="#999" />
+            </TouchableOpacity>
+
+            <View style={styles.goalsList}>
+              {userGoals.slice(0, 3).map((goal, index) => {
+                const goalInfo = getGoalCategory(goal.category);
+                const priorityLabel = index === 0 ? '1st' : index === 1 ? '2nd' : '3rd';
+
+                return (
+                  <TouchableOpacity
+                    key={goal.id}
+                    style={[
+                      styles.goalItem,
+                      { backgroundColor: goalInfo.color + '15', borderLeftColor: goalInfo.color },
+                    ]}
+                    onPress={() => navigation.navigate('SettingsScreen')}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.goalIconContainer}>
+                      <Text style={styles.goalEmoji}>{goalInfo.emoji}</Text>
+                    </View>
+                    <View style={styles.goalContent}>
+                      <View style={styles.goalTitleRow}>
+                        <Text style={styles.goalTitle}>{goalInfo.title}</Text>
+                        <Text style={styles.goalPriority}>#{priorityLabel}</Text>
+                      </View>
+                      {goal.customText && (
+                        <Text style={styles.goalDescription} numberOfLines={1}>
+                          {goal.customText}
+                        </Text>
+                      )}
+                      <View style={styles.goalMetrics}>
+                        <View style={styles.goalProgressContainer}>
+                          <View style={styles.goalProgressBar}>
+                            <View
+                              style={[
+                                styles.goalProgressFill,
+                                { width: `${goal.progress}%`, backgroundColor: goalInfo.color },
+                              ]}
+                            />
+                          </View>
+                          <Text style={styles.goalProgressText}>{goal.progress}%</Text>
+                        </View>
+                        {goal.streak > 0 && (
+                          <View style={styles.goalStreak}>
+                            <Text style={styles.goalStreakText}>{goal.streak}d 🔥</Text>
+                          </View>
+                        )}
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
           </UnifiedCard>
         )}
 
@@ -299,9 +427,15 @@ export default function HomeScreen({ navigation }: any) {
         <UnifiedCard delay={50}>
           <View style={styles.progressHeader}>
             <Text style={styles.sectionTitle}>Today's Progress</Text>
-            <Text style={styles.progressText}>
-              {completedCount}/{dailyPractices.length}
-            </Text>
+            <View style={styles.progressCountContainer}>
+              <Text style={styles.progressText}>
+                {completedCount}
+              </Text>
+              <Text style={styles.progressDivider}>/</Text>
+              <Text style={styles.progressTotal}>
+                {dailyPractices.length}
+              </Text>
+            </View>
           </View>
           <View style={styles.progressBar}>
             <View
@@ -312,7 +446,15 @@ export default function HomeScreen({ navigation }: any) {
 
         {/* Daily Practices */}
         <UnifiedCard delay={100}>
-          <Text style={styles.sectionTitle}>Daily Practices</Text>
+          <View style={styles.dailyPracticesHeader}>
+            <Text style={styles.sectionTitle}>Daily Practices</Text>
+            {completedCount === dailyPractices.length && (
+              <View style={styles.allCompleteBadge}>
+                <Ionicons name="checkmark-circle" size={18} color={Theme.colors.success} />
+                <Text style={styles.allCompleteText}>All done!</Text>
+              </View>
+            )}
+          </View>
           {dailyPractices.map((practice) => (
             <ListRow
               key={practice.id}
@@ -393,6 +535,38 @@ export default function HomeScreen({ navigation }: any) {
                 <Text style={styles.quickActionText}>Affirmation Library</Text>
               </LinearGradient>
             </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.quickActionCard}
+              onPress={() => navigation.navigate('ProgressScreen')}
+              activeOpacity={0.7}
+            >
+              <LinearGradient
+                colors={['#8B7DD8', '#6B5B95']}
+                style={styles.quickActionGradient}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+              >
+                <Ionicons name="analytics" size={32} color={Theme.colors.textInverse} />
+                <Text style={styles.quickActionText}>View Progress</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.quickActionCard}
+              onPress={() => navigation.navigate('ToolsScreen')}
+              activeOpacity={0.7}
+            >
+              <LinearGradient
+                colors={['#FF6B35', '#E55A2B']}
+                style={styles.quickActionGradient}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+              >
+                <Ionicons name="construct" size={32} color={Theme.colors.textInverse} />
+                <Text style={styles.quickActionText}>Tools</Text>
+              </LinearGradient>
+            </TouchableOpacity>
           </View>
         </UnifiedCard>
 
@@ -442,7 +616,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingBottom: Theme.spacing.lg,
+    paddingBottom: 100, // Extra padding for tab bar
+    paddingTop: Theme.spacing.sm,
   },
   welcomeCard: {
     backgroundColor: Theme.colors.accentSoft,
@@ -453,18 +628,117 @@ const styles = StyleSheet.create({
     color: Theme.colors.accent,
     textAlign: 'center',
   },
+  goalsCard: {
+    padding: Theme.spacing.lg,
+  },
+  goalsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: Theme.spacing.md,
+  },
+  goalsTitle: {
+    ...Theme.typography.h3,
+    color: Theme.colors.textPrimary,
+  },
+  goalsList: {
+    gap: Theme.spacing.sm,
+  },
+  goalItem: {
+    flexDirection: 'row',
+    padding: Theme.spacing.md,
+    borderRadius: Theme.radius.md,
+    borderLeftWidth: 4,
+    gap: Theme.spacing.md,
+  },
+  goalIconContainer: {
+    width: 44,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  goalEmoji: {
+    fontSize: 28,
+  },
+  goalContent: {
+    flex: 1,
+    gap: Theme.spacing.xs,
+  },
+  goalTitleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  goalTitle: {
+    ...Theme.typography.body,
+    fontWeight: '600',
+    color: Theme.colors.textPrimary,
+  },
+  goalPriority: {
+    ...Theme.typography.small,
+    color: '#999',
+    fontWeight: '500',
+  },
+  goalDescription: {
+    ...Theme.typography.small,
+    color: Theme.colors.textSecondary,
+    fontStyle: 'italic',
+  },
+  goalMetrics: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Theme.spacing.sm,
+  },
+  goalProgressContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  goalProgressBar: {
+    flex: 1,
+    height: 6,
+    backgroundColor: '#E0E0E0',
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  goalProgressFill: {
+    height: '100%',
+    borderRadius: 3,
+  },
+  goalProgressText: {
+    ...Theme.typography.small,
+    color: Theme.colors.textSecondary,
+    fontWeight: '600',
+    minWidth: 32,
+  },
+  goalStreak: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    backgroundColor: '#FFF3E0',
+    borderRadius: 10,
+  },
+  goalStreakText: {
+    ...Theme.typography.small,
+    fontWeight: '600',
+    color: '#F57C00',
+  },
   streakCard: {
     padding: 0,
-    overflow: 'hidden',
+    overflow: 'visible',
     borderWidth: 0,
   },
   streakGradient: {
     padding: Theme.spacing.xl,
     borderRadius: Theme.radius.lg,
+    minHeight: 120,
+    justifyContent: 'center',
+    overflow: 'visible',
   },
   streakContent: {
     flexDirection: 'row',
     alignItems: 'center',
+    overflow: 'visible',
   },
   streakTouchable: {
     flex: 1,
@@ -505,31 +779,52 @@ const styles = StyleSheet.create({
   },
   spinButtonWrapper: {
     marginLeft: Theme.spacing.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'visible',
   },
   progressHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: Theme.spacing.md,
+    marginBottom: Theme.spacing.lg,
   },
   sectionTitle: {
     ...Theme.typography.h3,
     color: Theme.colors.textPrimary,
   },
+  progressCountContainer: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 4,
+  },
   progressText: {
-    ...Theme.typography.subtitle,
+    ...Theme.typography.h2,
     color: Theme.colors.accent,
+    fontWeight: '700',
+  },
+  progressDivider: {
+    ...Theme.typography.body,
+    color: Theme.colors.textSecondary,
+    fontSize: 16,
+  },
+  progressTotal: {
+    ...Theme.typography.body,
+    color: Theme.colors.textSecondary,
+    fontSize: 16,
   },
   progressBar: {
-    height: 8,
+    height: 10,
     backgroundColor: Theme.colors.accentSoft,
-    borderRadius: Theme.radius.sm,
+    borderRadius: Theme.radius.full,
     overflow: 'hidden',
+    ...Theme.shadow.subtle,
   },
   progressFill: {
     height: '100%',
     backgroundColor: Theme.colors.accent,
-    borderRadius: Theme.radius.sm,
+    borderRadius: Theme.radius.full,
+    ...Theme.shadow.subtle,
   },
   quickActionsGrid: {
     flexDirection: 'row',
@@ -539,21 +834,25 @@ const styles = StyleSheet.create({
   },
   quickActionCard: {
     width: '47%',
-    borderRadius: Theme.radius.md,
+    borderRadius: Theme.radius.lg,
     overflow: 'hidden',
     ...Theme.shadow.medium,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
   },
   quickActionGradient: {
-    padding: Theme.spacing.lg,
+    padding: Theme.spacing.xl,
     alignItems: 'center',
-    gap: Theme.spacing.sm,
-    minHeight: 100,
+    gap: Theme.spacing.md,
+    minHeight: 110,
     justifyContent: 'center',
   },
   quickActionText: {
-    ...Theme.typography.captionBold,
+    ...Theme.typography.bodyBold,
     color: Theme.colors.textInverse,
     textAlign: 'center',
+    fontSize: 13,
+    fontWeight: '700',
   },
   quoteContainer: {
     flexDirection: 'row',
@@ -586,11 +885,12 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   moodIconCircle: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
     alignItems: 'center',
     justifyContent: 'center',
+    ...Theme.shadow.subtle,
   },
   moodEmoji: {
     fontSize: 32,
@@ -606,5 +906,25 @@ const styles = StyleSheet.create({
   moodSubtitle: {
     ...Theme.typography.caption,
     color: Theme.colors.textSecondary,
+  },
+  dailyPracticesHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: Theme.spacing.sm,
+  },
+  allCompleteBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Theme.spacing.xs,
+    backgroundColor: Theme.colors.success + '15',
+    paddingHorizontal: Theme.spacing.md,
+    paddingVertical: Theme.spacing.xs,
+    borderRadius: Theme.radius.full,
+  },
+  allCompleteText: {
+    ...Theme.typography.captionBold,
+    color: Theme.colors.success,
+    fontSize: 12,
   },
 });

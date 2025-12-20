@@ -148,7 +148,9 @@ export async function shareAppInvitation(): Promise<boolean> {
   return shareText({
     title: 'Try Moonifest! ✨',
     message,
-    // TODO: Add app store URL when published
-    // url: 'https://moonifest.app',
+    // App store URLs will be added when published
+    // url: Platform.OS === 'ios' 
+    //   ? 'https://apps.apple.com/app/moonifest'
+    //   : 'https://play.google.com/store/apps/details?id=com.moonifest.app',
   });
 }

@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   TextInput,
   Animated,
+  ActivityIndicator,
 } from 'react-native';
 import { useApp } from '../context/AppContext';
 import { Ionicons } from '@expo/vector-icons';
@@ -45,7 +46,8 @@ export default function GratitudeJournalScreen({ navigation }: any) {
     handleMissedDay,
     resetChallenge,
   } = useApp();
-  const todayProgress = getTodayProgress();
+  // Memoize todayProgress
+  const todayProgress = useMemo(() => getTodayProgress(), [getTodayProgress]);
 
   const todayPrompt = DAILY_PROMPTS[new Date().getDay()];
   const [searchText, setSearchText] = useState('');
@@ -55,11 +57,14 @@ export default function GratitudeJournalScreen({ navigation }: any) {
   const [todayCheckIns, setTodayCheckIns] = useState<GratitudeCheckIn[]>([]);
   const [showIncompleteModal, setShowIncompleteModal] = useState(false);
   const [incompleteDay, setIncompleteDay] = useState<IncompleteDayInfo | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isScrolling, setIsScrolling] = useState(false);
   
   const scrollY = useRef(new Animated.Value(0)).current;
   const fabOpacity = useRef(new Animated.Value(1)).current;
   const streakScale = useRef(new Animated.Value(0.95)).current;
   const scrollViewRef = useRef<any>(null);
+  const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Check for day rollover on mount
   useEffect(() => {
@@ -80,13 +85,20 @@ export default function GratitudeJournalScreen({ navigation }: any) {
   };
 
   const loadTodayData = async () => {
-    const count = await getTodayCheckInCount();
-    const complete = await isTodayGratitudeComplete();
-    const checkIns = await getTodayCheckIns();
-    
-    setCheckInCount(count);
-    setIsTodayComplete(complete);
-    setTodayCheckIns(checkIns);
+    try {
+      setIsLoading(true);
+      const count = await getTodayCheckInCount();
+      const complete = await isTodayGratitudeComplete();
+      const checkIns = await getTodayCheckIns();
+      
+      setCheckInCount(count);
+      setIsTodayComplete(complete);
+      setTodayCheckIns(checkIns);
+    } catch (error) {
+      console.error('Error loading today data:', error);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const entryCount = useMemo(
@@ -101,18 +113,56 @@ export default function GratitudeJournalScreen({ navigation }: any) {
   const hasEntries = entryCount > 0 || todayCheckIns.length > 0;
   const hasTodayEntry = isTodayComplete || checkInCount > 0;
 
-  // Get recent entries for list
+  // Get recent entries for list (with search filtering)
   const recentEntries = useMemo(() => {
     if (!hasEntries) return [];
-    return Object.keys(appState.dailyProgress || {})
-      .filter(date => appState.dailyProgress[date]?.gratitudeEntry?.trim())
-      .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())
-      .slice(0, 10)
+    
+    const todayKey = new Date().toISOString().split('T')[0];
+    let entries: Array<{ date: string; preview: string }> = [];
+    
+    // Get entries from old format (dailyProgress.gratitudeEntry)
+    const oldEntries = Object.keys(appState.dailyProgress || {})
+      .filter(date => {
+        const entry = appState.dailyProgress[date]?.gratitudeEntry;
+        return entry?.trim() && entry !== 'COMPLETE' && date !== todayKey;
+      })
       .map(date => ({
         date,
         preview: appState.dailyProgress[date].gratitudeEntry.split('|||')[0].trim(),
       }));
-  }, [appState.dailyProgress, hasEntries]);
+    
+    entries = [...oldEntries];
+    
+    // Add today's check-ins to entries (prefer check-ins over old format for today)
+    if (todayCheckIns.length > 0) {
+      const todayCheckInPreviews = todayCheckIns.map(checkIn => ({
+        date: todayKey,
+        preview: checkIn.text,
+      }));
+      entries = [...todayCheckInPreviews, ...entries];
+    } else if (appState.dailyProgress[todayKey]?.gratitudeEntry?.trim() && 
+               appState.dailyProgress[todayKey]?.gratitudeEntry !== 'COMPLETE') {
+      // Fallback to old format if no check-ins for today
+      entries.unshift({
+        date: todayKey,
+        preview: appState.dailyProgress[todayKey].gratitudeEntry.split('|||')[0].trim(),
+      });
+    }
+    
+    // Filter by search text if provided
+    if (searchText.trim().length > 0) {
+      const searchLower = searchText.toLowerCase().trim();
+      entries = entries.filter(entry => 
+        entry.preview.toLowerCase().includes(searchLower) ||
+        entry.date.includes(searchLower)
+      );
+    }
+    
+    // Sort by date (most recent first) and limit to 10
+    return entries
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+      .slice(0, 10);
+  }, [appState.dailyProgress, hasEntries, todayCheckIns, searchText]);
 
   // Animate streak ring on mount
   useEffect(() => {
@@ -125,12 +175,28 @@ export default function GratitudeJournalScreen({ navigation }: any) {
   }, []);
 
   // Hide FAB when scrolling down, show when scrolling up
+  // Also track scroll state for FAB icon/text animation
   const handleScroll = Animated.event(
     [{ nativeEvent: { contentOffset: { y: scrollY } } }],
     {
       useNativeDriver: false,
       listener: (event: any) => {
         const offsetY = event.nativeEvent.contentOffset.y;
+        
+        // Track scrolling state
+        setIsScrolling(true);
+        
+        // Clear existing timeout
+        if (scrollTimeoutRef.current) {
+          clearTimeout(scrollTimeoutRef.current);
+        }
+        
+        // Set timeout to detect when scrolling stops (slightly longer for smoother transitions)
+        scrollTimeoutRef.current = setTimeout(() => {
+          setIsScrolling(false);
+        }, 200);
+        
+        // Show/hide FAB based on scroll position
         if (offsetY > 50 && showFAB) {
           setShowFAB(false);
           Animated.timing(fabOpacity, {
@@ -149,6 +215,15 @@ export default function GratitudeJournalScreen({ navigation }: any) {
       },
     }
   );
+  
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // Get days of week for streak display
   const getDaysOfWeek = useMemo(() => {
@@ -257,47 +332,57 @@ export default function GratitudeJournalScreen({ navigation }: any) {
           </View>
         )}
 
-        {/* Streak Tracker */}
-        <UnifiedCard delay={0}>
-          <View style={styles.streakHeader}>
-            <Animated.View style={{ transform: [{ scale: streakScale }] }}>
-              <View style={styles.streakNumberContainer}>
-                <Text style={styles.streakNumber}>{appState.currentStreak}</Text>
-              </View>
-            </Animated.View>
-            <View style={styles.streakInfo}>
-              <Text style={styles.streakLabel}>DAY STREAK</Text>
-              <Text style={styles.streakSubtext}>Keep it going! 🔥</Text>
-            </View>
+        {/* Loading State */}
+        {isLoading && (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={Theme.colors.accent} />
+            <Text style={styles.loadingText}>Loading...</Text>
           </View>
+        )}
 
-          <View style={styles.daysContainer}>
-            {getDaysOfWeek.map((day, index) => (
-              <View key={index} style={styles.dayItem}>
-                <View
-                  style={[
-                    styles.dayCircle,
-                    day.isToday && styles.dayCircleToday,
-                    day.completed && styles.dayCircleCompleted,
-                  ]}
-                >
-                  {day.completed && (
-                    <Ionicons name="checkmark" size={14} color={Theme.colors.textInverse} />
-                  )}
+        {/* Streak Tracker */}
+        {!isLoading && (
+          <UnifiedCard delay={0}>
+            <View style={styles.streakHeader}>
+              <Animated.View style={{ transform: [{ scale: streakScale }] }}>
+                <View style={styles.streakNumberContainer}>
+                  <Text style={styles.streakNumber}>{appState.currentStreak}</Text>
                 </View>
-                <Text
-                  style={[
-                    styles.dayLabel,
-                    day.isToday && styles.dayLabelToday,
-                    day.completed && styles.dayLabelCompleted,
-                  ]}
-                >
-                  {day.label}
-                </Text>
+              </Animated.View>
+              <View style={styles.streakInfo}>
+                <Text style={styles.streakLabel}>DAY STREAK</Text>
+                <Text style={styles.streakSubtext}>Keep it going! 🔥</Text>
               </View>
-            ))}
-          </View>
-        </UnifiedCard>
+            </View>
+
+            <View style={styles.daysContainer}>
+              {getDaysOfWeek.map((day, index) => (
+                <View key={index} style={styles.dayItem}>
+                  <View
+                    style={[
+                      styles.dayCircle,
+                      day.isToday && styles.dayCircleToday,
+                      day.completed && styles.dayCircleCompleted,
+                    ]}
+                  >
+                    {day.completed && (
+                      <Ionicons name="checkmark" size={14} color={Theme.colors.textInverse} />
+                    )}
+                  </View>
+                  <Text
+                    style={[
+                      styles.dayLabel,
+                      day.isToday && styles.dayLabelToday,
+                      day.completed && styles.dayLabelCompleted,
+                    ]}
+                  >
+                    {day.label}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          </UnifiedCard>
+        )}
 
         {/* Daily Prompt Card - Tappable with clear CTA */}
         <UnifiedCard
@@ -394,25 +479,26 @@ export default function GratitudeJournalScreen({ navigation }: any) {
         <View style={{ height: 120 }} />
       </Animated.ScrollView>
 
-              {/* Floating Action Button - Primary CTA */}
-              <JournalFAB
-                onPress={handleWrite}
-                opacity={fabOpacity}
-                translateY={fabTranslateY}
-                visible={showFAB}
-              />
+      {/* Floating Action Button - Primary CTA */}
+      <JournalFAB
+        onPress={handleWrite}
+        opacity={fabOpacity}
+        translateY={fabTranslateY}
+        visible={showFAB}
+        isScrolling={isScrolling}
+      />
 
-              {/* Incomplete Day Modal */}
-              <IncompleteDayModal
-                visible={showIncompleteModal}
-                incompleteDay={incompleteDay}
-                onMarkComplete={handleMarkYesterdayComplete}
-                onRestartChallenge={handleRestartChallenge}
-                onKeepGoing={handleKeepGoing}
-              />
-            </Screen>
-          );
-        }
+      {/* Incomplete Day Modal */}
+      <IncompleteDayModal
+        visible={showIncompleteModal}
+        incompleteDay={incompleteDay}
+        onMarkComplete={handleMarkYesterdayComplete}
+        onRestartChallenge={handleRestartChallenge}
+        onKeepGoing={handleKeepGoing}
+      />
+    </Screen>
+  );
+}
 
 const styles = StyleSheet.create({
   backgroundPattern: {

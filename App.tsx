@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -8,8 +8,19 @@ import { ToastProvider } from './src/context/ToastContext';
 import AppNavigator from './src/navigation/AppNavigator';
 import { getColors } from './src/utils/themeColors';
 import { OfflineIndicator } from './src/components/OfflineIndicator';
+import { ErrorBoundary } from './src/components/ErrorBoundary';
+import { WebPhoneWrapper } from './src/components/WebPhoneWrapper';
+import { trackAppSession } from './src/utils/appRating';
+import { initSentry } from './src/utils/sentry';
+
+// Initialize Sentry error tracking
+initSentry();
 
 function AppContent() {
+  // Track app session for rating prompts
+  useEffect(() => {
+    trackAppSession();
+  }, []);
   const { isDark } = useTheme();
   const colors = getColors(isDark);
 
@@ -37,14 +48,18 @@ function AppContent() {
 
 export default function App() {
   return (
-    <SafeAreaProvider>
-      <ThemeProvider>
-        <ToastProvider>
-          <AppProvider>
-            <AppContent />
-          </AppProvider>
-        </ToastProvider>
-      </ThemeProvider>
-    </SafeAreaProvider>
+    <ErrorBoundary>
+      <SafeAreaProvider>
+        <ThemeProvider>
+          <ToastProvider>
+            <AppProvider>
+              <WebPhoneWrapper>
+                <AppContent />
+              </WebPhoneWrapper>
+            </AppProvider>
+          </ToastProvider>
+        </ThemeProvider>
+      </SafeAreaProvider>
+    </ErrorBoundary>
   );
 }

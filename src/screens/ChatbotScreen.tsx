@@ -159,17 +159,32 @@ export default function ChatbotScreen() {
     setMessages((prev) => [...prev, userMessage]);
     setInputText('');
 
-    // Simple keyword matching for custom input
+    // Enhanced keyword matching for custom input
     setTimeout(() => {
       let responseText = "I appreciate your question! For now, try selecting from the options below, or explore the main topics. More conversational AI coming soon! ✨";
+      let options = CHATBOT_RESPONSES['back to main menu'].options;
 
       const input = inputText.toLowerCase();
-      if (input.includes('369') || input.includes('method')) {
+      
+      // Keyword matching with fallback
+      if (input.includes('369') || input.includes('method') || input.includes('affirm')) {
         responseText = CHATBOT_RESPONSES['how does the 369 method work?'].text;
-      } else if (input.includes('manifest')) {
+        options = CHATBOT_RESPONSES['how does the 369 method work?'].options;
+      } else if (input.includes('manifest') || input.includes('desire') || input.includes('goal')) {
         responseText = CHATBOT_RESPONSES['what is manifestation?'].text;
-      } else if (input.includes('motivat') || input.includes('help')) {
+        options = CHATBOT_RESPONSES['what is manifestation?'].options;
+      } else if (input.includes('motivat') || input.includes('encourage') || input.includes('stuck')) {
         responseText = CHATBOT_RESPONSES['i need motivation'].text;
+        options = CHATBOT_RESPONSES['i need motivation'].options;
+      } else if (input.includes('consist') || input.includes('habit') || input.includes('routine')) {
+        responseText = CHATBOT_RESPONSES['tips for staying consistent'].text;
+        options = CHATBOT_RESPONSES['tips for staying consistent'].options;
+      } else if (input.includes('app') || input.includes('use') || input.includes('how to')) {
+        responseText = CHATBOT_RESPONSES['how do i use this app?'].text;
+        options = CHATBOT_RESPONSES['how do i use this app?'].options;
+      } else if (input.includes('write') || input.includes('example') || input.includes('what should')) {
+        responseText = CHATBOT_RESPONSES['what should i write?'].text;
+        options = CHATBOT_RESPONSES['what should i write?'].options;
       }
 
       const botMessage: Message = {
@@ -177,7 +192,7 @@ export default function ChatbotScreen() {
         text: responseText,
         sender: 'bot',
         timestamp: new Date(),
-        options: CHATBOT_RESPONSES['back to main menu'].options,
+        options: options,
       };
 
       setMessages((prev) => [...prev, botMessage]);

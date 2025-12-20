@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Animated } from 'react-native';
+import { View, Text, StyleSheet, Animated, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Theme } from '../utils/theme';
 import { subscribeToNetworkState, getOfflineQueue } from '../utils/offline';
@@ -10,6 +10,9 @@ export const OfflineIndicator: React.FC = () => {
   const slideAnim = React.useRef(new Animated.Value(-100)).current;
 
   useEffect(() => {
+    // Skip on web - network detection not critical for web
+    if (Platform.OS === 'web') return;
+    
     // Subscribe to network changes
     const unsubscribe = subscribeToNetworkState(async (connected) => {
       setIsOnline(connected);
@@ -45,6 +48,9 @@ export const OfflineIndicator: React.FC = () => {
       unsubscribe();
     };
   }, []);
+
+  // Don't render on web
+  if (Platform.OS === 'web') return null;
 
   const checkQueue = async () => {
     const queue = await getOfflineQueue();

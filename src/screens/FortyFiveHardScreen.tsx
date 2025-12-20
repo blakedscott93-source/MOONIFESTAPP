@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -18,30 +18,54 @@ import { ListRow } from '../components/ListRow';
 import { Theme, TOUCH_TARGET_MIN } from '../utils/theme';
 import { successHaptic, lightHaptic, warningHaptic, celebrationHaptic } from '../utils/haptics';
 import { DayCompleteCelebration } from '../components/DayCompleteCelebration';
+import { 
+  REQUIRED_DAILY_AFFIRMATION_SESSIONS, 
+  REQUIRED_DAILY_MUST_DO_TASKS,
+  CHALLENGE_DURATION_DAYS,
+  POINTS 
+} from '../utils/constants';
 
 export default function FortyFiveHardScreen({ navigation }: any) {
   const { getTodayProgress, updateTasks, completeMeditation, appState, addGlowPoints } = useApp();
-  const todayProgress = getTodayProgress();
+  // Memoize todayProgress to prevent recalculation
+  const todayProgress = useMemo(() => getTodayProgress(), [getTodayProgress]);
   const [newTaskText, setNewTaskText] = useState('');
   const [showCelebration, setShowCelebration] = useState(false);
   const hasShownCelebration = useRef(false);
   const previousCompletionState = useRef(false);
 
-  // Initialize with 3 must-do tasks if empty
-  const tasks = todayProgress.tasks.length === 0
-    ? [
-        { id: '1', text: '', completed: false, isMustDo: true, createdAt: new Date().toISOString() },
-        { id: '2', text: '', completed: false, isMustDo: true, createdAt: new Date().toISOString() },
-        { id: '3', text: '', completed: false, isMustDo: true, createdAt: new Date().toISOString() },
-      ]
-    : todayProgress.tasks;
+  // Memoize tasks initialization
+  const tasks = useMemo(() => 
+    todayProgress.tasks.length === 0
+      ? Array.from({ length: REQUIRED_DAILY_MUST_DO_TASKS }, (_, i) => ({
+          id: String(i + 1),
+          text: '',
+          completed: false,
+          isMustDo: true,
+          createdAt: new Date().toISOString(),
+        }))
+      : todayProgress.tasks,
+    [todayProgress.tasks]
+  );
 
-  // Check if all daily requirements are complete
-  const mustDoTasks = tasks.filter((t) => t.isMustDo);
-  const allMustDoComplete = mustDoTasks.every((t) => t.completed && t.text.trim() !== '');
-  const allAffirmationsComplete = (todayProgress.guidedSessions?.length || 0) >= 3;
-  const meditationComplete = todayProgress.meditationCompleted === true;
-  const isDayComplete = allMustDoComplete && allAffirmationsComplete && meditationComplete;
+  // Memoize completion checks
+  const mustDoTasks = useMemo(() => tasks.filter((t) => t.isMustDo), [tasks]);
+  const allMustDoComplete = useMemo(() => 
+    mustDoTasks.every((t) => t.completed && t.text.trim() !== ''),
+    [mustDoTasks]
+  );
+  const allAffirmationsComplete = useMemo(() => 
+    (todayProgress.guidedSessions?.length || 0) >= REQUIRED_DAILY_AFFIRMATION_SESSIONS,
+    [todayProgress.guidedSessions?.length]
+  );
+  const meditationComplete = useMemo(() => 
+    todayProgress.meditationCompleted === true,
+    [todayProgress.meditationCompleted]
+  );
+  const isDayComplete = useMemo(() => 
+    allMustDoComplete && allAffirmationsComplete && meditationComplete,
+    [allMustDoComplete, allAffirmationsComplete, meditationComplete]
+  );
 
   // Watch for day completion to trigger celebration
   useEffect(() => {
@@ -54,11 +78,30 @@ export default function FortyFiveHardScreen({ navigation }: any) {
       
       // Award bonus glow points for completing the day
       if (addGlowPoints) {
-        addGlowPoints(50, 'Day Complete Bonus');
+        addGlowPoints(POINTS.DAY_COMPLETE_BONUS, 'Day Complete Bonus');
       }
+
+      // Check if this is first day complete and prompt for rating after a delay
+      const checkFirstDayComplete = async () => {
+        const { promptForRating } = await import('../utils/appRating');
+        const completedDays = Object.values(appState.dailyProgress || {}).filter(day => day.isComplete).length;
+        const isFirstDayComplete = completedDays === 1;
+        
+        // Prompt after celebration animation (2 seconds delay)
+        setTimeout(async () => {
+          await promptForRating({
+            streak: appState.currentStreak,
+            totalDays: appState.totalDays,
+            dayCompleted: true,
+            isFirstDayComplete,
+          });
+        }, 2000);
+      };
+      
+      checkFirstDayComplete();
     }
     previousCompletionState.current = isDayComplete;
-  }, [isDayComplete]);
+  }, [isDayComplete, appState]);
 
   // Reset celebration flag at midnight (when day changes)
   useEffect(() => {
@@ -66,7 +109,7 @@ export default function FortyFiveHardScreen({ navigation }: any) {
     previousCompletionState.current = false;
   }, [todayProgress.date]);
 
-  const toggleTask = (taskId: string) => {
+  const toggleTask = useCallback((taskId: string) => {
     const task = tasks.find(t => t.id === taskId);
     const wasCompleted = task?.completed || false;
     
@@ -81,16 +124,16 @@ export default function FortyFiveHardScreen({ navigation }: any) {
     } else {
       lightHaptic(); // Task uncompleted
     }
-  };
+  }, [updateTasks]);
 
-  const updateTaskText = (taskId: string, text: string) => {
+  const updateTaskText = useCallback((taskId: string, text: string) => {
     const updatedTasks = tasks.map((task) =>
       task.id === taskId ? { ...task, text } : task
     );
     updateTasks(updatedTasks);
-  };
+  }, [updateTasks, tasks]);
 
-  const addTask = () => {
+  const addTask = useCallback(() => {
     if (newTaskText.trim()) {
       const newTask: Task = {
         id: Date.now().toString(),
@@ -103,9 +146,9 @@ export default function FortyFiveHardScreen({ navigation }: any) {
       setNewTaskText('');
       lightHaptic();
     }
-  };
+  }, [updateTasks, tasks, newTaskText]);
 
-  const deleteTask = (taskId: string) => {
+  const deleteTask = useCallback((taskId: string) => {
     const task = tasks.find((t) => t.id === taskId);
     if (task?.isMustDo) {
       warningHaptic();
@@ -115,11 +158,11 @@ export default function FortyFiveHardScreen({ navigation }: any) {
     const updatedTasks = tasks.filter((t) => t.id !== taskId);
     updateTasks(updatedTasks);
     lightHaptic();
-  };
+  }, [updateTasks, tasks]);
 
-  const openAffirmationEntry = (period: 'morning' | 'afternoon' | 'evening') => {
+  const openAffirmationEntry = useCallback((period: 'morning' | 'afternoon' | 'evening') => {
     navigation.navigate('AffirmationEntry', { period });
-  };
+  }, [navigation]);
 
   const getCurrentPeriod = (): 'morning' | 'afternoon' | 'evening' | null => {
     const hour = new Date().getHours();
@@ -140,7 +183,7 @@ export default function FortyFiveHardScreen({ navigation }: any) {
     <Screen>
       <AppHeader
         title="Today's Tasks"
-        subtitle={`Day ${appState.totalDays} of 45`}
+        subtitle={`Day ${appState.totalDays} of ${CHALLENGE_DURATION_DAYS}`}
         rightIcon={{
           name: 'notifications-outline',
           onPress: () => navigation.navigate('NotificationSettings'),
@@ -173,7 +216,7 @@ export default function FortyFiveHardScreen({ navigation }: any) {
 
         {/* Must-Do Tasks */}
         <UnifiedCard delay={0}>
-          <Text style={styles.sectionTitle}>⭐ 3 Must-Do Tasks</Text>
+          <Text style={styles.sectionTitle}>⭐ {REQUIRED_DAILY_MUST_DO_TASKS} Must-Do Tasks</Text>
           <Text style={styles.sectionSubtitle}>These MUST be completed today</Text>
           {mustDoTasks.map((task, index) => (
             <View key={task.id} style={styles.mustDoTaskContainer}>
@@ -202,12 +245,12 @@ export default function FortyFiveHardScreen({ navigation }: any) {
 
         {/* Guided Affirmations */}
         <UnifiedCard delay={100}>
-          <Text style={styles.sectionTitle}>✨ 3 Guided Affirmations</Text>
-          <Text style={styles.sectionSubtitle}>Listen to 3 sessions today (any category)</Text>
+          <Text style={styles.sectionTitle}>✨ {REQUIRED_DAILY_AFFIRMATION_SESSIONS} Guided Affirmations</Text>
+          <Text style={styles.sectionSubtitle}>Listen to {REQUIRED_DAILY_AFFIRMATION_SESSIONS} sessions today (any category)</Text>
 
           <View style={styles.affirmationContainer}>
             <Text style={styles.progressText}>
-              Completed: {todayProgress.guidedSessions?.length || 0} / 3
+              Completed: {todayProgress.guidedSessions?.length || 0} / {REQUIRED_DAILY_AFFIRMATION_SESSIONS}
             </Text>
 
             <ListRow
@@ -216,7 +259,7 @@ export default function FortyFiveHardScreen({ navigation }: any) {
                 todayProgress.guidedSessions?.length === 0
                   ? 'Start your first session'
                   : todayProgress.guidedSessions?.length === 1
-                  ? '2 more to go today'
+                  ? `${REQUIRED_DAILY_AFFIRMATION_SESSIONS - 1} more to go today`
                   : todayProgress.guidedSessions?.length === 2
                   ? '1 more to go today'
                   : 'All done! ✓'

@@ -1,23 +1,37 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   ScrollView,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as Speech from 'expo-speech';
 import { GUIDED_SESSIONS, AFFIRMATION_CATEGORIES } from '../data/guidedAffirmations';
+import { useApp } from '../context/AppContext';
+import { GuidedSession } from '../types';
+import { useToast } from '../context/ToastContext';
+import { successHaptic } from '../utils/haptics';
+import { MAX_SESSIONS_PER_DAY, POINTS } from '../utils/constants';
+import { saveAffirmation, isAffirmationSaved } from '../utils/savedAffirmations';
 
 export default function AffirmationPlayerScreen({ route, navigation }: any) {
   const { sessionId } = route.params;
+  const { updateGuidedSessions, getTodayProgress, addGlowPoints } = useApp();
+  const { showSuccess, showPoints } = useToast();
   const session = GUIDED_SESSIONS.find(s => s.id === sessionId);
   const category = AFFIRMATION_CATEGORIES.find(c => c.id === session?.categoryId);
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentAffirmation, setCurrentAffirmation] = useState(0);
   const [progress, setProgress] = useState(0);
+  const [isCompleting, setIsCompleting] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [savedAffirmations, setSavedAffirmations] = useState<Set<string>>(new Set());
+  const speechRef = useRef<{ isActive: boolean }>({ isActive: false });
 
   if (!session) {
     return (
@@ -27,15 +41,218 @@ export default function AffirmationPlayerScreen({ route, navigation }: any) {
     );
   }
 
-  const handlePlayPause = () => {
-    setIsPlaying(!isPlaying);
-    // TODO: Implement actual audio playback
-    // This is where we'll add audio player logic later
+  // Load saved affirmations
+  useEffect(() => {
+    loadSavedAffirmations();
+  }, []);
+
+  // Clean up speech on unmount or navigation
+  useEffect(() => {
+    return () => {
+      stopSpeech();
+    };
+  }, []);
+
+  const loadSavedAffirmations = async () => {
+    const saved = new Set<string>();
+    for (const affirmation of session.affirmations) {
+      const isSaved = await isAffirmationSaved(affirmation);
+      if (isSaved) {
+        saved.add(affirmation);
+      }
+    }
+    setSavedAffirmations(saved);
   };
 
-  const handleComplete = () => {
-    // TODO: Mark session as completed in context
-    navigation.goBack();
+  const handleSaveAffirmation = async (affirmation: string) => {
+    try {
+      const isSaved = savedAffirmations.has(affirmation);
+      if (isSaved) {
+        // Already saved - could navigate to saved affirmations or show message
+        showSuccess('Saved', 'This affirmation is already in your saved collection');
+      } else {
+        await saveAffirmation(affirmation, category?.name, 'guided', session.id);
+        setSavedAffirmations(new Set([...savedAffirmations, affirmation]));
+        showSuccess('Saved!', 'Affirmation added to your collection');
+        successHaptic();
+      }
+    } catch (error) {
+      console.error('Error saving affirmation:', error);
+    }
+  };
+
+  // Stop speech when navigating away
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('beforeRemove', () => {
+      stopSpeech();
+    });
+    return unsubscribe;
+  }, [navigation]);
+
+  // Update progress based on current affirmation
+  useEffect(() => {
+    const newProgress = session.affirmations.length > 0
+      ? ((currentAffirmation + 1) / session.affirmations.length) * 100
+      : 0;
+    setProgress(newProgress);
+  }, [currentAffirmation, session.affirmations.length]);
+
+  // Auto-scroll to current affirmation when it changes
+  useEffect(() => {
+    // This will be handled by the ScrollView ref if needed
+  }, [currentAffirmation]);
+
+  const stopSpeech = () => {
+    if (speechRef.current.isActive) {
+      Speech.stop();
+      speechRef.current.isActive = false;
+      setIsSpeaking(false);
+      setIsPlaying(false);
+    }
+  };
+
+  const speakAffirmation = async (index: number) => {
+    if (!session || index < 0 || index >= session.affirmations.length) {
+      return;
+    }
+
+    // Stop any current speech
+    stopSpeech();
+
+    const affirmation = session.affirmations[index];
+    
+    try {
+      speechRef.current.isActive = true;
+      setIsSpeaking(true);
+      setIsPlaying(true);
+
+      await Speech.speak(affirmation, {
+        language: 'en-US',
+        pitch: 1.0,
+        rate: 0.9, // Slightly slower for better comprehension
+        onStart: () => {
+          setIsSpeaking(true);
+          setIsPlaying(true);
+        },
+        onDone: () => {
+          speechRef.current.isActive = false;
+          setIsSpeaking(false);
+          
+          // Auto-advance to next affirmation if not the last one
+          if (index < session.affirmations.length - 1) {
+            setTimeout(() => {
+              speakAffirmation(index + 1);
+              setCurrentAffirmation(index + 1);
+            }, 500); // Small delay before next affirmation
+          } else {
+            // Last affirmation finished
+            setIsPlaying(false);
+          }
+        },
+        onStopped: () => {
+          speechRef.current.isActive = false;
+          setIsSpeaking(false);
+          setIsPlaying(false);
+        },
+        onError: (error) => {
+          console.error('Speech error:', error);
+          speechRef.current.isActive = false;
+          setIsSpeaking(false);
+          setIsPlaying(false);
+        },
+      });
+    } catch (error) {
+      console.error('Error speaking affirmation:', error);
+      speechRef.current.isActive = false;
+      setIsSpeaking(false);
+      setIsPlaying(false);
+    }
+  };
+
+  const handlePlayPause = async () => {
+    if (isPlaying && isSpeaking) {
+      // Pause/Stop current speech
+      stopSpeech();
+    } else {
+      // Start/Resume from current affirmation
+      await speakAffirmation(currentAffirmation);
+    }
+  };
+
+  const handlePrevious = () => {
+    if (currentAffirmation > 0) {
+      stopSpeech();
+      const newIndex = currentAffirmation - 1;
+      setCurrentAffirmation(newIndex);
+      if (isPlaying) {
+        speakAffirmation(newIndex);
+      }
+    }
+  };
+
+  const handleNext = () => {
+    if (currentAffirmation < session.affirmations.length - 1) {
+      stopSpeech();
+      const newIndex = currentAffirmation + 1;
+      setCurrentAffirmation(newIndex);
+      if (isPlaying) {
+        speakAffirmation(newIndex);
+      }
+    }
+  };
+
+  const handleComplete = async () => {
+    if (isCompleting) return; // Prevent double submission
+    
+    try {
+      setIsCompleting(true);
+      
+      // Get today's progress
+      const todayProgress = getTodayProgress();
+      const existingSessions = todayProgress.guidedSessions || [];
+      
+      // Check if session is already completed
+      const alreadyCompleted = existingSessions.some(s => s.id === session.id);
+      
+      if (alreadyCompleted) {
+        showSuccess('Already Complete', 'You already finished this session today!');
+        navigation.goBack();
+        return;
+      }
+      
+      // Create GuidedSession object
+      const completedSession: GuidedSession = {
+        id: session.id,
+        category: category?.name || session.categoryId,
+        title: session.title,
+        duration: session.duration,
+        completedAt: new Date().toISOString(),
+      };
+      
+      // Add to existing sessions (max sessions per day)
+      const updatedSessions = [...existingSessions, completedSession].slice(0, MAX_SESSIONS_PER_DAY);
+      
+      // Update in context
+      await updateGuidedSessions(updatedSessions);
+      
+      // Award glow points
+      await addGlowPoints(POINTS.AFFIRMATION_SESSION, `Completed affirmation session: ${session.title}`);
+      
+      // Show success feedback
+      showSuccess('Session Complete!', 'Great job completing this affirmation session.');
+      showPoints(POINTS.AFFIRMATION_SESSION, 'Affirmation session completed');
+      
+      // Haptic feedback
+      successHaptic();
+      
+      // Navigate back
+      navigation.goBack();
+    } catch (error) {
+      console.error('Error completing session:', error);
+      showSuccess('Error', 'Failed to save session. Please try again.');
+    } finally {
+      setIsCompleting(false);
+    }
   };
 
   return (
@@ -86,27 +303,53 @@ export default function AffirmationPlayerScreen({ route, navigation }: any) {
             {/* All Affirmations List */}
             <View style={styles.affirmationsList}>
               <Text style={styles.listTitle}>All Affirmations</Text>
-              {session.affirmations.map((affirmation, index) => (
-                <View
-                  key={index}
-                  style={[
-                    styles.affirmationItem,
-                    index === currentAffirmation && styles.affirmationItemActive,
-                  ]}
-                >
-                  <View style={styles.affirmationItemNumber}>
-                    <Text style={styles.affirmationItemNumberText}>{index + 1}</Text>
-                  </View>
-                  <Text
+              {session.affirmations.map((affirmation, index) => {
+                const isSaved = savedAffirmations.has(affirmation);
+                return (
+                  <View
+                    key={index}
                     style={[
-                      styles.affirmationItemText,
-                      index === currentAffirmation && styles.affirmationItemTextActive,
+                      styles.affirmationItemContainer,
+                      index === currentAffirmation && styles.affirmationItemActive,
                     ]}
                   >
-                    {affirmation}
-                  </Text>
-                </View>
-              ))}
+                    <TouchableOpacity
+                      style={styles.affirmationItem}
+                      onPress={() => {
+                        stopSpeech();
+                        setCurrentAffirmation(index);
+                        if (isPlaying) {
+                          speakAffirmation(index);
+                        }
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <View style={styles.affirmationItemNumber}>
+                        <Text style={styles.affirmationItemNumberText}>{index + 1}</Text>
+                      </View>
+                      <Text
+                        style={[
+                          styles.affirmationItemText,
+                          index === currentAffirmation && styles.affirmationItemTextActive,
+                        ]}
+                      >
+                        {affirmation}
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.saveButton}
+                      onPress={() => handleSaveAffirmation(affirmation)}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <Ionicons
+                        name={isSaved ? 'bookmark' : 'bookmark-outline'}
+                        size={20}
+                        color={isSaved ? '#FFD700' : '#999'}
+                      />
+                    </TouchableOpacity>
+                  </View>
+                );
+              })}
             </View>
           </ScrollView>
 
@@ -127,7 +370,7 @@ export default function AffirmationPlayerScreen({ route, navigation }: any) {
           <View style={styles.controls}>
             <TouchableOpacity
               style={styles.controlButton}
-              onPress={() => setCurrentAffirmation(Math.max(0, currentAffirmation - 1))}
+              onPress={handlePrevious}
               disabled={currentAffirmation === 0}
             >
               <Ionicons
@@ -138,21 +381,23 @@ export default function AffirmationPlayerScreen({ route, navigation }: any) {
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={styles.playButton}
+              style={[styles.playButton, isSpeaking && styles.playButtonActive]}
               onPress={handlePlayPause}
             >
-              <Ionicons
-                name={isPlaying ? 'pause' : 'play'}
-                size={48}
-                color="#FFF"
-              />
+              {isSpeaking ? (
+                <ActivityIndicator size="small" color="#FFF" />
+              ) : (
+                <Ionicons
+                  name={isPlaying ? 'pause' : 'play'}
+                  size={48}
+                  color="#FFF"
+                />
+              )}
             </TouchableOpacity>
 
             <TouchableOpacity
               style={styles.controlButton}
-              onPress={() =>
-                setCurrentAffirmation(Math.min(session.affirmations.length - 1, currentAffirmation + 1))
-              }
+              onPress={handleNext}
               disabled={currentAffirmation === session.affirmations.length - 1}
             >
               <Ionicons
@@ -165,19 +410,26 @@ export default function AffirmationPlayerScreen({ route, navigation }: any) {
 
           {/* Complete Button */}
           <TouchableOpacity
-            style={styles.completeButton}
+            style={[styles.completeButton, isCompleting && styles.completeButtonDisabled]}
             onPress={handleComplete}
+            disabled={isCompleting}
           >
-            <Text style={styles.completeButtonText}>Mark as Complete</Text>
+            {isCompleting ? (
+              <ActivityIndicator color="#FFF" />
+            ) : (
+              <Text style={styles.completeButtonText}>Mark as Complete</Text>
+            )}
           </TouchableOpacity>
 
-          {/* Audio Placeholder Note */}
-          <View style={styles.placeholderNote}>
-            <Ionicons name="information-circle-outline" size={20} color="#666" />
-            <Text style={styles.placeholderText}>
-              Audio voiceover will be added here. For now, read each affirmation aloud.
-            </Text>
-          </View>
+          {/* Audio Status Note */}
+          {isSpeaking && (
+            <View style={styles.statusNote}>
+              <Ionicons name="volume-high" size={20} color="#4CAF50" />
+              <Text style={styles.statusText}>
+                Listening to affirmation {currentAffirmation + 1} of {session.affirmations.length}
+              </Text>
+            </View>
+          )}
         </View>
       </LinearGradient>
     </View>
@@ -272,9 +524,9 @@ const styles = StyleSheet.create({
     color: '#333',
     marginBottom: 15,
   },
-  affirmationItem: {
+  affirmationItemContainer: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     backgroundColor: 'rgba(255, 255, 255, 0.7)',
     borderRadius: 12,
     padding: 15,
@@ -284,6 +536,11 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.95)',
     borderWidth: 2,
     borderColor: 'rgba(0, 0, 0, 0.2)',
+  },
+  affirmationItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    flex: 1,
   },
   affirmationItemNumber: {
     width: 28,
@@ -308,6 +565,10 @@ const styles = StyleSheet.create({
   affirmationItemTextActive: {
     color: '#333',
     fontWeight: '500',
+  },
+  saveButton: {
+    padding: 8,
+    marginLeft: 8,
   },
   progressSection: {
     marginTop: 20,
@@ -359,6 +620,9 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 8,
   },
+  playButtonActive: {
+    backgroundColor: '#4CAF50',
+  },
   completeButton: {
     backgroundColor: 'rgba(0, 0, 0, 0.8)',
     borderRadius: 25,
@@ -367,25 +631,31 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 15,
   },
+  completeButtonDisabled: {
+    opacity: 0.6,
+  },
   completeButtonText: {
     fontSize: 16,
     fontWeight: 'bold',
     color: '#FFF',
   },
-  placeholderNote: {
+  statusNote: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    backgroundColor: 'rgba(255, 255, 255, 0.7)',
+    backgroundColor: 'rgba(76, 175, 80, 0.1)',
     borderRadius: 12,
     padding: 15,
     marginBottom: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(76, 175, 80, 0.3)',
   },
-  placeholderText: {
+  statusText: {
     flex: 1,
     fontSize: 13,
-    color: '#666',
+    color: '#4CAF50',
     lineHeight: 18,
+    fontWeight: '500',
   },
   errorText: {
     fontSize: 18,

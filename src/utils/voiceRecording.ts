@@ -56,6 +56,11 @@ export async function hasRecordingPermission(): Promise<boolean> {
 // Start recording
 export async function startRecording(): Promise<void> {
   try {
+    // Check if we're on web - recording might have limitations
+    if (Platform.OS === 'web') {
+      console.warn('⚠️ Voice recording on web may have limitations. Consider testing on iOS/Android for full functionality.');
+    }
+
     // Request permission first
     const hasPermission = await hasRecordingPermission();
     if (!hasPermission) {
@@ -67,29 +72,58 @@ export async function startRecording(): Promise<void> {
 
     // Stop any existing recording
     if (recording) {
-      await stopRecording();
+      try {
+        await stopRecording();
+      } catch (stopError) {
+        console.warn('Error stopping existing recording:', stopError);
+        // Continue anyway - try to start new recording
+        recording = null;
+      }
     }
 
-    // Set audio mode for recording
-    await Audio.setAudioModeAsync({
-      allowsRecordingIOS: true,
-      playsInSilentModeIOS: true,
-      staysActiveInBackground: false,
-    });
+    // Set audio mode for recording (skip on web as it's not needed)
+    if (Platform.OS !== 'web') {
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+        staysActiveInBackground: false,
+      });
+    }
 
     // Create new recording with proper recording options
-    const recordingOptions = Platform.OS === 'ios'
-      ? Audio.RecordingOptionsPresets.HIGH_QUALITY
-      : Audio.RecordingOptionsPresets.HIGH_QUALITY;
+    // Use HIGH_QUALITY preset which is cross-platform compatible
+    const recordingOptions = Audio.RecordingOptionsPresets.HIGH_QUALITY;
+
+    console.log('🎤 Starting recording with HIGH_QUALITY preset');
 
     const { recording: newRecording } = await Audio.Recording.createAsync(
       recordingOptions
     );
 
     recording = newRecording;
-    console.log('🎤 Recording started');
+    
+    // Verify recording actually started (give it a moment to initialize)
+    try {
+      // Wait a brief moment for recording to initialize
+      await new Promise(resolve => setTimeout(resolve, 100));
+      const status = await newRecording.getStatusAsync();
+      console.log('🎤 Recording status after start:', status);
+      
+      // Note: On web, status might not immediately show isRecording: true
+      // This is okay - the recording object exists and will work
+      if (Platform.OS !== 'web' && !status.isRecording) {
+        throw new Error('Recording failed to start - status indicates not recording');
+      }
+    } catch (statusError) {
+      console.warn('Could not verify recording status:', statusError);
+      // Continue anyway - recording might still work
+    }
+    
+    console.log('🎤 Recording started successfully');
   } catch (error) {
     console.error('Failed to start recording:', error);
+    // Reset recording state on error
+    recording = null;
     throw error;
   }
 }

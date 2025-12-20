@@ -34,10 +34,9 @@ export const UnifiedCard: React.FC<UnifiedCardProps> = ({
   // Entrance animations
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(20)).current;
-  
+
   // Interaction animations
   const scaleAnim = useRef(new Animated.Value(1)).current;
-  const shadowAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     // Staggered entrance animation
@@ -60,40 +59,26 @@ export const UnifiedCard: React.FC<UnifiedCardProps> = ({
 
   const handlePressIn = useCallback(() => {
     if (!pressable || !onPress) return;
-    
-    // Scale down and reduce shadow
-    Animated.parallel([
-      Animated.spring(scaleAnim, {
-        toValue: 0.98,
-        tension: 300,
-        friction: 10,
-        useNativeDriver: true,
-      }),
-      Animated.timing(shadowAnim, {
-        toValue: 1,
-        duration: 100,
-        useNativeDriver: true,
-      }),
-    ]).start();
+
+    // Scale down slightly
+    Animated.spring(scaleAnim, {
+      toValue: 0.98,
+      tension: 300,
+      friction: 10,
+      useNativeDriver: true,
+    }).start();
   }, [pressable, onPress]);
 
   const handlePressOut = useCallback(() => {
     if (!pressable || !onPress) return;
-    
+
     // Spring back
-    Animated.parallel([
-      Animated.spring(scaleAnim, {
-        toValue: 1,
-        tension: 200,
-        friction: 8,
-        useNativeDriver: true,
-      }),
-      Animated.timing(shadowAnim, {
-        toValue: 0,
-        duration: 150,
-        useNativeDriver: true,
-      }),
-    ]).start();
+    Animated.spring(scaleAnim, {
+      toValue: 1,
+      tension: 200,
+      friction: 8,
+      useNativeDriver: true,
+    }).start();
   }, [pressable, onPress]);
 
   const handlePress = useCallback(() => {
@@ -125,22 +110,13 @@ export const UnifiedCard: React.FC<UnifiedCardProps> = ({
     ],
   };
 
-  // Animated shadow opacity for press feedback
-  const dynamicShadowStyle = {
-    shadowOpacity: shadowAnim.interpolate({
-      inputRange: [0, 1],
-      outputRange: [Theme.shadow.medium.shadowOpacity || 0.15, 0.08],
-    }),
-  };
-
   const content = (
-    <Animated.View 
+    <Animated.View
       style={[
-        styles.card, 
-        getVariantStyle(), 
-        style, 
+        styles.card,
+        getVariantStyle(),
+        style,
         animatedStyle,
-        onPress && dynamicShadowStyle,
       ]}
     >
       {children}
@@ -379,3 +355,6 @@ const styles = StyleSheet.create({
     backgroundColor: Theme.colors.accentSoft,
   },
 });
+
+
+

@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useRef, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Animated, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -10,6 +10,7 @@ interface JournalFABProps {
   opacity: Animated.AnimatedValue;
   translateY: Animated.AnimatedInterpolation<number>;
   visible: boolean;
+  isScrolling?: boolean;
 }
 
 // Bottom tab bar height from AppNavigator
@@ -24,10 +25,14 @@ export const JournalFAB: React.FC<JournalFABProps> = ({
   opacity,
   translateY,
   visible,
+  isScrolling = false,
 }) => {
   const insets = useSafeAreaInsets();
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const opacityAnim = useRef(new Animated.Value(1)).current;
+  const textOpacity = useRef(new Animated.Value(1)).current;
+  const buttonWidth = useRef(new Animated.Value(1)).current;
+  const textWidth = useRef(new Animated.Value(50)).current;
 
   const handlePressIn = () => {
     Animated.parallel([
@@ -65,9 +70,79 @@ export const JournalFAB: React.FC<JournalFABProps> = ({
     onPress();
   };
 
+  // Animate text and button width based on scroll state
+  useEffect(() => {
+    // Stop any running animations first
+    textOpacity.stopAnimation();
+    buttonWidth.stopAnimation();
+    textWidth.stopAnimation();
+    
+    if (isScrolling) {
+      // Hide text and shrink to icon-only when scrolling
+      Animated.parallel([
+        Animated.timing(textOpacity, {
+          toValue: 0,
+          duration: 180,
+          useNativeDriver: true,
+        }),
+        Animated.spring(buttonWidth, {
+          toValue: 0,
+          tension: 120,
+          friction: 8,
+          useNativeDriver: false,
+        }),
+        Animated.timing(textWidth, {
+          toValue: 0,
+          duration: 180,
+          useNativeDriver: false,
+        }),
+      ]).start();
+    } else {
+      // Show text and expand when scrolling stops
+      Animated.parallel([
+        Animated.spring(buttonWidth, {
+          toValue: 1,
+          tension: 100,
+          friction: 7,
+          useNativeDriver: false,
+        }),
+        Animated.timing(textWidth, {
+          toValue: 50,
+          duration: 200,
+          delay: 80,
+          useNativeDriver: false,
+        }),
+        Animated.timing(textOpacity, {
+          toValue: 1,
+          duration: 200,
+          delay: 80,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }
+  }, [isScrolling]);
+
   // Calculate bottom position: tab bar height + safe area bottom + spacing
   // Positioned lower to overlap tab bar slightly (moved down 50% more)
   const bottomPosition = BOTTOM_TAB_HEIGHT + insets.bottom + FAB_SPACING_ABOVE_TAB - (FAB_HEIGHT / 2);
+
+  // Calculate animated width - ensure minimum is FAB_HEIGHT to prevent cropping
+  const animatedWidth = buttonWidth.interpolate({
+    inputRange: [0, 1],
+    outputRange: [FAB_HEIGHT, 120], // Icon-only width to full width
+  });
+  
+  // Animated gap between icon and text
+  const animatedGap = buttonWidth.interpolate({
+    inputRange: [0, 0.3, 1],
+    outputRange: [0, 0, Theme.spacing.sm], // No gap when collapsed, gap when expanded
+  });
+  
+  // Animated padding - 0 when collapsed (icon-only), full padding when expanded
+  const animatedPadding = buttonWidth.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, Theme.spacing.xl],
+  });
 
   return (
     <Animated.View
@@ -92,15 +167,47 @@ export const JournalFAB: React.FC<JournalFABProps> = ({
         accessibilityHint="Start writing a new journal entry"
       >
         <Animated.View style={{ opacity: opacityAnim }}>
-          <LinearGradient
-            colors={['#FF6B9D', '#E85A8A', '#C44569']}
-            style={styles.gradient}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
+          <Animated.View
+            style={[
+              styles.gradient,
+              {
+                width: animatedWidth,
+                minWidth: FAB_HEIGHT, // Prevent shrinking below icon size
+              },
+            ]}
           >
-            <Ionicons name="create" size={20} color="#FFF" />
-            <Text style={styles.text}>Write</Text>
-          </LinearGradient>
+            <LinearGradient
+              colors={['#FF6B9D', '#E85A8A', '#C44569']}
+              style={styles.gradientInner}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+            >
+              <Animated.View
+                style={[
+                  styles.innerContent,
+                  {
+                    paddingHorizontal: animatedPadding,
+                  }
+                ]}
+              >
+                <View style={styles.iconContainer}>
+                  <Ionicons name="create" size={20} color="#FFF" />
+                </View>
+                <Animated.View
+                  style={[
+                    styles.textContainer,
+                    {
+                      opacity: textOpacity,
+                      marginLeft: animatedGap,
+                      width: textWidth,
+                    }
+                  ]}
+                >
+                  <Text style={styles.text} numberOfLines={1}>Write</Text>
+                </Animated.View>
+              </Animated.View>
+            </LinearGradient>
+          </Animated.View>
         </Animated.View>
       </TouchableOpacity>
     </Animated.View>
@@ -118,18 +225,37 @@ const styles = StyleSheet.create({
     height: FAB_HEIGHT,
     borderRadius: FAB_HEIGHT / 2, // Perfect pill shape (height/2)
     minWidth: FAB_HEIGHT, // Minimum width equals height for pill
-    overflow: 'visible', // Don't clip shadow
+    overflow: 'hidden', // Clip content to prevent icon cropping
     ...Theme.shadow.fab,
   },
   gradient: {
+    height: FAB_HEIGHT,
+    borderRadius: FAB_HEIGHT / 2, // Match parent borderRadius
+    overflow: 'hidden',
+  },
+  gradientInner: {
+    height: FAB_HEIGHT,
+    paddingVertical: 0,
+    borderRadius: FAB_HEIGHT / 2,
+    width: '100%',
+    overflow: 'hidden',
+  },
+  innerContent: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     height: FAB_HEIGHT,
-    paddingVertical: 0, // Height is fixed, no vertical padding needed
-    paddingHorizontal: Theme.spacing.xl, // 24px horizontal padding
-    gap: Theme.spacing.sm, // 8px gap between icon and text
-    borderRadius: FAB_HEIGHT / 2, // Match parent borderRadius
+  },
+  iconContainer: {
+    width: 20,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  textContainer: {
+    overflow: 'hidden',
+    alignItems: 'flex-start',
+    justifyContent: 'center',
   },
   text: {
     ...Theme.typography.bodyBold,

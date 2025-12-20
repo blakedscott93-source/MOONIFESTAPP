@@ -21,6 +21,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Theme, TOUCH_TARGET_MIN } from '../utils/theme';
 import { celebrationHaptic } from '../utils/haptics';
 import { BurstConfetti } from './Confetti';
+import { CHALLENGE_DURATION_DAYS } from '../utils/constants';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -352,8 +353,8 @@ export const DayCompleteCelebration: React.FC<DayCompleteCelebrationProps> = ({
   };
 
   const trophyRotateInterpolate = trophyRotate.interpolate({
-    inputRange: [0, 1, 1.05, 0.95],
-    outputRange: ['0deg', '0deg', '3deg', '-3deg'],
+    inputRange: [0, 0.95, 1, 1.05],
+    outputRange: ['0deg', '-3deg', '0deg', '3deg'],
   });
 
   // Generate star particles
@@ -462,7 +463,7 @@ export const DayCompleteCelebration: React.FC<DayCompleteCelebrationProps> = ({
             <View style={styles.statCard}>
               <Ionicons name="calendar" size={24} color={Theme.colors.accent} />
               <Text style={styles.statValue}>Day {dayNumber}</Text>
-              <Text style={styles.statLabel}>of 45</Text>
+              <Text style={styles.statLabel}>of {CHALLENGE_DURATION_DAYS}</Text>
             </View>
 
             <View style={[styles.statCard, styles.statCardHighlight]}>
@@ -484,12 +485,12 @@ export const DayCompleteCelebration: React.FC<DayCompleteCelebrationProps> = ({
               <View 
                 style={[
                   styles.progressFill, 
-                  { width: `${Math.min((dayNumber / 45) * 100, 100)}%` }
+                  { width: `${Math.min((dayNumber / CHALLENGE_DURATION_DAYS) * 100, 100)}%` }
                 ]} 
               />
             </View>
             <Text style={styles.progressText}>
-              {Math.round((dayNumber / 45) * 100)}% to completing 45 NOW
+              {Math.round((dayNumber / CHALLENGE_DURATION_DAYS) * 100)}% to completing 45 NOW
             </Text>
           </View>
 

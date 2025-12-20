@@ -11,7 +11,6 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Theme } from '../utils/theme';
-import { BlurView } from 'expo-blur';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const TOAST_WIDTH = Math.min(SCREEN_WIDTH - 32, 400);
@@ -151,9 +150,9 @@ export const Toast: React.FC<ToastProps> = ({
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
         >
-          {/* Blur background for iOS */}
+          {/* Subtle overlay for depth (BlurView removed due to module resolution issues) */}
           {Platform.OS === 'ios' && (
-            <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} />
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0, 0, 0, 0.2)' }]} />
           )}
 
           {/* Icon */}

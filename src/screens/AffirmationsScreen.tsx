@@ -93,8 +93,8 @@ export default function AffirmationsScreen({ navigation }: any) {
     if (activeTab === 'affirmations') {
       navigation.navigate('AffirmationPlayer', { sessionId: card.id });
     } else {
-      // Navigate to meditation player (to be implemented)
-      // navigation.navigate('MeditationPlayer', { sessionId: card.id });
+      // Navigate to meditation screen
+      navigation.navigate('MeditationScreen');
     }
   };
 

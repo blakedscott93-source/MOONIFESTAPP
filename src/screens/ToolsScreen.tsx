@@ -1,6 +1,9 @@
 import React from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { Screen } from '../components/Screen';
+import { AppHeader } from '../components/AppHeader';
+import { Theme, TOUCH_TARGET_MIN } from '../utils/theme';
 
 export default function ToolsScreen({ navigation }: any) {
   const tools = [
@@ -16,7 +19,7 @@ export default function ToolsScreen({ navigation }: any) {
       description: 'Create your digital vision board',
       icon: 'images',
       color: '#FF6B9D',
-      screen: null, // Coming soon
+      screen: 'VisionBoardScreen',
     },
     {
       title: 'Meditation Library',
@@ -44,23 +47,29 @@ export default function ToolsScreen({ navigation }: any) {
       description: 'Connect with fellow manifestors',
       icon: 'people',
       color: '#FF6B35',
-      screen: null,
+      screen: 'CommunityScreen',
     },
     {
       title: 'Settings',
       description: 'Customize your experience',
       icon: 'settings',
       color: '#AAA',
-      screen: null,
+      screen: 'SettingsScreen',
     },
   ];
 
   return (
-    <ScrollView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Moonifest Tools</Text>
-        <Text style={styles.subtitle}>Everything you need to manifest</Text>
-      </View>
+    <Screen style={styles.container}>
+      <AppHeader
+        title="Tools"
+        subtitle="Everything you need to manifest"
+        leftIcon={{
+          name: 'chevron-back',
+          onPress: () => navigation.goBack(),
+          accessibilityLabel: 'Go back',
+        }}
+      />
+      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
 
       <View style={styles.toolsGrid}>
         {tools.map((tool, index) => (
@@ -96,44 +105,33 @@ export default function ToolsScreen({ navigation }: any) {
           </Text>
         </View>
       </View>
-    </ScrollView>
+      </ScrollView>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0F0B1F',
+    backgroundColor: Theme.colors.bg,
   },
-  header: {
-    padding: 20,
-    alignItems: 'center',
-    borderBottomWidth: 1,
-    borderBottomColor: '#8B7DD8',
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#FFD700',
-    marginBottom: 5,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: '#8B7DD8',
+  scrollView: {
+    flex: 1,
   },
   toolsGrid: {
-    padding: 20,
+    padding: Theme.spacing.lg,
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 15,
+    gap: Theme.spacing.md,
   },
   toolCard: {
     width: '47%',
-    backgroundColor: '#1F1B2F',
-    borderRadius: 16,
-    padding: 20,
+    backgroundColor: Theme.colors.surface,
+    borderRadius: Theme.radius.lg,
+    padding: Theme.spacing.lg,
     alignItems: 'center',
     minHeight: 180,
+    ...Theme.shadow.medium,
   },
   toolIcon: {
     width: 64,
@@ -141,50 +139,48 @@ const styles = StyleSheet.create({
     borderRadius: 32,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 15,
+    marginBottom: Theme.spacing.md,
   },
   toolTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#FFF',
+    ...Theme.typography.bodyBold,
+    color: Theme.colors.textPrimary,
     textAlign: 'center',
-    marginBottom: 8,
+    marginBottom: Theme.spacing.xs,
   },
   toolDescription: {
-    fontSize: 12,
-    color: '#AAA',
+    ...Theme.typography.caption,
+    color: Theme.colors.textSecondary,
     textAlign: 'center',
     lineHeight: 18,
   },
   comingSoon: {
-    fontSize: 10,
-    color: '#FFD700',
-    marginTop: 8,
+    ...Theme.typography.small,
+    color: Theme.colors.gold,
+    marginTop: Theme.spacing.xs,
     fontStyle: 'italic',
   },
   infoCard: {
-    margin: 20,
+    margin: Theme.spacing.lg,
     marginTop: 0,
-    padding: 20,
-    backgroundColor: '#1F1B2F',
-    borderRadius: 16,
+    padding: Theme.spacing.lg,
+    backgroundColor: Theme.colors.surface,
+    borderRadius: Theme.radius.lg,
     borderWidth: 1,
-    borderColor: '#8B7DD8',
+    borderColor: Theme.colors.accent + '40',
     flexDirection: 'row',
-    gap: 15,
+    gap: Theme.spacing.md,
   },
   infoContent: {
     flex: 1,
   },
   infoTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#FFF',
-    marginBottom: 8,
+    ...Theme.typography.bodyBold,
+    color: Theme.colors.textPrimary,
+    marginBottom: Theme.spacing.xs,
   },
   infoText: {
-    fontSize: 14,
-    color: '#AAA',
+    ...Theme.typography.body,
+    color: Theme.colors.textSecondary,
     lineHeight: 20,
   },
 });
