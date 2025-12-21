@@ -148,6 +148,9 @@ export default function VoiceJournalScreen({ navigation }: any) {
     Array.from({ length: 20 }, () => new Animated.Value(0.2))
   ).current;
 
+  // Ref to store the recording duration interval ID
+  const durationIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
   // Sidebar animations
   const sidebarItems = isPressing ? RECORDING_SIDEBAR_ITEMS : IDLE_SIDEBAR_ITEMS;
   const sidebarScales = useRef(
@@ -424,8 +427,8 @@ export default function VoiceJournalScreen({ navigation }: any) {
           }
         }, 100);
 
-        // Store interval ID to clear it later
-        (handlePressIn as any).durationInterval = durationInterval;
+        // Store interval ID in ref to clear it later
+        durationIntervalRef.current = durationInterval;
       } catch (error) {
         console.error('❌ Failed to start recording:', error);
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -461,9 +464,9 @@ export default function VoiceJournalScreen({ navigation }: any) {
   const handlePressOut = async () => {
     try {
       // Clear duration interval
-      if ((handlePressIn as any).durationInterval) {
-        clearInterval((handlePressIn as any).durationInterval);
-        (handlePressIn as any).durationInterval = null;
+      if (durationIntervalRef.current) {
+        clearInterval(durationIntervalRef.current);
+        durationIntervalRef.current = null;
       }
 
       setIsPressing(false);
@@ -667,9 +670,9 @@ export default function VoiceJournalScreen({ navigation }: any) {
     // Handle actions
     if (action === 'cancel') {
       // Cancel recording without saving
-      if ((handlePressIn as any).durationInterval) {
-        clearInterval((handlePressIn as any).durationInterval);
-        (handlePressIn as any).durationInterval = null;
+      if (durationIntervalRef.current) {
+        clearInterval(durationIntervalRef.current);
+        durationIntervalRef.current = null;
       }
 
       await cancelRecording();

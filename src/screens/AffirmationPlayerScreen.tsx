@@ -71,7 +71,7 @@ export default function AffirmationPlayerScreen({ route, navigation }: any) {
         // Already saved - could navigate to saved affirmations or show message
         showSuccess('Saved', 'This affirmation is already in your saved collection');
       } else {
-        await saveAffirmation(affirmation, category?.name, 'guided', session.id);
+        await saveAffirmation(affirmation, category?.name || 'Uncategorized', 'guided', session.id);
         setSavedAffirmations(new Set([...savedAffirmations, affirmation]));
         showSuccess('Saved!', 'Affirmation added to your collection');
         successHaptic();

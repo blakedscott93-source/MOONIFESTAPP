@@ -501,3 +501,4 @@ export function getQuotesByAuthor(author: string): Quote[] {
 }
 
 
+
