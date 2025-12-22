@@ -298,9 +298,9 @@ const styles = StyleSheet.create({
   card: {
     backgroundColor: Theme.colors.surface,
     borderRadius: Theme.radius.lg,
-    padding: Theme.spacing.xl,
+    padding: Theme.spacing.lg,
     marginHorizontal: Theme.spacing.lg,
-    marginBottom: Theme.spacing.lg,
+    marginBottom: Theme.spacing.md, // 12px gap between cards (more compact)
     borderWidth: 1,
     borderColor: Theme.colors.border,
     ...Theme.shadow.medium,

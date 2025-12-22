@@ -72,7 +72,7 @@ const styles = StyleSheet.create({
     marginHorizontal: Theme.spacing.lg,
     marginBottom: Theme.spacing.lg,
     borderWidth: 1,
-    borderColor: Theme.colors.border.light,
+    borderColor: Theme.colors.border,
     ...Theme.shadow.medium,
   },
 });

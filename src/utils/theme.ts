@@ -7,47 +7,47 @@
 import { getColors, ThemeColors } from './themeColors';
 
 export const createTheme = (isDark: boolean = false) => ({
-  // Spacing Scale (8pt grid)
+  // Spacing Scale (Premium 4pt grid)
   spacing: {
     xs: 4,
     sm: 8,
     md: 12,
     lg: 16,
-    xl: 24,
-    xxl: 32,
+    xl: 20,
+    xxl: 24,
     xxxl: 40,
   },
 
-  // Border Radius Scale
+  // Border Radius Scale (Premium values)
   radius: {
-    sm: 12,
+    sm: 14, // Small card
     md: 16,
-    lg: 24,
+    lg: 20, // Large card/hero
     xl: 32,
-    full: 9999,
+    full: 999, // Pill
   },
 
-  // Shadow/Elevation Tokens (subtle and consistent)
+  // Shadow/Elevation Tokens (Premium iOS-style)
   shadow: {
     subtle: {
-      shadowColor: '#C77DFF',
-      shadowOffset: { width: 0, height: 1 },
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
       shadowOpacity: 0.05,
       shadowRadius: 4,
       elevation: 2,
     },
     medium: {
-      shadowColor: '#C77DFF',
-      shadowOffset: { width: 0, height: 2 },
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 4 },
       shadowOpacity: 0.08,
       shadowRadius: 8,
       elevation: 3,
     },
     large: {
-      shadowColor: '#C77DFF',
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.12,
-      shadowRadius: 16,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 6 },
+      shadowOpacity: 0.08,
+      shadowRadius: 12,
       elevation: 4,
     },
     fab: {
@@ -59,13 +59,19 @@ export const createTheme = (isDark: boolean = false) => ({
     },
   },
 
-  // Typography Scale
+  // Typography Scale (Premium Calm/Apple-like)
   typography: {
     title: {
       fontSize: 28,
       fontWeight: '700' as const,
-      letterSpacing: -0.5,
+      letterSpacing: -0.3,
       lineHeight: 36,
+    },
+    section: {
+      fontSize: 18,
+      fontWeight: '700' as const,
+      letterSpacing: -0.2,
+      lineHeight: 24,
     },
     h2: {
       fontSize: 22,
@@ -87,7 +93,7 @@ export const createTheme = (isDark: boolean = false) => ({
     },
     body: {
       fontSize: 15,
-      fontWeight: '400' as const,
+      fontWeight: '500' as const,
       lineHeight: 24,
     },
     bodyBold: {
@@ -107,13 +113,13 @@ export const createTheme = (isDark: boolean = false) => ({
     },
     chip: {
       fontSize: 12,
-      fontWeight: '600' as const,
+      fontWeight: '500' as const,
       lineHeight: 16,
       letterSpacing: 0.5,
     },
     small: {
       fontSize: 12,
-      fontWeight: '600' as const,
+      fontWeight: '500' as const,
       lineHeight: 16,
       letterSpacing: 0.5,
     },

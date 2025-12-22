@@ -3,7 +3,8 @@ import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AppProvider } from './src/context/AppContext';
-import { ThemeProvider, useTheme } from './src/context/ThemeContext';
+import { ThemeProvider as OldThemeProvider, useTheme as useOldTheme } from './src/context/ThemeContext';
+import { ThemeProvider } from './src/theme/ThemeProvider';
 import { ToastProvider } from './src/context/ToastContext';
 import AppNavigator from './src/navigation/AppNavigator';
 import { getColors } from './src/utils/themeColors';
@@ -21,7 +22,7 @@ function AppContent() {
   useEffect(() => {
     trackAppSession();
   }, []);
-  const { isDark } = useTheme();
+  const { isDark } = useOldTheme();
   const colors = getColors(isDark);
 
   const navigationTheme = {
@@ -50,15 +51,17 @@ export default function App() {
   return (
     <ErrorBoundary>
       <SafeAreaProvider>
-        <ThemeProvider>
-          <ToastProvider>
-            <AppProvider>
-              <WebPhoneWrapper>
-                <AppContent />
-              </WebPhoneWrapper>
-            </AppProvider>
-          </ToastProvider>
-        </ThemeProvider>
+        <OldThemeProvider>
+          <ThemeProvider>
+            <ToastProvider>
+              <AppProvider>
+                <WebPhoneWrapper>
+                  <AppContent />
+                </WebPhoneWrapper>
+              </AppProvider>
+            </ToastProvider>
+          </ThemeProvider>
+        </OldThemeProvider>
       </SafeAreaProvider>
     </ErrorBoundary>
   );

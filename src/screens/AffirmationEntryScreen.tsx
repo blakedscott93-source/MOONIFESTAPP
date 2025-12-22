@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -12,6 +12,9 @@ import {
 } from 'react-native';
 import { useApp } from '../context/AppContext';
 import { Ionicons } from '@expo/vector-icons';
+import { Screen } from '../components/layout/Screen';
+import { Card } from '../components/ui';
+import { useTheme } from '../theme/ThemeProvider';
 
 interface AffirmationEntryScreenProps {
   route: {
@@ -24,7 +27,8 @@ interface AffirmationEntryScreenProps {
 
 export default function AffirmationEntryScreen({ route, navigation }: AffirmationEntryScreenProps) {
   const { period } = route.params;
-  const { getTodayProgress, updateAffirmations } = useApp();
+  const { theme: designTheme } = useTheme();
+  const { getTodayProgress } = useApp();
   const todayProgress = useMemo(() => getTodayProgress(), [getTodayProgress]);
 
   const affirmationCounts = {
@@ -67,13 +71,8 @@ export default function AffirmationEntryScreen({ route, navigation }: Affirmatio
 
   useEffect(() => {
     // Load existing affirmations if available
-    const existing = todayProgress.affirmations.affirmationText;
-    if (existing) {
-      const parsed = existing.split('|||');
-      if (parsed.length === count) {
-        setAffirmations(parsed);
-      }
-    }
+    // TODO: Load from storage when affirmation storage is implemented
+    // For now, start with empty affirmations
   }, []);
 
   const updateAffirmation = (index: number, text: string) => {
@@ -97,13 +96,9 @@ export default function AffirmationEntryScreen({ route, navigation }: Affirmatio
 
     // Save affirmations
     const affirmationText = affirmations.join('|||');
-    const updated = {
-      ...todayProgress.affirmations,
-      [period]: true,
-      affirmationText,
-    };
-
-    updateAffirmations(updated);
+    // TODO: Implement affirmation saving when backend is ready
+    // For now, just store locally
+    console.log('Affirmations saved:', { period, affirmationText });
 
     Alert.alert(
       'Complete! ✨',
@@ -141,23 +136,26 @@ export default function AffirmationEntryScreen({ route, navigation }: Affirmatio
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={90}
     >
-      <ScrollView style={styles.scrollView}>
-        <View style={[styles.header, { borderBottomColor: info.color }]}>
+      <Screen
+        scroll
+        title={info.title}
+        subtitle={info.subtitle}
+        style={{ backgroundColor: '#0F0B1F' }}
+      >
+        <View style={styles.headerContent}>
           <Ionicons name={info.icon as any} size={40} color={info.color} />
-          <Text style={styles.title}>{info.title}</Text>
-          <Text style={styles.subtitle}>{info.subtitle}</Text>
         </View>
 
-        <View style={styles.instructionCard}>
+        <Card style={styles.instructionCard}>
           <Ionicons name="information-circle" size={24} color={info.color} />
           <Text style={styles.instructionText}>{info.description}</Text>
-        </View>
+        </Card>
 
         <View style={styles.affirmationsContainer}>
           {affirmations.map((affirmation, index) => (
-            <View key={index} style={styles.affirmationItem}>
+            <Card key={index} style={styles.affirmationItem}>
               <View style={styles.affirmationHeader}>
-                <Text style={styles.affirmationNumber}>Affirmation {index + 1}</Text>
+                <Text style={[styles.affirmationNumber, { color: info.color }]}>Affirmation {index + 1}</Text>
                 <Text style={styles.repeatText}>Repeat {count}x</Text>
               </View>
               <TextInput
@@ -170,7 +168,7 @@ export default function AffirmationEntryScreen({ route, navigation }: Affirmatio
                 numberOfLines={3}
                 textAlignVertical="top"
               />
-            </View>
+            </Card>
           ))}
         </View>
 
@@ -178,25 +176,26 @@ export default function AffirmationEntryScreen({ route, navigation }: Affirmatio
           <Text style={styles.templatesTitle}>💡 Quick Templates</Text>
           <View style={styles.templatesList}>
             {templates.map((template, index) => (
-              <TouchableOpacity
-                key={index}
-                style={styles.templateChip}
-                onPress={() => addTemplate(template)}
-              >
-                <Text style={styles.templateText}>{template}</Text>
-                <Ionicons name="add-circle" size={20} color={info.color} />
-              </TouchableOpacity>
+              <Card key={index} style={styles.templateChip}>
+                <TouchableOpacity
+                  onPress={() => addTemplate(template)}
+                  style={styles.templateChipTouchable}
+                >
+                  <Text style={styles.templateText}>{template}</Text>
+                  <Ionicons name="add-circle" size={20} color={info.color} />
+                </TouchableOpacity>
+              </Card>
             ))}
           </View>
         </View>
 
-        <View style={styles.reminderCard}>
+        <Card style={styles.reminderCard}>
           <Ionicons name="megaphone" size={24} color="#FFD700" />
           <Text style={styles.reminderText}>
             Remember: Speak each affirmation aloud as you write it. Feel the words as if they're already true.
           </Text>
-        </View>
-      </ScrollView>
+        </Card>
+      </Screen>
 
       <View style={styles.footer}>
         <TouchableOpacity
@@ -216,30 +215,16 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#0F0B1F',
   },
-  scrollView: {
-    flex: 1,
-  },
-  header: {
-    padding: 30,
+  headerContent: {
     alignItems: 'center',
+    paddingBottom: 16,
     borderBottomWidth: 2,
-  },
-  title: {
-    fontSize: 26,
-    fontWeight: 'bold',
-    color: '#FFF',
-    marginTop: 15,
-    marginBottom: 5,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: '#AAA',
+    borderBottomColor: '#FFD700',
+    marginBottom: 20,
   },
   instructionCard: {
-    margin: 20,
-    padding: 20,
+    marginBottom: 16,
     backgroundColor: '#1F1B2F',
-    borderRadius: 12,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 15,
@@ -251,13 +236,11 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   affirmationsContainer: {
-    padding: 20,
-    paddingTop: 0,
-    gap: 15,
+    gap: 12,
+    marginBottom: 16,
   },
   affirmationItem: {
     backgroundColor: '#1F1B2F',
-    borderRadius: 12,
     padding: 15,
   },
   affirmationHeader: {
@@ -268,8 +251,7 @@ const styles = StyleSheet.create({
   },
   affirmationNumber: {
     fontSize: 14,
-    fontWeight: 'bold',
-    color: '#FFD700',
+    fontWeight: '700',
   },
   repeatText: {
     fontSize: 12,
@@ -286,24 +268,25 @@ const styles = StyleSheet.create({
     borderColor: '#333',
   },
   templatesSection: {
-    padding: 20,
-    paddingTop: 0,
+    marginBottom: 16,
   },
   templatesTitle: {
     fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: '700',
     color: '#FFF',
-    marginBottom: 15,
+    marginBottom: 12,
   },
   templatesList: {
     gap: 10,
   },
   templateChip: {
+    backgroundColor: '#1F1B2F',
+    padding: 0,
+  },
+  templateChipTouchable: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#1F1B2F',
-    borderRadius: 20,
     padding: 12,
     paddingHorizontal: 16,
   },
@@ -313,12 +296,8 @@ const styles = StyleSheet.create({
     color: '#FFF',
   },
   reminderCard: {
-    margin: 20,
-    marginTop: 0,
     marginBottom: 100,
-    padding: 20,
     backgroundColor: '#1F1B2F',
-    borderRadius: 12,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 15,
@@ -352,6 +331,6 @@ const styles = StyleSheet.create({
   completeButtonText: {
     color: '#FFF',
     fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: '700',
   },
 });

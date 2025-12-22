@@ -7,7 +7,7 @@
 import { getSupabaseClient, isSupabaseConfigured, Database } from '../config/supabase';
 import { AppState } from '../types';
 import { MoodEntry } from '../data/moodTracking';
-import { GratitudeCheckIn } from '../context/AppContext';
+import { GratitudeCheckIn } from '../utils/dayRollover';
 
 // Check if user is authenticated
 export async function isAuthenticated(): Promise<boolean> {
@@ -183,7 +183,7 @@ export async function syncGratitudeCheckInsToCloud(checkIns: GratitudeCheckIn[])
     const checkInsToSync = checkIns.map(checkIn => ({
       user_id: userId,
       text: checkIn.text,
-      date: checkIn.date,
+      date: checkIn.localDayKey, // Use localDayKey as date (YYYY-MM-DD format)
     }));
 
     if (checkInsToSync.length > 0) {

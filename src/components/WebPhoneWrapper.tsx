@@ -59,7 +59,7 @@ export const WebPhoneWrapper: React.FC<WebPhoneWrapperProps> = ({ children }) =>
 
 const styles = StyleSheet.create({
   container: {
-    ...Platform.select({
+    ...(Platform.select({
       web: {
         flex: 1,
         width: '100vw',
@@ -80,10 +80,10 @@ const styles = StyleSheet.create({
         width: '100%',
         height: '100%',
       },
-    }),
+    }) as any),
   },
   phoneFrame: {
-    ...Platform.select({
+    ...(Platform.select({
       web: {
         width: 375,
         minWidth: 320,
@@ -100,7 +100,7 @@ const styles = StyleSheet.create({
         width: '100%',
         height: '100%',
       },
-    }),
+    }) as any),
   },
   appContent: {
     ...Platform.select({

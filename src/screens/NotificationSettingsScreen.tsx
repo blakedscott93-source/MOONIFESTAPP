@@ -664,7 +664,7 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   frequencyOptionNumber: {
-    ...Theme.typography.h1,
+    ...Theme.typography.title,
     color: Theme.colors.textSecondary,
     fontSize: 32,
     marginBottom: Theme.spacing.xs,

@@ -13,8 +13,19 @@
  */
 
 import { Platform } from 'react-native';
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+
+// Optional Supabase import - only used if package is installed
+let createClient: any = null;
+let SupabaseClient: any = null;
+
+try {
+  const supabaseModule = require('@supabase/supabase-js');
+  createClient = supabaseModule.createClient;
+  SupabaseClient = supabaseModule.SupabaseClient;
+} catch (error) {
+  // Supabase package not installed - will gracefully handle this
+}
 
 // Get environment variables
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL || '';
@@ -31,9 +42,13 @@ export const isSupabaseConfigured = !!(
  * Create Supabase client
  * Uses AsyncStorage for session persistence on React Native
  */
-export function createSupabaseClient(): SupabaseClient | null {
-  if (!isSupabaseConfigured) {
-    console.warn('⚠️ Supabase not configured. Add EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY to your .env file');
+export function createSupabaseClient(): any {
+  if (!isSupabaseConfigured || !createClient) {
+    if (!createClient) {
+      console.warn('⚠️ @supabase/supabase-js package not installed. Install it with: npm install @supabase/supabase-js');
+    } else {
+      console.warn('⚠️ Supabase not configured. Add EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY to your .env file');
+    }
     return null;
   }
 
@@ -56,9 +71,9 @@ export function createSupabaseClient(): SupabaseClient | null {
 }
 
 // Export singleton client instance
-let supabaseClient: SupabaseClient | null = null;
+let supabaseClient: any = null;
 
-export function getSupabaseClient(): SupabaseClient | null {
+export function getSupabaseClient(): any {
   if (!supabaseClient && isSupabaseConfigured) {
     supabaseClient = createSupabaseClient();
   }

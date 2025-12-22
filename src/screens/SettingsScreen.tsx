@@ -237,7 +237,7 @@ export default function SettingsScreen({ navigation }: any) {
   ];
 
   return (
-    <Screen style={[styles.container, { backgroundColor: colors.bg }]}>
+    <Screen style={[styles.container, { backgroundColor: colors.bg }] as any}>
       <ScrollView showsVerticalScrollIndicator={false}>
         {/* Header */}
         <View style={styles.header}>

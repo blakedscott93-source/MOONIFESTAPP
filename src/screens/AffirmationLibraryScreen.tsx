@@ -9,14 +9,17 @@ import {
   Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Screen } from '../components/Screen';
+import { Screen } from '../components/layout/Screen';
+import { Card, RowItem } from '../components/ui';
 import { Theme, TOUCH_TARGET_MIN } from '../utils/theme';
+import { useTheme } from '../theme/ThemeProvider';
 import { AFFIRMATION_CATEGORIES, searchAffirmations } from '../data/affirmationLibrary';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const SAVED_AFFIRMATIONS_KEY = '@saved_affirmations';
 
 export default function AffirmationLibraryScreen({ navigation }: any) {
+  const { theme: designTheme } = useTheme();
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [savedAffirmations, setSavedAffirmations] = useState<string[]>([]);
@@ -59,21 +62,25 @@ export default function AffirmationLibraryScreen({ navigation }: any) {
     return (
       <View style={styles.categoryGrid}>
         {AFFIRMATION_CATEGORIES.map((category, index) => (
-          <TouchableOpacity
+          <Card
             key={category.id}
             style={[
               styles.categoryCard,
               { backgroundColor: category.color + '20' },
             ]}
-            onPress={() => setSelectedCategory(category.id)}
-            activeOpacity={0.7}
           >
-            <View style={[styles.categoryIconCircle, { backgroundColor: category.color + '40' }]}>
-              <Ionicons name={category.icon as any} size={32} color={category.color} />
-            </View>
-            <Text style={styles.categoryName}>{category.name}</Text>
-            <Text style={styles.categoryCount}>{category.affirmations.length} affirmations</Text>
-          </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => setSelectedCategory(category.id)}
+              activeOpacity={0.7}
+              style={styles.categoryCardTouchable}
+            >
+              <View style={[styles.categoryIconCircle, { backgroundColor: category.color + '40' }]}>
+                <Ionicons name={category.icon as any} size={32} color={category.color} />
+              </View>
+              <Text style={[styles.categoryName, { color: designTheme.colors.text }]}>{category.name}</Text>
+              <Text style={[styles.categoryCount, { color: designTheme.colors.textSecondary }]}>{category.affirmations.length} affirmations</Text>
+            </TouchableOpacity>
+          </Card>
         ))}
       </View>
     );
@@ -116,10 +123,10 @@ export default function AffirmationLibraryScreen({ navigation }: any) {
           {category.affirmations.map((affirmation, index) => {
             const isSaved = savedAffirmations.includes(affirmation);
             return (
-              <View key={index} style={styles.affirmationCard}>
+              <Card key={index} style={styles.affirmationCard}>
                 <View style={styles.affirmationContent}>
-                  <Ionicons name="quote" size={24} color={category.color} style={styles.quoteIcon} />
-                  <Text style={styles.affirmationText}>{affirmation}</Text>
+                  <Ionicons name="chatbubble-ellipses-outline" size={24} color={category.color} style={styles.quoteIcon} />
+                  <Text style={[styles.affirmationText, { color: designTheme.colors.text }]}>{affirmation}</Text>
                 </View>
                 <TouchableOpacity
                   style={styles.saveButton}
@@ -129,10 +136,10 @@ export default function AffirmationLibraryScreen({ navigation }: any) {
                   <Ionicons
                     name={isSaved ? 'bookmark' : 'bookmark-outline'}
                     size={24}
-                    color={isSaved ? category.color : Theme.colors.textSecondary}
+                    color={isSaved ? category.color : designTheme.colors.textSecondary}
                   />
                 </TouchableOpacity>
-              </View>
+              </Card>
             );
           })}
           <View style={{ height: 100 }} />
@@ -160,12 +167,12 @@ export default function AffirmationLibraryScreen({ navigation }: any) {
             const isSaved = savedAffirmations.includes(result.affirmation);
             const category = AFFIRMATION_CATEGORIES.find(c => c.name === result.category);
             return (
-              <View key={index} style={styles.affirmationCard}>
+              <Card key={index} style={styles.affirmationCard}>
                 <View style={styles.affirmationContent}>
                   <View style={styles.searchResultCategory}>
                     <Text style={styles.searchResultCategoryText}>{result.category}</Text>
                   </View>
-                  <Text style={styles.affirmationText}>{result.affirmation}</Text>
+                  <Text style={[styles.affirmationText, { color: designTheme.colors.text }]}>{result.affirmation}</Text>
                 </View>
                 <TouchableOpacity
                   style={styles.saveButton}
@@ -175,10 +182,10 @@ export default function AffirmationLibraryScreen({ navigation }: any) {
                   <Ionicons
                     name={isSaved ? 'bookmark' : 'bookmark-outline'}
                     size={24}
-                    color={isSaved ? category?.color || Theme.colors.accent : Theme.colors.textSecondary}
+                    color={isSaved ? category?.color || designTheme.colors.primary : designTheme.colors.textSecondary}
                   />
                 </TouchableOpacity>
-              </View>
+              </Card>
             );
           })}
           <View style={{ height: 100 }} />
@@ -188,44 +195,32 @@ export default function AffirmationLibraryScreen({ navigation }: any) {
   };
 
   return (
-    <Screen>
-      <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity
-            onPress={() => navigation.goBack()}
-            style={styles.headerBackButton}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <Ionicons name="chevron-back" size={24} color={Theme.colors.textPrimary} />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Affirmation Library</Text>
-          <View style={{ width: TOUCH_TARGET_MIN }} />
-        </View>
-
-        <Text style={styles.headerSubtitle}>
-          Browse and save powerful affirmations to your collection
-        </Text>
-
-        {/* Search Bar */}
+    <Screen
+      scroll
+      title="Affirmation Library"
+      subtitle="Browse and save powerful affirmations to your collection"
+    >
+      {/* Search Bar */}
+      <Card style={styles.searchCard}>
         <View style={styles.searchContainer}>
-          <Ionicons name="search" size={20} color={Theme.colors.textSecondary} style={styles.searchIcon} />
+          <Ionicons name="search" size={20} color="#6B5B8A" style={styles.searchIcon} />
           <TextInput
             style={styles.searchInput}
             placeholder="Search affirmations..."
-            placeholderTextColor={Theme.colors.textTertiary}
+            placeholderTextColor="#999999"
             value={searchQuery}
             onChangeText={setSearchQuery}
             returnKeyType="search"
           />
           {searchQuery !== '' && (
             <TouchableOpacity onPress={() => setSearchQuery('')} style={styles.searchClear}>
-              <Ionicons name="close-circle" size={20} color={Theme.colors.textSecondary} />
+              <Ionicons name="close-circle" size={20} color="#6B5B8A" />
             </TouchableOpacity>
           )}
         </View>
+      </Card>
 
-        {/* Content */}
+      {/* Content */}
         {searchQuery.trim() ? (
           renderSearchResults()
         ) : selectedCategory ? (
@@ -239,109 +234,80 @@ export default function AffirmationLibraryScreen({ navigation }: any) {
 
         {/* My Collection Link */}
         {savedAffirmations.length > 0 && !selectedCategory && !searchQuery && (
-          <TouchableOpacity
-            style={styles.myCollectionButton}
-            onPress={() => {
-              Alert.alert(
-                'My Collection',
-                `You have ${savedAffirmations.length} saved affirmation${savedAffirmations.length !== 1 ? 's' : ''}.`,
-                [
-                  {
-                    text: 'View',
-                    onPress: () => {
-                      navigation.navigate('SavedAffirmationsScreen');
+          <Card style={styles.myCollectionCard}>
+            <RowItem
+              title={`My Collection (${savedAffirmations.length})`}
+              icon="bookmarks"
+              iconColor={designTheme.colors.primary}
+              onPress={() => {
+                Alert.alert(
+                  'My Collection',
+                  `You have ${savedAffirmations.length} saved affirmation${savedAffirmations.length !== 1 ? 's' : ''}.`,
+                  [
+                    {
+                      text: 'View',
+                      onPress: () => {
+                        navigation.navigate('SavedAffirmationsScreen');
+                      },
                     },
-                  },
-                  { text: 'Cancel', style: 'cancel' },
-                ]
-              );
-            }}
-          >
-            <Ionicons name="bookmarks" size={24} color={Theme.colors.accent} />
-            <Text style={styles.myCollectionText}>
-              My Collection ({savedAffirmations.length})
-            </Text>
-            <Ionicons name="chevron-forward" size={20} color={Theme.colors.textSecondary} />
-          </TouchableOpacity>
+                    { text: 'Cancel', style: 'cancel' },
+                  ]
+                );
+              }}
+            />
+          </Card>
         )}
 
         <View style={{ height: 100 }} />
-      </ScrollView>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Theme.colors.bg,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: Theme.spacing.lg,
-    paddingTop: Theme.spacing.xl,
-    paddingBottom: Theme.spacing.md,
-  },
-  headerBackButton: {
-    width: TOUCH_TARGET_MIN,
-    height: TOUCH_TARGET_MIN,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: Theme.radius.full,
-  },
-  headerTitle: {
-    ...Theme.typography.h2,
-    color: Theme.colors.textPrimary,
-  },
-  headerSubtitle: {
-    ...Theme.typography.body,
-    color: Theme.colors.textSecondary,
-    textAlign: 'center',
-    paddingHorizontal: Theme.spacing.xl,
-    marginBottom: Theme.spacing.lg,
+  searchCard: {
+    marginHorizontal: 16,
+    marginBottom: 20,
+    padding: 0,
   },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Theme.colors.surface,
-    borderRadius: Theme.radius.lg,
-    paddingHorizontal: Theme.spacing.md,
-    marginHorizontal: Theme.spacing.lg,
-    marginBottom: Theme.spacing.xl,
-    ...Theme.shadow.subtle,
+    paddingHorizontal: 12,
   },
   searchIcon: {
-    marginRight: Theme.spacing.sm,
+    marginRight: 8,
   },
   searchInput: {
     flex: 1,
-    ...Theme.typography.body,
-    color: Theme.colors.textPrimary,
-    paddingVertical: Theme.spacing.md,
+    fontSize: 15,
+    fontWeight: '500',
+    color: '#1F1235',
+    paddingVertical: 12,
   },
   searchClear: {
-    padding: Theme.spacing.xs,
+    padding: 4,
   },
   sectionTitle: {
-    ...Theme.typography.h3,
-    color: Theme.colors.textPrimary,
-    paddingHorizontal: Theme.spacing.lg,
-    marginBottom: Theme.spacing.md,
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1F1235',
+    paddingHorizontal: 16,
+    marginBottom: 12,
   },
   categoryGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    paddingHorizontal: Theme.spacing.lg,
-    gap: Theme.spacing.md,
+    paddingHorizontal: 16,
+    gap: 12,
   },
   categoryCard: {
     width: '48%',
-    borderRadius: Theme.radius.lg,
-    padding: Theme.spacing.lg,
+    padding: 16,
     alignItems: 'center',
-    ...Theme.shadow.medium,
+  },
+  categoryCardTouchable: {
+    width: '100%',
+    alignItems: 'center',
   },
   categoryIconCircle: {
     width: 64,
@@ -349,17 +315,17 @@ const styles = StyleSheet.create({
     borderRadius: 32,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: Theme.spacing.md,
+    marginBottom: 12,
   },
   categoryName: {
-    ...Theme.typography.bodyBold,
-    color: Theme.colors.textPrimary,
+    fontSize: 15,
+    fontWeight: '600',
     textAlign: 'center',
-    marginBottom: Theme.spacing.xs,
+    marginBottom: 4,
   },
   categoryCount: {
-    ...Theme.typography.small,
-    color: Theme.colors.textSecondary,
+    fontSize: 12,
+    fontWeight: '500',
   },
   affirmationsListContainer: {
     flex: 1,
@@ -367,11 +333,11 @@ const styles = StyleSheet.create({
   categoryHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: Theme.spacing.lg,
-    paddingBottom: Theme.spacing.lg,
+    paddingHorizontal: 16,
+    paddingBottom: 16,
   },
   backButton: {
-    marginRight: Theme.spacing.md,
+    marginRight: 12,
   },
   categoryHeaderContent: {
     flexDirection: 'row',
@@ -384,83 +350,71 @@ const styles = StyleSheet.create({
     borderRadius: 28,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: Theme.spacing.md,
+    marginRight: 12,
   },
   categoryHeaderTitle: {
-    ...Theme.typography.h3,
-    color: Theme.colors.textPrimary,
-    marginBottom: Theme.spacing.xs / 2,
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#1F1235',
+    marginBottom: 2,
   },
   categoryHeaderDescription: {
-    ...Theme.typography.small,
-    color: Theme.colors.textSecondary,
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#6B5B8A',
   },
   affirmationsList: {
     flex: 1,
   },
   affirmationsListContent: {
-    paddingHorizontal: Theme.spacing.lg,
+    paddingHorizontal: 16,
   },
   affirmationCard: {
-    backgroundColor: Theme.colors.surface,
-    borderRadius: Theme.radius.lg,
-    padding: Theme.spacing.lg,
-    marginBottom: Theme.spacing.md,
+    padding: 16,
+    marginBottom: 12,
     flexDirection: 'row',
     alignItems: 'center',
-    ...Theme.shadow.subtle,
   },
   affirmationContent: {
     flex: 1,
-    marginRight: Theme.spacing.md,
+    marginRight: 12,
   },
   quoteIcon: {
-    marginBottom: Theme.spacing.sm,
+    marginBottom: 8,
   },
   affirmationText: {
-    ...Theme.typography.body,
-    color: Theme.colors.textPrimary,
+    fontSize: 15,
+    fontWeight: '500',
     lineHeight: 22,
   },
   saveButton: {
-    padding: Theme.spacing.xs,
+    padding: 4,
   },
   searchResultsContainer: {
     flex: 1,
   },
   searchResultsHeader: {
-    ...Theme.typography.bodyBold,
-    color: Theme.colors.textSecondary,
-    paddingHorizontal: Theme.spacing.lg,
-    marginBottom: Theme.spacing.md,
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#6B5B8A',
+    paddingHorizontal: 16,
+    marginBottom: 12,
   },
   searchResultCategory: {
     alignSelf: 'flex-start',
-    backgroundColor: Theme.colors.accent + '20',
-    paddingHorizontal: Theme.spacing.sm,
-    paddingVertical: Theme.spacing.xs / 2,
-    borderRadius: Theme.radius.sm,
-    marginBottom: Theme.spacing.sm,
+    backgroundColor: '#7C3AED20',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 12,
+    marginBottom: 8,
   },
   searchResultCategoryText: {
-    ...Theme.typography.caption,
-    color: Theme.colors.accent,
+    fontSize: 12,
     fontWeight: '600',
+    color: '#7C3AED',
   },
-  myCollectionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Theme.colors.surface,
-    marginHorizontal: Theme.spacing.lg,
-    marginTop: Theme.spacing.xl,
-    padding: Theme.spacing.lg,
-    borderRadius: Theme.radius.lg,
-    ...Theme.shadow.medium,
-  },
-  myCollectionText: {
-    ...Theme.typography.bodyBold,
-    color: Theme.colors.textPrimary,
-    flex: 1,
-    marginLeft: Theme.spacing.md,
+  myCollectionCard: {
+    marginHorizontal: 16,
+    marginTop: 20,
   },
 });

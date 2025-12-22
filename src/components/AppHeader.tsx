@@ -34,7 +34,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
       <View style={styles.iconButton}>
         {leftIcon ? (
           <TouchableOpacity
-            style={styles.iconButtonCircle}
+            style={[styles.iconButtonCircle, { opacity: 1 }]} // Full opacity for interactive
             onPress={leftIcon.onPress}
             accessibilityLabel={leftIcon.accessibilityLabel || 'Back'}
             accessibilityRole="button"
@@ -56,7 +56,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
       <View style={styles.iconButton}>
         {rightIcon ? (
           <TouchableOpacity
-            style={styles.iconButtonCircle}
+            style={[styles.iconButtonCircle, { opacity: 1 }]} // Full opacity for interactive
             onPress={rightIcon.onPress}
             accessibilityLabel={rightIcon.accessibilityLabel || 'Action'}
             accessibilityRole="button"
@@ -81,38 +81,41 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: Theme.spacing.lg,
-    paddingTop: Theme.spacing.xxxl + Theme.spacing.md,
-    paddingBottom: Theme.spacing.xl,
+    paddingTop: Theme.spacing.xl + Theme.spacing.sm, // Reduced from xxxl (40) to xl (20) - ~50% reduction
+    paddingBottom: Theme.spacing.sm, // Reduced from md (12) to sm (8)
   },
   iconButton: {
-    width: TOUCH_TARGET_MIN,
-    height: TOUCH_TARGET_MIN,
+    width: 44, // Ensure 44x44 hit area
+    height: 44,
     alignItems: 'center',
     justifyContent: 'center',
   },
   iconButtonCircle: {
-    width: TOUCH_TARGET_MIN,
-    height: TOUCH_TARGET_MIN,
-    borderRadius: TOUCH_TARGET_MIN / 2,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: Theme.colors.accentSoft,
+    opacity: 0.12, // Reduced opacity for decorative left element
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: Theme.colors.border,
-    ...Theme.shadow.subtle,
+    borderWidth: 0,
   },
   titleContainer: {
     flex: 1,
     alignItems: 'center',
   },
   title: {
-    ...Theme.typography.title,
+    fontSize: 24, // Reduced from 28 to 24
+    fontWeight: '700',
+    letterSpacing: -0.3,
     color: Theme.colors.textPrimary,
+    lineHeight: 30, // Reduced from 34
   },
   subtitle: {
-    ...Theme.typography.caption,
+    fontSize: 13, // Keep at 13 (within 13-14 range)
+    fontWeight: '600',
     color: Theme.colors.textSecondary,
-    marginTop: Theme.spacing.xs,
+    marginTop: 3, // Reduced from 4
   },
 });
 

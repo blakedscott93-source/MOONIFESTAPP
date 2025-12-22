@@ -9,10 +9,8 @@ export default function TasksScreen({ navigation }: any) {
 
   const mustDoTasks = todayProgress.tasks.filter((t) => t.isMustDo);
   const completedMustDos = mustDoTasks.filter((t) => t.completed).length;
-  const affirmationsComplete =
-    todayProgress.affirmations.morning &&
-    todayProgress.affirmations.afternoon &&
-    todayProgress.affirmations.evening;
+  // TODO: Implement affirmations tracking when DayProgress is updated
+  const affirmationsComplete = false; // Placeholder
 
   const getCurrentPeriod = () => {
     const hour = new Date().getHours();
@@ -23,13 +21,7 @@ export default function TasksScreen({ navigation }: any) {
   };
 
   const currentPeriod = getCurrentPeriod();
-  const nextAffirmation = !todayProgress.affirmations.morning
-    ? 'morning'
-    : !todayProgress.affirmations.afternoon
-    ? 'afternoon'
-    : !todayProgress.affirmations.evening
-    ? 'evening'
-    : null;
+  const nextAffirmation = 'morning'; // Placeholder - will be determined by actual affirmation state
 
   return (
     <ScrollView style={styles.container}>

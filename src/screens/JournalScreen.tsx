@@ -166,8 +166,7 @@ export default function JournalScreen() {
             icon="save"
             onPress={handleSave}
             disabled={!entry.trim() || isSaving}
-            style={styles.saveButton}
-            accessibilityLabel={isComplete ? "Save extra entry" : "Save check-in"}
+            fullWidth
           />
 
           {/* Saved Check-ins */}

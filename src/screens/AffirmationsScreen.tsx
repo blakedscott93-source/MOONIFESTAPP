@@ -5,21 +5,24 @@ import {
   StyleSheet,
   FlatList,
   TouchableOpacity,
+  ViewStyle,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { GUIDED_SESSIONS, AFFIRMATION_CATEGORIES } from '../data/guidedAffirmations';
 import { MEDITATION_SESSIONS, getMeditationsByType } from '../data/meditations';
-import { Screen } from '../components/Screen';
-import { SectionHeader } from '../components/SectionHeader';
+import { Screen } from '../components/layout/Screen';
+import { Card } from '../components/ui';
 import { ChipRow, ChipOption } from '../components/ChipRow';
 import { MediaCard, MediaCardData } from '../components/MediaCard';
 import { AffirmationsFAB } from '../components/AffirmationsFAB';
 import { Theme } from '../utils/theme';
+import { useTheme } from '../theme/ThemeProvider';
 
 type TabType = 'affirmations' | 'meditations';
 type MeditationType = 'morning' | 'midday' | 'sleep' | 'all';
 
 export default function AffirmationsScreen({ navigation }: any) {
+  const { theme: designTheme } = useTheme();
   const [activeTab, setActiveTab] = useState<TabType>('affirmations');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [selectedMeditationType, setSelectedMeditationType] = useState<MeditationType>('all');
@@ -103,60 +106,66 @@ export default function AffirmationsScreen({ navigation }: any) {
     navigation.navigate('AffirmationLibrary');
   };
 
-  const renderCard = ({ item, index }: { item: MediaCardData; index: number }) => (
-    <MediaCard
-      data={item}
-      onPress={() => handleCardPress(item)}
-      style={[
-        styles.card,
-        index % 2 === 0 ? styles.cardLeft : styles.cardRight,
-      ]}
-    />
-  );
+  const renderCard = ({ item, index }: { item: MediaCardData; index: number }) => {
+    const cardStyle: ViewStyle = index % 2 === 0 
+      ? [styles.card, styles.cardLeft] as any
+      : [styles.card, styles.cardRight] as any;
+    return (
+      <MediaCard
+        data={item}
+        onPress={() => handleCardPress(item)}
+        style={cardStyle}
+      />
+    );
+  };
 
   const renderHeader = () => (
     <View>
       {/* Segmented Control */}
-      <View style={styles.segmentedControl}>
-        <TouchableOpacity
-          style={[
-            styles.segment,
-            activeTab === 'affirmations' && styles.segmentActive,
-          ]}
-          onPress={() => setActiveTab('affirmations')}
-          accessibilityLabel="Affirmations tab"
-          accessibilityRole="tab"
-          accessibilityState={{ selected: activeTab === 'affirmations' }}
-        >
-          <Text
+      <Card style={styles.segmentedControlCard}>
+        <View style={styles.segmentedControl}>
+          <TouchableOpacity
             style={[
-              styles.segmentText,
-              activeTab === 'affirmations' && styles.segmentTextActive,
+              styles.segment,
+              activeTab === 'affirmations' && styles.segmentActive,
             ]}
+            onPress={() => setActiveTab('affirmations')}
+            accessibilityLabel="Affirmations tab"
+            accessibilityRole="tab"
+            accessibilityState={{ selected: activeTab === 'affirmations' }}
           >
-            Affirmations
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[
-            styles.segment,
-            activeTab === 'meditations' && styles.segmentActive,
-          ]}
-          onPress={() => setActiveTab('meditations')}
-          accessibilityLabel="Meditations tab"
-          accessibilityRole="tab"
-          accessibilityState={{ selected: activeTab === 'meditations' }}
-        >
-          <Text
+            <Text
+              style={[
+                styles.segmentText,
+                { color: designTheme.colors.textSecondary },
+                activeTab === 'affirmations' && styles.segmentTextActive,
+              ]}
+            >
+              Affirmations
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
             style={[
-              styles.segmentText,
-              activeTab === 'meditations' && styles.segmentTextActive,
+              styles.segment,
+              activeTab === 'meditations' && styles.segmentActive,
             ]}
+            onPress={() => setActiveTab('meditations')}
+            accessibilityLabel="Meditations tab"
+            accessibilityRole="tab"
+            accessibilityState={{ selected: activeTab === 'meditations' }}
           >
-            Meditations
-          </Text>
-        </TouchableOpacity>
-      </View>
+            <Text
+              style={[
+                styles.segmentText,
+                { color: designTheme.colors.textSecondary },
+                activeTab === 'meditations' && styles.segmentTextActive,
+              ]}
+            >
+              Meditations
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </Card>
 
       {/* Filter Chips */}
       <ChipRow
@@ -174,21 +183,20 @@ export default function AffirmationsScreen({ navigation }: any) {
   );
 
   return (
-    <Screen style={styles.container}>
-      <SectionHeader
-        title={activeTab === 'affirmations' ? 'Affirmations' : 'Meditations'}
-        subtitle={
-          activeTab === 'affirmations'
-            ? 'Transform your mindset with powerful affirmations'
-            : 'Find peace and clarity with guided meditations'
-        }
-        rightIcon={{
-          name: 'lock-closed',
-          onPress: () => {},
-          accessibilityLabel: 'Locked sessions',
-        }}
-      />
-
+    <Screen
+      scroll={false}
+      title={activeTab === 'affirmations' ? 'Affirmations' : 'Meditations'}
+      subtitle={
+        activeTab === 'affirmations'
+          ? 'Transform your mindset with powerful affirmations'
+          : 'Find peace and clarity with guided meditations'
+      }
+      rightAction={{
+        icon: 'lock-closed-outline',
+        onPress: () => {},
+        label: 'Locked sessions',
+      }}
+    >
       <FlatList
         data={currentData}
         renderItem={renderCard}
@@ -198,7 +206,7 @@ export default function AffirmationsScreen({ navigation }: any) {
         contentContainerStyle={styles.listContent}
         columnWrapperStyle={styles.row}
         showsVerticalScrollIndicator={false}
-        ListFooterComponent={<View style={{ height: Theme.spacing.xxxl + 80 }} />}
+        ListFooterComponent={<View style={{ height: designTheme.spacing[32] + 80 }} />}
       />
 
       {/* Premium FAB */}
@@ -210,50 +218,47 @@ export default function AffirmationsScreen({ navigation }: any) {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
   listContent: {
-    paddingHorizontal: Theme.spacing.lg,
-    paddingBottom: Theme.spacing.xl,
+    paddingHorizontal: 16,
+    paddingBottom: 20,
+    paddingTop: 8,
   },
   row: {
     justifyContent: 'space-between',
   },
+  segmentedControlCard: {
+    marginHorizontal: 16,
+    marginBottom: 12,
+    padding: 4,
+  },
   segmentedControl: {
     flexDirection: 'row',
-    backgroundColor: Theme.colors.surfaceSecondary,
-    borderRadius: Theme.radius.md,
-    padding: Theme.spacing.xs,
-    marginHorizontal: Theme.spacing.lg,
-    marginBottom: Theme.spacing.md,
   },
   segment: {
     flex: 1,
-    paddingVertical: Theme.spacing.sm,
-    paddingHorizontal: Theme.spacing.md,
-    borderRadius: Theme.radius.sm,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
   },
   segmentActive: {
-    backgroundColor: Theme.colors.surface,
-    ...Theme.shadow.subtle,
+    backgroundColor: '#F7F5FF',
   },
   segmentText: {
-    ...Theme.typography.bodyBold,
-    color: Theme.colors.textSecondary,
+    fontSize: 15,
+    fontWeight: '600',
   },
   segmentTextActive: {
-    color: Theme.colors.accent,
+    color: '#7C3AED',
   },
   card: {
-    marginBottom: Theme.spacing.lg,
+    marginBottom: 16,
   },
   cardLeft: {
-    marginRight: Theme.spacing.sm,
+    marginRight: 8,
   },
   cardRight: {
-    marginLeft: Theme.spacing.sm,
+    marginLeft: 8,
   },
 });

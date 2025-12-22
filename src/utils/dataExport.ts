@@ -46,10 +46,11 @@ export async function exportAllData(): Promise<string | null> {
 
     const jsonString = JSON.stringify(data, null, 2);
     const fileName = `moonifest-export-${new Date().toISOString().split('T')[0]}.json`;
-    const fileUri = `${FileSystem.documentDirectory}${fileName}`;
+    const documentDir = (FileSystem as any).documentDirectory || '';
+    const fileUri = `${documentDir}${fileName}`;
 
     await FileSystem.writeAsStringAsync(fileUri, jsonString, {
-      encoding: FileSystem.EncodingType.UTF8,
+      encoding: ((FileSystem as any).EncodingType?.UTF8 || 'utf8') as any,
     });
 
     return fileUri;

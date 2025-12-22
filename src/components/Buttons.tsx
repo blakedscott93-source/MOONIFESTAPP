@@ -137,7 +137,7 @@ export const Chip: React.FC<ChipProps> = ({
         testID={testID}
         accessibilityRole="button"
       accessibilityLabel={label}
-      accessibilityHint={onPress ? undefined : 'This chip is not interactive'}
+      accessibilityHint={undefined}
     >
       {content}
       </TouchableOpacity>

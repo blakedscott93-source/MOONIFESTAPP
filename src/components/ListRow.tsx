@@ -92,7 +92,7 @@ export const ListRow: React.FC<ListRowProps> = React.memo(({
 
 const styles = StyleSheet.create({
   row: {
-    minHeight: TOUCH_TARGET_MIN + Theme.spacing.md,
+    minHeight: 56, // More compact (was 44 + 12 = 56, keeping same but cleaner)
     justifyContent: 'center',
   },
   container: {

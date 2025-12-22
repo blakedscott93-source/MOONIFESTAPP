@@ -1,9 +1,10 @@
 import React, { useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Animated, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Animated } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Theme, TOUCH_TARGET_MIN } from '../utils/theme';
+import { Theme } from '../utils/theme';
+import { lightHaptic } from '../utils/haptics';
 
 interface JournalFABProps {
   onPress: () => void;
@@ -13,12 +14,12 @@ interface JournalFABProps {
   isScrolling?: boolean;
 }
 
-// Bottom tab bar height from AppNavigator
+// Constants
 const BOTTOM_TAB_HEIGHT = 85;
-// Target spacing above tab bar (flush with footer - minimal gap)
 const FAB_SPACING_ABOVE_TAB = 0;
-// Fixed FAB height for perfect pill shape
 const FAB_HEIGHT = 56;
+const FULL_WIDTH = 120;
+const COLLAPSED_WIDTH = FAB_HEIGHT;
 
 export const JournalFAB: React.FC<JournalFABProps> = ({
   onPress,
@@ -28,19 +29,60 @@ export const JournalFAB: React.FC<JournalFABProps> = ({
   isScrolling = false,
 }) => {
   const insets = useSafeAreaInsets();
-  const scaleAnim = useRef(new Animated.Value(1)).current;
-  const opacityAnim = useRef(new Animated.Value(1)).current;
+  
+  // Press feedback animations (native driver)
+  const pressScale = useRef(new Animated.Value(1)).current;
+  const pressOpacity = useRef(new Animated.Value(1)).current;
+  
+  // Expand/collapse animation (0 = collapsed, 1 = expanded)
+  const expandProgress = useRef(new Animated.Value(1)).current;
+  
+  // Text opacity and slide animations (native driver)
   const textOpacity = useRef(new Animated.Value(1)).current;
-  const buttonWidth = useRef(new Animated.Value(1)).current;
-  const textWidth = useRef(new Animated.Value(50)).current;
+  const textTranslateX = useRef(new Animated.Value(0)).current;
 
-  const handlePressIn = () => {
+  // Handle expand/collapse with smooth spring animation
+  useEffect(() => {
+    const targetProgress = isScrolling ? 0 : 1;
+    
     Animated.parallel([
-      Animated.spring(scaleAnim, {
-        toValue: 0.98,
+      // Width animation (JS driver required)
+      Animated.spring(expandProgress, {
+        toValue: targetProgress,
+        useNativeDriver: false,
+        tension: 120,
+        friction: 9,
+        overshootClamping: false,
+      }),
+      // Text fade (native driver)
+      Animated.timing(textOpacity, {
+        toValue: targetProgress,
+        duration: isScrolling ? 120 : 200,
+        delay: isScrolling ? 0 : 80,
         useNativeDriver: true,
       }),
-      Animated.timing(opacityAnim, {
+      // Text slide (native driver) - slides in from left
+      Animated.spring(textTranslateX, {
+        toValue: isScrolling ? -20 : 0,
+        useNativeDriver: true,
+        tension: 150,
+        friction: 10,
+        delay: isScrolling ? 0 : 50,
+      }),
+    ]).start();
+  }, [isScrolling, expandProgress, textOpacity, textTranslateX]);
+
+  // Press handlers with haptic feedback
+  const handlePressIn = () => {
+    lightHaptic();
+    Animated.parallel([
+      Animated.spring(pressScale, {
+        toValue: 0.96,
+        useNativeDriver: true,
+        tension: 400,
+        friction: 25,
+      }),
+      Animated.timing(pressOpacity, {
         toValue: 0.9,
         duration: 100,
         useNativeDriver: true,
@@ -50,13 +92,13 @@ export const JournalFAB: React.FC<JournalFABProps> = ({
 
   const handlePressOut = () => {
     Animated.parallel([
-      Animated.spring(scaleAnim, {
+      Animated.spring(pressScale, {
         toValue: 1,
-        tension: 300,
-        friction: 20,
         useNativeDriver: true,
+        tension: 400,
+        friction: 25,
       }),
-      Animated.timing(opacityAnim, {
+      Animated.timing(pressOpacity, {
         toValue: 1,
         duration: 150,
         useNativeDriver: true,
@@ -64,85 +106,25 @@ export const JournalFAB: React.FC<JournalFABProps> = ({
     ]).start();
   };
 
-  const handlePress = () => {
-    // Haptic feedback if available (would require expo-haptics package)
-    // For now, just call onPress
-    onPress();
-  };
-
-  // Animate text and button width based on scroll state
-  useEffect(() => {
-    // Stop any running animations first
-    textOpacity.stopAnimation();
-    buttonWidth.stopAnimation();
-    textWidth.stopAnimation();
-    
-    if (isScrolling) {
-      // Hide text and shrink to icon-only when scrolling
-      Animated.parallel([
-        Animated.timing(textOpacity, {
-          toValue: 0,
-          duration: 180,
-          useNativeDriver: true,
-        }),
-        Animated.spring(buttonWidth, {
-          toValue: 0,
-          tension: 120,
-          friction: 8,
-          useNativeDriver: false,
-        }),
-        Animated.timing(textWidth, {
-          toValue: 0,
-          duration: 180,
-          useNativeDriver: false,
-        }),
-      ]).start();
-    } else {
-      // Show text and expand when scrolling stops
-      Animated.parallel([
-        Animated.spring(buttonWidth, {
-          toValue: 1,
-          tension: 100,
-          friction: 7,
-          useNativeDriver: false,
-        }),
-        Animated.timing(textWidth, {
-          toValue: 50,
-          duration: 200,
-          delay: 80,
-          useNativeDriver: false,
-        }),
-        Animated.timing(textOpacity, {
-          toValue: 1,
-          duration: 200,
-          delay: 80,
-          useNativeDriver: true,
-        }),
-      ]).start();
-    }
-  }, [isScrolling]);
-
-  // Calculate bottom position: tab bar height + safe area bottom + spacing
-  // Positioned lower to overlap tab bar slightly (moved down 50% more)
+  // Calculate bottom position
   const bottomPosition = BOTTOM_TAB_HEIGHT + insets.bottom + FAB_SPACING_ABOVE_TAB - (FAB_HEIGHT / 2);
 
-  // Calculate animated width - ensure minimum is FAB_HEIGHT to prevent cropping
-  const animatedWidth = buttonWidth.interpolate({
+  // Interpolate width for smooth expansion
+  const animatedWidth = expandProgress.interpolate({
     inputRange: [0, 1],
-    outputRange: [FAB_HEIGHT, 120], // Icon-only width to full width
+    outputRange: [COLLAPSED_WIDTH, FULL_WIDTH],
+    extrapolate: 'clamp',
   });
-  
-  // Animated gap between icon and text
-  const animatedGap = buttonWidth.interpolate({
-    inputRange: [0, 0.3, 1],
-    outputRange: [0, 0, Theme.spacing.sm], // No gap when collapsed, gap when expanded
-  });
-  
-  // Animated padding - 0 when collapsed (icon-only), full padding when expanded
-  const animatedPadding = buttonWidth.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, Theme.spacing.xl],
-  });
+
+  // Combined text opacity with smooth fade
+  const combinedTextOpacity = Animated.multiply(
+    expandProgress.interpolate({
+      inputRange: [0, 0.3, 1],
+      outputRange: [0, 0, 1],
+      extrapolate: 'clamp',
+    }),
+    textOpacity
+  );
 
   return (
     <Animated.View
@@ -151,61 +133,65 @@ export const JournalFAB: React.FC<JournalFABProps> = ({
         {
           bottom: bottomPosition,
           opacity,
-          transform: [{ translateY }, { scale: scaleAnim }],
+          transform: [{ translateY }],
         },
       ]}
       pointerEvents={visible ? 'auto' : 'none'}
     >
       <TouchableOpacity
-        style={styles.button}
-        onPress={handlePress}
+        activeOpacity={1}
+        onPress={onPress}
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
-        activeOpacity={1}
         accessibilityLabel="Write entry"
         accessibilityRole="button"
         accessibilityHint="Start writing a new journal entry"
       >
-        <Animated.View style={{ opacity: opacityAnim }}>
+        <Animated.View
+          style={[
+            styles.buttonWrapper,
+            {
+              opacity: pressOpacity,
+              transform: [{ scale: pressScale }],
+            },
+          ]}
+        >
           <Animated.View
             style={[
-              styles.gradient,
+              styles.buttonContainer,
               {
                 width: animatedWidth,
-                minWidth: FAB_HEIGHT, // Prevent shrinking below icon size
               },
             ]}
           >
             <LinearGradient
               colors={['#FF6B9D', '#E85A8A', '#C44569']}
-              style={styles.gradientInner}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
+              style={styles.gradient}
             >
-              <Animated.View
-                style={[
-                  styles.innerContent,
-                  {
-                    paddingHorizontal: animatedPadding,
-                  }
-                ]}
-              >
+              <View style={styles.contentContainer}>
+                {/* Icon - always visible, right-aligned */}
                 <View style={styles.iconContainer}>
                   <Ionicons name="create" size={20} color="#FFF" />
                 </View>
+                
+                {/* Text - fades and slides in/out smoothly */}
                 <Animated.View
                   style={[
                     styles.textContainer,
                     {
-                      opacity: textOpacity,
-                      marginLeft: animatedGap,
-                      width: textWidth,
-                    }
+                      opacity: combinedTextOpacity,
+                      transform: [{ translateX: textTranslateX }],
+                    },
                   ]}
+                  pointerEvents="none"
                 >
-                  <Text style={styles.text} numberOfLines={1}>Write</Text>
+                  <Text style={styles.text} numberOfLines={1}>
+                    Write
+                  </Text>
                 </Animated.View>
-              </Animated.View>
+              </View>
             </LinearGradient>
           </Animated.View>
         </Animated.View>
@@ -218,50 +204,52 @@ const styles = StyleSheet.create({
   container: {
     position: 'absolute',
     right: Theme.spacing.lg,
-    zIndex: 1000, // Ensure it's above everything
-    // No overflow clipping - ensure parent doesn't clip
-  },
-  button: {
+    zIndex: 1000,
     height: FAB_HEIGHT,
-    borderRadius: FAB_HEIGHT / 2, // Perfect pill shape (height/2)
-    minWidth: FAB_HEIGHT, // Minimum width equals height for pill
-    overflow: 'hidden', // Clip content to prevent icon cropping
+  },
+  buttonWrapper: {
+    height: FAB_HEIGHT,
+    borderRadius: FAB_HEIGHT / 2,
     ...Theme.shadow.fab,
   },
-  gradient: {
+  buttonContainer: {
     height: FAB_HEIGHT,
-    borderRadius: FAB_HEIGHT / 2, // Match parent borderRadius
-    overflow: 'hidden',
-  },
-  gradientInner: {
-    height: FAB_HEIGHT,
-    paddingVertical: 0,
     borderRadius: FAB_HEIGHT / 2,
-    width: '100%',
     overflow: 'hidden',
+    minWidth: COLLAPSED_WIDTH,
   },
-  innerContent: {
+  gradient: {
+    flex: 1,
+    borderRadius: FAB_HEIGHT / 2,
+    justifyContent: 'center',
+    alignItems: 'flex-end',
+  },
+  contentContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'flex-end',
     height: FAB_HEIGHT,
+    paddingRight: Theme.spacing.md,
+    paddingLeft: Theme.spacing.md,
+    gap: Theme.spacing.xs,
   },
   iconContainer: {
     width: 20,
     height: 20,
     alignItems: 'center',
     justifyContent: 'center',
+    flexShrink: 0,
   },
   textContainer: {
     overflow: 'hidden',
-    alignItems: 'flex-start',
     justifyContent: 'center',
+    minWidth: 50,
   },
   text: {
     ...Theme.typography.bodyBold,
     color: Theme.colors.textInverse,
-    letterSpacing: 0.3,
     fontSize: 15,
     fontWeight: '700',
+    letterSpacing: 0.3,
   },
 });

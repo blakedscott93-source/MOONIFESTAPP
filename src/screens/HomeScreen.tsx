@@ -3,18 +3,19 @@ import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
   TouchableOpacity,
   RefreshControl,
+  Animated,
+  Platform,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '../context/AppContext';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Screen } from '../components/Screen';
-import { AppHeader } from '../components/AppHeader';
+import { SectionCard, GlassCard, RowItem, ProgressBar, IconButton } from '../components/ui';
+import { Screen } from '../components/layout/Screen';
 import { UnifiedCard } from '../components/UnifiedCard';
-import { ListRow } from '../components/ListRow';
-import { Theme } from '../utils/theme';
+import { tokens } from '../theme/tokens';
 import { MoodCheckIn } from '../components/MoodCheckIn';
 import { MoodType, EnergyLevel, getMoodOption, getEnergyOption } from '../data/moodTracking';
 import { DailySpin, DailySpinButton } from '../components/DailySpin';
@@ -36,7 +37,15 @@ const GOAL_MESSAGES: Record<string, string> = {
   spirituality: "Let's deepen your spiritual practice",
 };
 
+// Screen padding constant
+const SCREEN_PAD = 16;
+
+// Tab bar height constants (matching AppNavigator)
+const TAB_BAR_HEIGHT = Platform.OS === 'ios' ? 88 : Platform.OS === 'web' ? 70 : 60;
+const BREATHING_ROOM = 16; // Minimum space above tab bar
+
 export default function HomeScreen({ navigation }: any) {
+  const insets = useSafeAreaInsets();
   const { appState, getTodayProgress, saveMoodEntry, getTodayMood, addGlowPoints, userGoals, goalCategories } = useApp();
   // Memoize todayProgress to prevent recalculation on every render
   const todayProgress = useMemo(() => getTodayProgress(), [getTodayProgress]);
@@ -50,6 +59,9 @@ export default function HomeScreen({ navigation }: any) {
   const [refreshing, setRefreshing] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
+  
+  // Animation for streak icon pulse
+  const streakPulseAnim = useRef(new Animated.Value(1)).current;
 
   const loadTodayMood = useCallback(async () => {
     const mood = await getTodayMood();
@@ -98,6 +110,30 @@ export default function HomeScreen({ navigation }: any) {
     loadInitialData();
   }, [loadInitialData]);
 
+  // Pulse animation for streak icon when streak is active
+  useEffect(() => {
+    if (appState.currentStreak > 0) {
+      const pulseAnimation = Animated.loop(
+        Animated.sequence([
+          Animated.timing(streakPulseAnim, {
+            toValue: 1.1,
+            duration: 1500,
+            useNativeDriver: true,
+          }),
+          Animated.timing(streakPulseAnim, {
+            toValue: 1,
+            duration: 1500,
+            useNativeDriver: true,
+          }),
+        ])
+      );
+      pulseAnimation.start();
+      return () => pulseAnimation.stop();
+    } else {
+      streakPulseAnim.setValue(1);
+    }
+  }, [appState.currentStreak, streakPulseAnim]);
+
   const handleMoodSubmit = useCallback(async (mood: MoodType, energy: EnergyLevel, note?: string) => {
     await saveMoodEntry(mood, energy, note);
     await loadTodayMood();
@@ -131,6 +167,12 @@ export default function HomeScreen({ navigation }: any) {
     if (hour < 18) return 'Good Afternoon';
     return 'Good Evening';
   };
+
+  const dateString = today.toLocaleDateString('en-US', {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+  });
 
   // Memoize expensive calculations
   const mustDoTasks = useMemo(() => 
@@ -185,7 +227,7 @@ export default function HomeScreen({ navigation }: any) {
       title: `${REQUIRED_DAILY_MUST_DO_TASKS} Must-Do Tasks`,
       subtitle: `${mustDoCompleted}/${REQUIRED_DAILY_MUST_DO_TASKS} completed`,
       icon: 'star',
-      color: Theme.colors.gold,
+      color: '#FFD700',
       completed: mustDoCompleted === REQUIRED_DAILY_MUST_DO_TASKS,
       action: () => navigation.navigate('45 NOW'),
     },
@@ -194,7 +236,7 @@ export default function HomeScreen({ navigation }: any) {
       title: 'Guided Affirmations',
       subtitle: `${todayProgress.guidedSessions?.length || 0}/${REQUIRED_DAILY_AFFIRMATION_SESSIONS} sessions`,
       icon: 'sparkles',
-      color: Theme.colors.accent,
+      color: tokens.colors.tintPurple,
       completed: (todayProgress.guidedSessions?.length || 0) >= REQUIRED_DAILY_AFFIRMATION_SESSIONS,
       action: () => navigation.navigate('Affirmations'),
     },
@@ -203,7 +245,7 @@ export default function HomeScreen({ navigation }: any) {
       title: 'Gratitude Journal',
       subtitle: 'Write 3 gratitudes',
       icon: 'heart',
-      color: Theme.colors.pink,
+      color: '#FF6B9D',
       completed: todayProgress.gratitudeEntry.trim().length > 0,
       action: () => navigation.navigate('Journal'),
     },
@@ -234,35 +276,29 @@ export default function HomeScreen({ navigation }: any) {
   );
 
   return (
-    <Screen>
-      <AppHeader
-        title={greeting()}
-        subtitle={today.toLocaleDateString('en-US', {
-          weekday: 'long',
-          month: 'long',
-          day: 'numeric',
-        })}
-        rightIcon={{
-          name: 'settings-outline',
-          onPress: () => navigation.navigate('SettingsScreen'),
-          accessibilityLabel: 'Settings',
-        }}
-      />
-
-      <ScrollView
-        style={styles.scrollView}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={Theme.colors.accent}
-            colors={[Theme.colors.accent]}
-          />
-        }
-        scrollEventThrottle={16}
-      >
+    <Screen
+      scroll
+      title={greeting()}
+      subtitle={dateString}
+      rightAction={{
+        icon: 'settings-outline',
+        onPress: () => navigation.navigate('SettingsScreen'),
+        label: 'Open Settings',
+      }}
+      headerStyle="compact"
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          tintColor={tokens.colors.tintPurple}
+          colors={[tokens.colors.tintPurple]}
+        />
+      }
+      contentContainerStyle={{
+        paddingTop: tokens.spacing.xs,
+        paddingBottom: TAB_BAR_HEIGHT + insets.bottom + BREATHING_ROOM,
+      }}
+    >
         {/* Personalized Welcome Message */}
         {(userName || userGoal) && (
           <UnifiedCard delay={0} style={styles.welcomeCard}>
@@ -338,41 +374,186 @@ export default function HomeScreen({ navigation }: any) {
           </UnifiedCard>
         )}
 
-        {/* Streak Card with Daily Spin */}
-        <UnifiedCard delay={0} style={styles.streakCard}>
+        {/* Daily Practices - FIRST (Primary Section) */}
+        <SectionCard style={styles.dailyPracticesCard}>
+          <View style={styles.dailyPracticesHeader}>
+            <Text style={[styles.sectionTitle, { color: tokens.colors.textPrimary }]}>Daily Practices</Text>
+            {completedCount === dailyPractices.length && (
+              <View style={styles.allCompleteBadge}>
+                <Ionicons name="checkmark-circle" size={18} color={tokens.colors.success} />
+                <Text style={styles.allCompleteText}>All done!</Text>
+              </View>
+            )}
+          </View>
+          {dailyPractices.map((practice, index) => (
+            <React.Fragment key={practice.id}>
+              <RowItem
+                title={practice.title}
+                subtitle={practice.subtitle}
+                icon={practice.icon}
+                iconColor={practice.color}
+                rightIcon={practice.completed ? 'checkmark-circle' : 'chevron-forward'}
+                onPress={practice.action}
+              />
+              {index < dailyPractices.length - 1 && (
+                <View style={styles.rowSeparator} />
+              )}
+            </React.Fragment>
+          ))}
+        </SectionCard>
+
+        {/* Progress Overview - SECOND (Compact Status Strip) */}
+        <SectionCard style={styles.progressCardCompact}>
+          <View style={styles.progressHeader}>
+            <Text style={[styles.sectionTitle, { color: tokens.colors.textPrimary }]}>Today's Progress</Text>
+            <View style={styles.progressCountContainer}>
+              <Text style={[styles.progressText, { color: tokens.colors.textSecondary }]}>
+                {completedCount}
+              </Text>
+              <Text style={[styles.progressDivider, { color: tokens.colors.textSecondary }]}>/</Text>
+              <Text style={[styles.progressTotal, { color: tokens.colors.textSecondary }]}>
+                {dailyPractices.length}
+              </Text>
+            </View>
+          </View>
+          <ProgressBar
+            progress={progressPercentage / 100}
+            height={8}
+            fillColor={tokens.colors.tintPurple}
+            trackColor={`${tokens.colors.tintLavender}30`}
+          />
+        </SectionCard>
+
+        {/* Mood Check-In Card - THIRD */}
+        <SectionCard style={{ marginBottom: 16 }}>
+          <TouchableOpacity
+            onPress={() => setShowMoodModal(true)}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel={todayMoodEntry ? 'Update mood check-in' : 'Check in with your mood'}
+            style={styles.moodRowItem}
+          >
+            {/* Left Icon Circle */}
+            <View
+              style={[
+                styles.moodIconCircle,
+                {
+                  backgroundColor: todayMoodEntry
+                    ? `${getMoodOption(todayMoodEntry.mood)?.color}20`
+                    : `${tokens.colors.tintPurple}20`,
+                },
+              ]}
+            >
+              {todayMoodEntry ? (
+                <Text style={styles.moodEmoji}>{getMoodOption(todayMoodEntry.mood)?.emoji}</Text>
+              ) : (
+                <Ionicons name="happy-outline" size={20} color={tokens.colors.tintPurple} />
+              )}
+            </View>
+
+            {/* Title & Subtitle */}
+            <View style={styles.moodTextContainer}>
+              <Text style={[styles.moodTitle, { color: tokens.colors.textPrimary }, tokens.typography.body]}>
+                {todayMoodEntry ? 'Today\'s Mood' : 'How are you feeling?'}
+              </Text>
+              <Text style={[styles.moodSubtitle, { color: tokens.colors.textSecondary }, tokens.typography.caption]}>
+                {todayMoodEntry
+                  ? `${getMoodOption(todayMoodEntry.mood)?.label} • ${getEnergyOption(todayMoodEntry.energy)?.label}`
+                  : 'Check in after your practices'}
+              </Text>
+            </View>
+
+            {/* Right Chevron */}
+            <Ionicons
+              name={todayMoodEntry ? 'create-outline' : 'chevron-forward'}
+              size={20}
+              color={tokens.colors.textSecondary}
+              style={styles.moodChevron}
+            />
+          </TouchableOpacity>
+        </SectionCard>
+
+        {/* Streak Card with Daily Spin - LAST */}
+        <GlassCard intensity={20} style={styles.streakCard}>
           <LinearGradient
-            colors={['#C77DFF', '#9D4EDD']}
+            colors={['#C77DFF', '#9D4EDD', '#7B2CBF']}
             style={styles.streakGradient}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
           >
+            {/* Decorative background elements */}
+            <View style={styles.streakBackgroundPattern}>
+              <View style={styles.streakCircle1} />
+              <View style={styles.streakCircle2} />
+            </View>
+
             <View style={styles.streakContent}>
-              <TouchableOpacity
+                <TouchableOpacity
                 onPress={() => navigation.navigate('AchievementsScreen')}
-                activeOpacity={0.8}
+                activeOpacity={0.9}
                 style={styles.streakTouchable}
+                accessibilityLabel="View streak and achievements"
+                accessibilityRole="button"
               >
+                {/* Left section - Streak display */}
                 <View style={styles.streakLeft}>
-                  <Ionicons name="flame" size={40} color={Theme.colors.textInverse} />
+                  <Animated.View 
+                    style={[
+                      styles.streakIconContainer,
+                      appState.currentStreak > 0 && {
+                        transform: [{ scale: streakPulseAnim }],
+                      },
+                    ]}
+                  >
+                    <Ionicons name="flame" size={32} color="#FFFFFF" />
+                    {appState.currentStreak > 0 && (
+                      <Animated.View 
+                        style={[
+                          styles.streakGlow,
+                          {
+                            opacity: streakPulseAnim.interpolate({
+                              inputRange: [1, 1.1],
+                              outputRange: [0.4, 0.7],
+                            }),
+                          },
+                        ]} 
+                      />
+                    )}
+                  </Animated.View>
                   <View style={styles.streakInfo}>
                     <Text style={styles.streakNumber}>{appState.currentStreak}</Text>
-                    <Text style={styles.streakLabel}>Day Streak</Text>
+                    <Text style={styles.streakLabel}>
+                      {appState.currentStreak === 1 ? 'Day' : 'Days'} Streak
+                    </Text>
                   </View>
                 </View>
+
+                {/* Middle section - Motivational message */}
                 <View style={styles.streakMiddle}>
-                  <Text style={styles.streakMessage}>
+                  <Text style={styles.streakMessagePrimary}>
                     {appState.currentStreak === 0
-                      ? 'Start today!'
+                      ? 'Begin Your Journey'
                       : appState.currentStreak < 7
-                      ? 'Keep going! 🌟'
+                      ? 'Building Momentum'
                       : appState.currentStreak < 21
-                      ? 'Amazing! 💫'
-                      : 'Unstoppable! ✨'}
+                      ? 'Incredible Progress'
+                      : 'Unstoppable Streak'}
+                  </Text>
+                  <Text style={styles.streakMessageSecondary} numberOfLines={1}>
+                    {appState.currentStreak === 0
+                      ? 'Start building your streak today ✨'
+                      : appState.currentStreak < 7
+                      ? 'Keep going strong! Every day counts 🌟'
+                      : appState.currentStreak < 21
+                      ? 'You\'re doing amazing! Keep it up 💫'
+                      : 'You\'re a true champion! Keep shining ✨'}
                   </Text>
                   {nextMilestone && daysUntilMilestone && daysUntilMilestone <= 7 && (
-                    <Text style={styles.milestoneHint}>
-                      {daysUntilMilestone}d to {nextMilestone.emoji}
-                    </Text>
+                    <View style={styles.milestoneBadge}>
+                      <Text style={styles.milestoneText}>
+                        {daysUntilMilestone}d to {nextMilestone.emoji}
+                      </Text>
+                    </View>
                   )}
                 </View>
               </TouchableOpacity>
@@ -386,87 +567,7 @@ export default function HomeScreen({ navigation }: any) {
               </View>
             </View>
           </LinearGradient>
-        </UnifiedCard>
-
-        {/* Mood Check-In Card */}
-        <TouchableOpacity
-          onPress={() => setShowMoodModal(true)}
-          activeOpacity={0.8}
-        >
-          <UnifiedCard delay={25}>
-            <View style={styles.moodCard}>
-              <View style={styles.moodLeft}>
-                <View style={[styles.moodIconCircle, { backgroundColor: todayMoodEntry ? getMoodOption(todayMoodEntry.mood)?.color + '20' : Theme.colors.accentSoft }]}>
-                  {todayMoodEntry ? (
-                    <Text style={styles.moodEmoji}>{getMoodOption(todayMoodEntry.mood)?.emoji}</Text>
-                  ) : (
-                    <Ionicons name="happy-outline" size={28} color={Theme.colors.accent} />
-                  )}
-                </View>
-                <View style={styles.moodInfo}>
-                  <Text style={styles.moodTitle}>
-                    {todayMoodEntry ? 'Today\'s Mood' : 'How are you feeling?'}
-                  </Text>
-                  <Text style={styles.moodSubtitle}>
-                    {todayMoodEntry
-                      ? `${getMoodOption(todayMoodEntry.mood)?.label} • ${getEnergyOption(todayMoodEntry.energy)?.label}`
-                      : 'Check in with your emotions'}
-                  </Text>
-                </View>
-              </View>
-              <Ionicons
-                name={todayMoodEntry ? "create-outline" : "chevron-forward"}
-                size={24}
-                color={Theme.colors.textSecondary}
-              />
-            </View>
-          </UnifiedCard>
-        </TouchableOpacity>
-
-        {/* Progress Overview */}
-        <UnifiedCard delay={50}>
-          <View style={styles.progressHeader}>
-            <Text style={styles.sectionTitle}>Today's Progress</Text>
-            <View style={styles.progressCountContainer}>
-              <Text style={styles.progressText}>
-                {completedCount}
-              </Text>
-              <Text style={styles.progressDivider}>/</Text>
-              <Text style={styles.progressTotal}>
-                {dailyPractices.length}
-              </Text>
-            </View>
-          </View>
-          <View style={styles.progressBar}>
-            <View
-              style={[styles.progressFill, { width: `${progressPercentage}%` }]}
-            />
-          </View>
-        </UnifiedCard>
-
-        {/* Daily Practices */}
-        <UnifiedCard delay={100}>
-          <View style={styles.dailyPracticesHeader}>
-            <Text style={styles.sectionTitle}>Daily Practices</Text>
-            {completedCount === dailyPractices.length && (
-              <View style={styles.allCompleteBadge}>
-                <Ionicons name="checkmark-circle" size={18} color={Theme.colors.success} />
-                <Text style={styles.allCompleteText}>All done!</Text>
-              </View>
-            )}
-          </View>
-          {dailyPractices.map((practice) => (
-            <ListRow
-              key={practice.id}
-              title={practice.title}
-              subtitle={practice.subtitle}
-              icon={practice.icon as any}
-              iconColor={practice.color}
-              rightIcon={practice.completed ? 'checkmark-circle' : 'chevron-forward'}
-              onPress={practice.action}
-            />
-          ))}
-        </UnifiedCard>
+        </GlassCard>
 
         {/* Quick Actions */}
         <UnifiedCard delay={150}>
@@ -483,7 +584,7 @@ export default function HomeScreen({ navigation }: any) {
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
               >
-                <Ionicons name="sparkles" size={32} color={Theme.colors.textInverse} />
+                <Ionicons name="sparkles" size={32} color="#FFFFFF" />
                 <Text style={styles.quickActionText}>Browse Affirmations</Text>
               </LinearGradient>
             </TouchableOpacity>
@@ -499,7 +600,7 @@ export default function HomeScreen({ navigation }: any) {
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
               >
-                <Ionicons name="checkmark-done-circle" size={32} color={Theme.colors.textInverse} />
+                <Ionicons name="checkmark-done-circle" size={32} color="#FFFFFF" />
                 <Text style={styles.quickActionText}>45 NOW Challenge</Text>
               </LinearGradient>
             </TouchableOpacity>
@@ -515,7 +616,7 @@ export default function HomeScreen({ navigation }: any) {
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
               >
-                <Ionicons name="trophy" size={32} color={Theme.colors.textInverse} />
+                <Ionicons name="trophy" size={32} color="#FFFFFF" />
                 <Text style={styles.quickActionText}>Achievements</Text>
               </LinearGradient>
             </TouchableOpacity>
@@ -531,7 +632,7 @@ export default function HomeScreen({ navigation }: any) {
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
               >
-                <Ionicons name="library" size={32} color={Theme.colors.textInverse} />
+                <Ionicons name="library" size={32} color="#FFFFFF" />
                 <Text style={styles.quickActionText}>Affirmation Library</Text>
               </LinearGradient>
             </TouchableOpacity>
@@ -547,7 +648,7 @@ export default function HomeScreen({ navigation }: any) {
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
               >
-                <Ionicons name="analytics" size={32} color={Theme.colors.textInverse} />
+                <Ionicons name="analytics" size={32} color="#FFFFFF" />
                 <Text style={styles.quickActionText}>View Progress</Text>
               </LinearGradient>
             </TouchableOpacity>
@@ -563,7 +664,7 @@ export default function HomeScreen({ navigation }: any) {
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
               >
-                <Ionicons name="construct" size={32} color={Theme.colors.textInverse} />
+                <Ionicons name="construct" size={32} color="#FFFFFF" />
                 <Text style={styles.quickActionText}>Tools</Text>
               </LinearGradient>
             </TouchableOpacity>
@@ -573,7 +674,7 @@ export default function HomeScreen({ navigation }: any) {
         {/* Motivational Quote */}
         <UnifiedCard delay={200}>
           <View style={styles.quoteContainer}>
-            <Ionicons name="chatbubble-ellipses-outline" size={24} color={Theme.colors.accent} />
+            <Ionicons name="chatbubble-ellipses-outline" size={24} color={tokens.colors.tintPurple} />
             <View style={styles.quoteContent}>
               <Text style={styles.quoteText}>
                 "{dailyQuote?.text || 'Your thoughts create your reality. Focus on what you want, not what you fear.'}"
@@ -585,8 +686,7 @@ export default function HomeScreen({ navigation }: any) {
           </View>
         </UnifiedCard>
 
-        <View style={{ height: Theme.spacing.xxxl }} />
-      </ScrollView>
+        <View style={{ height: tokens.spacing.xl }} />
 
       {/* Mood Check-In Modal */}
       <MoodCheckIn
@@ -612,44 +712,50 @@ export default function HomeScreen({ navigation }: any) {
 }
 
 const styles = StyleSheet.create({
-  scrollView: {
-    flex: 1,
+  dailyPracticesCard: {
+    marginBottom: 16, // Spacing between major sections (16-20px)
   },
-  scrollContent: {
-    paddingBottom: 100, // Extra padding for tab bar
-    paddingTop: Theme.spacing.sm,
+  rowSeparator: {
+    height: 1,
+    backgroundColor: 'rgba(31, 18, 53, 0.08)',
+    marginLeft: 52, // Align with text content (icon width + gap)
+    marginRight: 16,
   },
   welcomeCard: {
-    backgroundColor: Theme.colors.accentSoft,
+    backgroundColor: `${tokens.colors.tintPurple}15`,
     borderWidth: 0,
   },
   welcomeText: {
-    ...Theme.typography.h3,
-    color: Theme.colors.accent,
+    fontSize: 22,
+    fontWeight: '700',
+    letterSpacing: -0.2,
+    color: tokens.colors.tintPurple,
     textAlign: 'center',
   },
   goalsCard: {
-    padding: Theme.spacing.lg,
+    padding: tokens.spacing.lg,
   },
   goalsHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: Theme.spacing.md,
+    marginBottom: tokens.spacing.md,
   },
   goalsTitle: {
-    ...Theme.typography.h3,
-    color: Theme.colors.textPrimary,
+    fontSize: 22,
+    fontWeight: '700',
+    letterSpacing: -0.2,
+    color: tokens.colors.textPrimary,
   },
   goalsList: {
-    gap: Theme.spacing.sm,
+    gap: tokens.spacing.sm,
   },
   goalItem: {
     flexDirection: 'row',
-    padding: Theme.spacing.md,
-    borderRadius: Theme.radius.md,
+    padding: tokens.spacing.md,
+    borderRadius: tokens.radii.md,
     borderLeftWidth: 4,
-    gap: Theme.spacing.md,
+    gap: tokens.spacing.md,
   },
   goalIconContainer: {
     width: 44,
@@ -662,7 +768,7 @@ const styles = StyleSheet.create({
   },
   goalContent: {
     flex: 1,
-    gap: Theme.spacing.xs,
+    gap: tokens.spacing.xs,
   },
   goalTitleRow: {
     flexDirection: 'row',
@@ -670,24 +776,28 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   goalTitle: {
-    ...Theme.typography.body,
+    fontSize: 17,
     fontWeight: '600',
-    color: Theme.colors.textPrimary,
+    letterSpacing: 0,
+    color: tokens.colors.textPrimary,
   },
   goalPriority: {
-    ...Theme.typography.small,
-    color: '#999',
+    fontSize: 13,
     fontWeight: '500',
+    letterSpacing: 0.1,
+    color: '#999',
   },
   goalDescription: {
-    ...Theme.typography.small,
-    color: Theme.colors.textSecondary,
+    fontSize: 13,
+    fontWeight: '400',
+    letterSpacing: 0.1,
+    color: tokens.colors.textSecondary,
     fontStyle: 'italic',
   },
   goalMetrics: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Theme.spacing.sm,
+    gap: tokens.spacing.sm,
   },
   goalProgressContainer: {
     flex: 1,
@@ -707,9 +817,10 @@ const styles = StyleSheet.create({
     borderRadius: 3,
   },
   goalProgressText: {
-    ...Theme.typography.small,
-    color: Theme.colors.textSecondary,
+    fontSize: 13,
     fontWeight: '600',
+    letterSpacing: 0.1,
+    color: tokens.colors.textSecondary,
     minWidth: 32,
   },
   goalStreak: {
@@ -719,26 +830,58 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   goalStreakText: {
-    ...Theme.typography.small,
+    fontSize: 13,
     fontWeight: '600',
+    letterSpacing: 0.1,
     color: '#F57C00',
   },
   streakCard: {
     padding: 0,
     overflow: 'visible',
     borderWidth: 0,
+    marginBottom: 16, // Spacing between major sections
+    ...tokens.shadows.lifted,
   },
   streakGradient: {
-    padding: Theme.spacing.xl,
-    borderRadius: Theme.radius.lg,
-    minHeight: 120,
+    padding: tokens.spacing.lg,
+    borderRadius: tokens.radii.lg,
+    minHeight: 96, // More compact
     justifyContent: 'center',
-    overflow: 'visible',
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  streakBackgroundPattern: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    opacity: 0.1,
+  },
+  streakCircle1: {
+    position: 'absolute',
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    top: -30,
+    right: -15,
+  },
+  streakCircle2: {
+    position: 'absolute',
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    bottom: -15,
+    left: -8,
   },
   streakContent: {
     flexDirection: 'row',
     alignItems: 'center',
     overflow: 'visible',
+    position: 'relative',
+    zIndex: 1,
   },
   streakTouchable: {
     flex: 1,
@@ -748,50 +891,103 @@ const styles = StyleSheet.create({
   streakLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Theme.spacing.md,
+    gap: tokens.spacing.md,
+    minWidth: 90,
+  },
+  streakIconContainer: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+  },
+  streakGlow: {
+    position: 'absolute',
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    opacity: 0.6,
   },
   streakInfo: {
-    gap: Theme.spacing.xs,
+    gap: 2,
   },
   streakNumber: {
-    ...Theme.typography.h2,
-    color: Theme.colors.textInverse,
+    fontSize: 28,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: -0.5,
+    lineHeight: 32,
   },
   streakLabel: {
-    ...Theme.typography.chip,
-    color: Theme.colors.textInverse,
-    opacity: 0.9,
+    fontSize: 13,
+    fontWeight: '600',
+    letterSpacing: 0.5,
+    color: '#FFFFFF',
+    opacity: 0.95,
+    textTransform: 'uppercase',
   },
   streakMiddle: {
     flex: 1,
-    marginLeft: Theme.spacing.md,
-    gap: Theme.spacing.xs,
+    marginLeft: tokens.spacing.md,
+    gap: 4,
   },
-  streakMessage: {
-    ...Theme.typography.caption,
-    color: Theme.colors.textInverse,
+  streakMessagePrimary: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    letterSpacing: -0.2,
+    lineHeight: 20,
+  },
+  streakMessageSecondary: {
+    fontSize: 13,
+    fontWeight: '500',
+    letterSpacing: 0.1,
+    color: '#FFFFFF',
+    opacity: 0.9,
+    lineHeight: 16,
+  },
+  milestoneBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+    paddingHorizontal: tokens.spacing.sm,
+    paddingVertical: 4,
+    borderRadius: tokens.radii.full,
+    marginTop: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+  },
+  milestoneText: {
+    fontSize: 13,
     fontWeight: '600',
-  },
-  milestoneHint: {
-    ...Theme.typography.small,
-    color: Theme.colors.textInverse,
-    opacity: 0.8,
+    letterSpacing: 0.1,
+    color: '#FFFFFF',
   },
   spinButtonWrapper: {
-    marginLeft: Theme.spacing.md,
+    marginLeft: tokens.spacing.md,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'visible',
+  },
+  progressCardCompact: {
+    paddingVertical: 12, // Reduced vertical padding (10-12 range)
+    marginBottom: 16, // Spacing between major sections
   },
   progressHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: Theme.spacing.lg,
+    marginBottom: tokens.spacing.sm, // Reduced from md
   },
   sectionTitle: {
-    ...Theme.typography.h3,
-    color: Theme.colors.textPrimary,
+    fontSize: 17,
+    fontWeight: '600',
+    letterSpacing: 0,
+    color: tokens.colors.textPrimary,
   },
   progressCountContainer: {
     flexDirection: 'row',
@@ -799,132 +995,138 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   progressText: {
-    ...Theme.typography.h2,
-    color: Theme.colors.accent,
+    fontSize: 28,
     fontWeight: '700',
+    letterSpacing: -0.3,
+    color: tokens.colors.tintPurple,
   },
   progressDivider: {
-    ...Theme.typography.body,
-    color: Theme.colors.textSecondary,
-    fontSize: 16,
+    fontSize: 17,
+    fontWeight: '400',
+    letterSpacing: 0,
+    color: tokens.colors.textSecondary,
   },
   progressTotal: {
-    ...Theme.typography.body,
-    color: Theme.colors.textSecondary,
-    fontSize: 16,
+    fontSize: 17,
+    fontWeight: '400',
+    letterSpacing: 0,
+    color: tokens.colors.textSecondary,
   },
   progressBar: {
-    height: 10,
-    backgroundColor: Theme.colors.accentSoft,
-    borderRadius: Theme.radius.full,
+    height: 7,
+    backgroundColor: `${tokens.colors.tintPurple}20`,
+    borderRadius: tokens.radii.full,
     overflow: 'hidden',
-    ...Theme.shadow.subtle,
+    ...tokens.shadows.subtle,
   },
   progressFill: {
     height: '100%',
-    backgroundColor: Theme.colors.accent,
-    borderRadius: Theme.radius.full,
-    ...Theme.shadow.subtle,
+    backgroundColor: tokens.colors.tintPurple,
+    borderRadius: tokens.radii.full,
+    ...tokens.shadows.subtle,
   },
   quickActionsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: Theme.spacing.md,
-    marginTop: Theme.spacing.md,
+    gap: tokens.spacing.md,
+    marginTop: tokens.spacing.md,
   },
   quickActionCard: {
     width: '47%',
-    borderRadius: Theme.radius.lg,
+    borderRadius: tokens.radii.lg,
     overflow: 'hidden',
-    ...Theme.shadow.medium,
+    ...tokens.shadows.card,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.2)',
   },
   quickActionGradient: {
-    padding: Theme.spacing.xl,
+    padding: tokens.spacing.xl,
     alignItems: 'center',
-    gap: Theme.spacing.md,
+    gap: tokens.spacing.md,
     minHeight: 110,
     justifyContent: 'center',
   },
   quickActionText: {
-    ...Theme.typography.bodyBold,
-    color: Theme.colors.textInverse,
-    textAlign: 'center',
-    fontSize: 13,
+    fontSize: 17,
     fontWeight: '700',
+    letterSpacing: 0,
+    color: '#FFFFFF',
+    textAlign: 'center',
   },
   quoteContainer: {
     flexDirection: 'row',
-    gap: Theme.spacing.md,
+    gap: tokens.spacing.md,
   },
   quoteContent: {
     flex: 1,
-    gap: Theme.spacing.sm,
+    gap: tokens.spacing.sm,
   },
   quoteText: {
-    ...Theme.typography.body,
-    color: Theme.colors.textPrimary,
+    fontSize: 17,
+    fontWeight: '400',
+    letterSpacing: 0,
+    color: tokens.colors.textPrimary,
     fontStyle: 'italic',
     lineHeight: 22,
   },
   quoteAuthor: {
-    ...Theme.typography.caption,
-    color: Theme.colors.textSecondary,
+    fontSize: 13,
+    fontWeight: '400',
+    letterSpacing: 0.1,
+    color: tokens.colors.textSecondary,
     textAlign: 'right',
   },
-  moodCard: {
+  moodRowItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  moodLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Theme.spacing.md,
-    flex: 1,
+    minHeight: 56,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
   },
   moodIconCircle: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    ...Theme.shadow.subtle,
+    marginRight: 12,
   },
   moodEmoji: {
-    fontSize: 32,
+    fontSize: 24,
   },
-  moodInfo: {
+  moodTextContainer: {
     flex: 1,
-    gap: Theme.spacing.xs,
+    gap: 2,
   },
   moodTitle: {
-    ...Theme.typography.bodyBold,
-    color: Theme.colors.textPrimary,
+    // Typography applied via theme
   },
   moodSubtitle: {
-    ...Theme.typography.caption,
-    color: Theme.colors.textSecondary,
+    // Typography applied via theme
+    opacity: 0.7,
+  },
+  moodChevron: {
+    marginLeft: 8,
   },
   dailyPracticesHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: Theme.spacing.sm,
+    marginBottom: tokens.spacing.md,
   },
   allCompleteBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Theme.spacing.xs,
-    backgroundColor: Theme.colors.success + '15',
-    paddingHorizontal: Theme.spacing.md,
-    paddingVertical: Theme.spacing.xs,
-    borderRadius: Theme.radius.full,
+    gap: tokens.spacing.xs,
+    backgroundColor: tokens.colors.success + '15',
+    paddingHorizontal: tokens.spacing.md,
+    paddingVertical: tokens.spacing.xs,
+    borderRadius: tokens.radii.full,
   },
   allCompleteText: {
-    ...Theme.typography.captionBold,
-    color: Theme.colors.success,
-    fontSize: 12,
+    fontSize: 13,
+    fontWeight: '600',
+    letterSpacing: 0.1,
+    color: tokens.colors.success,
   },
 });

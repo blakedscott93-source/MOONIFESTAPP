@@ -28,6 +28,7 @@ export interface ThemeColors {
 
   // Semantic Colors
   danger: string;
+  error: string; // Alias for danger for compatibility
   success: string;
   warning: string;
   info: string;
@@ -42,30 +43,31 @@ export interface ThemeColors {
 }
 
 export const lightColors: ThemeColors = {
-  // Backgrounds
-  bg: '#FAF8FF',
+  // Backgrounds (Premium Calm/Apple-like)
+  bg: '#F7F5FF', // Very light lavender
   surface: '#FFFFFF',
   surfaceSecondary: '#F5F0FF',
   surfaceElevated: '#FFFFFF',
 
-  // Text Colors (WCAG AA compliant - 4.5:1+ contrast ratios)
-  textPrimary: '#3D1F5C', // 12.5:1 contrast on white - Excellent
-  textSecondary: '#8B7DD8', // 4.8:1 contrast on white - AA compliant
-  textTertiary: '#999999', // 4.6:1 contrast on white - AA compliant (improved from #AAA)
+  // Text Colors (Premium values)
+  textPrimary: '#1F1235', // Deep dark purple
+  textSecondary: '#6B5B8A', // Medium purple-gray
+  textTertiary: '#999999',
   textInverse: '#FFFFFF',
 
-  // Borders
-  border: '#F0E8FF',
+  // Borders (Premium subtle)
+  border: 'rgba(31, 18, 53, 0.08)', // Subtle border
   borderMedium: '#E9D5FF',
   borderStrong: '#D4B5FF',
 
-  // Accent Colors
-  accent: '#C77DFF',
+  // Accent Colors (Unified purple family)
+  accent: '#7C3AED', // purple500
   accentSoft: '#E9D5FF',
-  accentDark: '#8B7DD8',
+  accentDark: '#8B5CF6', // purple400
 
   // Semantic Colors
   danger: '#FF6B6B',
+  error: '#FF6B6B', // Alias for danger
   success: '#4CAF50',
   warning: '#FFB84D',
   info: '#3498DB',
@@ -104,6 +106,7 @@ export const darkColors: ThemeColors = {
 
   // Semantic Colors
   danger: '#FF8A8A',
+  error: '#FF8A8A', // Alias for danger
   success: '#66BB6A',
   warning: '#FFD084',
   info: '#64B5F6',

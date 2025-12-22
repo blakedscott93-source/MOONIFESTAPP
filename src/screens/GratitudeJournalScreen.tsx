@@ -778,4 +778,15 @@ const styles = StyleSheet.create({
     ...Theme.typography.bodyBold,
     color: Theme.colors.textInverse,
   },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: Theme.spacing.xl,
+  },
+  loadingText: {
+    ...Theme.typography.body,
+    color: Theme.colors.textSecondary,
+    marginTop: Theme.spacing.md,
+  },
 });

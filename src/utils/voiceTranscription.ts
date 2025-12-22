@@ -208,7 +208,7 @@ async function transcribeWithGoogle(
   try {
     // Read audio file as base64
     const audioBase64 = await FileSystem.readAsStringAsync(audioUri, {
-      encoding: FileSystem.EncodingType.Base64,
+      encoding: ((FileSystem as any).EncodingType?.Base64 || 'base64') as any,
     });
 
     const response = await fetch(
@@ -286,7 +286,7 @@ async function transcribeWithDeepgram(
   try {
     // Read audio file
     const audioData = await FileSystem.readAsStringAsync(audioUri, {
-      encoding: FileSystem.EncodingType.Base64,
+      encoding: ((FileSystem as any).EncodingType?.Base64 || 'base64') as any,
     });
 
     const response = await fetch('https://api.deepgram.com/v1/listen', {

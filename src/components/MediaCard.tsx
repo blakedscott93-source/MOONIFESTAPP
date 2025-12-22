@@ -35,7 +35,7 @@ export const MediaCard: React.FC<MediaCardProps> = ({
       disabled={false} // Always tappable to show lock state
     >
       <LinearGradient
-        colors={data.gradient}
+        colors={data.gradient as any}
         style={styles.gradient}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}

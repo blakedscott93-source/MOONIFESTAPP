@@ -7,7 +7,9 @@ import {
   TouchableOpacity,
   TextInput,
   Alert,
+  Animated,
 } from 'react-native';
+import { Swipeable } from 'react-native-gesture-handler';
 import { useApp } from '../context/AppContext';
 import { Task } from '../types';
 import { Ionicons } from '@expo/vector-icons';
@@ -313,18 +315,63 @@ export default function FortyFiveHardScreen({ navigation }: any) {
         <UnifiedCard delay={300}>
           <Text style={styles.sectionTitle}>Additional Tasks</Text>
           <Text style={styles.sectionSubtitle}>Optional but encouraged</Text>
-          {optionalTasks.map((task) => (
-            <ListRow
-              key={task.id}
-              title={task.text || 'Untitled task'}
-              completed={task.completed}
-              icon="square-outline"
-              iconColor={task.completed ? Theme.colors.accent : Theme.colors.textTertiary}
-              rightIcon="trash-outline"
-              onPress={() => toggleTask(task.id)}
-              onRightIconPress={() => deleteTask(task.id)}
-            />
-          ))}
+          {optionalTasks.map((task) => {
+            const swipeableRef = React.useRef<Swipeable>(null);
+
+            const renderRightActions = (
+              progress: Animated.AnimatedInterpolation<number>,
+              dragX: Animated.AnimatedInterpolation<number>
+            ) => {
+              const scale = dragX.interpolate({
+                inputRange: [-100, 0],
+                outputRange: [1, 0],
+                extrapolate: 'clamp',
+              });
+
+              const handleDelete = () => {
+                swipeableRef.current?.close();
+                deleteTask(task.id);
+              };
+
+              return (
+                <View style={styles.deleteAction}>
+                  <TouchableOpacity
+                    style={styles.deleteActionButton}
+                    onPress={handleDelete}
+                    activeOpacity={0.9}
+                  >
+                    <Animated.View style={[styles.deleteActionContent, { transform: [{ scale }] }]}>
+                      <Ionicons name="trash" size={24} color={Theme.colors.textInverse} />
+                      <Text style={styles.deleteActionText}>Delete</Text>
+                    </Animated.View>
+                  </TouchableOpacity>
+                </View>
+              );
+            };
+
+            return (
+              <Swipeable
+                key={task.id}
+                ref={swipeableRef}
+                renderRightActions={renderRightActions}
+                overshootRight={false}
+                friction={2}
+                rightThreshold={40}
+              >
+                <View style={styles.swipeableRow}>
+                  <ListRow
+                    title={task.text || 'Untitled task'}
+                    completed={task.completed}
+                    icon={task.completed ? 'checkbox' : 'square-outline'}
+                    iconColor={task.completed ? Theme.colors.accent : Theme.colors.textTertiary}
+                    rightIcon="trash-outline"
+                    onPress={() => toggleTask(task.id)}
+                    onRightIconPress={() => deleteTask(task.id)}
+                  />
+                </View>
+              </Swipeable>
+            );
+          })}
 
           <View style={styles.addTaskContainer}>
             <TextInput
@@ -490,5 +537,34 @@ const styles = StyleSheet.create({
   completeBannerSubtitle: {
     ...Theme.typography.caption,
     color: Theme.colors.textSecondary,
+  },
+  swipeableRow: {
+    backgroundColor: Theme.colors.surface,
+  },
+  deleteAction: {
+    backgroundColor: Theme.colors.danger,
+    justifyContent: 'center',
+    alignItems: 'flex-end',
+    marginVertical: Theme.spacing.xs,
+    borderRadius: Theme.radius.md,
+    marginLeft: Theme.spacing.md,
+    overflow: 'hidden',
+  },
+  deleteActionButton: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: Theme.spacing.lg,
+    minWidth: 100,
+  },
+  deleteActionContent: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  deleteActionText: {
+    ...Theme.typography.captionBold,
+    color: Theme.colors.textInverse,
+    marginTop: Theme.spacing.xs,
+    fontSize: 12,
   },
 });

@@ -43,12 +43,15 @@ export const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
     outputRange: [0.3, 0.7],
   });
 
+  // Convert width to number if it's a percentage string, or use as-is if number
+  const widthStyle = typeof width === 'string' ? { width: width as any } : { width };
+  
   return (
     <Animated.View
       style={[
         styles.skeleton,
+        widthStyle,
         {
-          width,
           height,
           borderRadius,
           opacity,
