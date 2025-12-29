@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode, useMemo } from 'react';
-import { useColorScheme } from 'react-native';
+import { useColorScheme, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createTheme } from '../utils/theme';
 
@@ -19,8 +19,15 @@ interface ThemeContextType {
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export const ThemeProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const systemColorScheme = useColorScheme();
-  const [themeMode, setThemeModeState] = useState<ThemeMode>('auto');
+  if (__DEV__) {
+    console.log('✅ OldThemeProvider rendering...');
+  }
+  
+  // useColorScheme might not work on web, provide fallback
+  const systemColorSchemeRaw = useColorScheme();
+  const systemColorScheme = Platform.OS === 'web' ? (systemColorSchemeRaw || 'light') : systemColorSchemeRaw;
+  // Default to 'light' mode on first launch (not 'auto')
+  const [themeMode, setThemeModeState] = useState<ThemeMode>('light');
   const [activeTheme, setActiveTheme] = useState<ActiveTheme>('light');
 
   // Load saved theme preference on mount
@@ -39,12 +46,25 @@ export const ThemeProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
   const loadThemePreference = async () => {
     try {
+      // AsyncStorage might not be available immediately on web
+      if (Platform.OS === 'web' && typeof window === 'undefined') {
+        return;
+      }
       const saved = await AsyncStorage.getItem(THEME_STORAGE_KEY);
       if (saved && (saved === 'light' || saved === 'dark' || saved === 'auto')) {
         setThemeModeState(saved as ThemeMode);
+      } else {
+        // If no saved preference, default to 'light' mode
+        // This ensures first launch is always light mode
+        setThemeModeState('light');
       }
     } catch (error) {
-      console.error('Error loading theme preference:', error);
+      // Silently fail on web if AsyncStorage isn't ready
+      if (Platform.OS !== 'web') {
+        console.error('Error loading theme preference:', error);
+      }
+      // On error, default to light mode
+      setThemeModeState('light');
     }
   };
 

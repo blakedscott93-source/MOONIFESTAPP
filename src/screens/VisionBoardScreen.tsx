@@ -1,4 +1,9 @@
-import React, { useState, useEffect } from 'react';
+/**
+ * Vision Board Screen
+ * Clean, focused interface for daily vision visualization
+ */
+
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -9,121 +14,149 @@ import {
   Alert,
   Dimensions,
   Platform,
+  TextInput,
+  Modal,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Screen } from '../components/Screen';
-import { AppHeader } from '../components/AppHeader';
-import { Theme } from '../utils/theme';
+import { Screen } from '../components/layout/Screen';
+import { GlassCard, PrimaryButton, SectionCard } from '../components/ui';
+import { tokens } from '../theme/tokens';
+import { useTheme } from '../context/ThemeContext';
 import { useApp } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
+import { getLocalDayKey } from '../utils/dayRollover';
+import { useTabBarInset } from '../hooks/useTabBarInset';
+import { mediumHaptic } from '../utils/haptics';
 
 const { width } = Dimensions.get('window');
-const CARD_WIDTH = (width - Theme.spacing.lg * 3) / 2;
 
-interface VisionBoardItem {
+// ============================================
+// TYPES
+// ============================================
+
+interface VisionBoardPhoto {
   id: string;
+  boardId: string;
   imageUri: string;
-  title: string;
+  caption: string;
   createdAt: string;
+  dayKey?: string;
 }
 
-const STORAGE_KEY = '@vision_board_items';
+const STORAGE_KEY_PHOTOS = '@vision_board_photos';
 
-// Placeholder images for the vision board
-const PLACEHOLDER_IMAGES = [
-  'https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=400',
-  'https://images.unsplash.com/photo-1499209974431-9dddcece7f88?w=400',
-  'https://images.unsplash.com/photo-1519389950473-47ba0277781c?w=400',
-  'https://images.unsplash.com/photo-1497633762265-9d179a990aa6?w=400',
-];
-
-export default function VisionBoardScreen({ navigation }: any) {
-  const { addGlowPoints } = useApp();
+export default function VisionBoardScreen({ navigation, route }: any) {
+  const { theme, isDark } = useTheme();
+  const { addGlowPoints, markVisionImageAdded, appState, hasVisionImageAddedToday } = useApp();
   const { showSuccess, showError, showPoints } = useToast();
-  const [items, setItems] = useState<VisionBoardItem[]>([]);
+  const tabBarInset = useTabBarInset();
+
+  // State
+  const [photos, setPhotos] = useState<VisionBoardPhoto[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showTitleModal, setShowTitleModal] = useState(false);
+  const [showPhotoModal, setShowPhotoModal] = useState(false);
+  const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [pendingImageUri, setPendingImageUri] = useState<string | null>(null);
-  const [titleInput, setTitleInput] = useState('');
+  const [captionInput, setCaptionInput] = useState('');
+  const [previewPhoto, setPreviewPhoto] = useState<VisionBoardPhoto | null>(null);
+
+  const todayKey = getLocalDayKey();
+  const todayPhoto = useMemo(
+    () => photos.find(p => p.boardId === 'today' && p.dayKey === todayKey),
+    [photos, todayKey]
+  );
+
+  const pastVisionImages = useMemo(() => {
+    return photos
+      .filter(p => p.boardId === 'today' && p.dayKey !== todayKey)
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .slice(0, 8);
+  }, [photos, todayKey]);
+
+  const needsTodayImage = appState.challengeActive && !hasVisionImageAddedToday();
+
+  // ============================================
+  // DATA LOADING
+  // ============================================
 
   useEffect(() => {
-    loadItems();
-  }, []);
+    loadData();
+    if (route?.params?.fromDailyVisionImage) {
+      setTimeout(() => {
+        addPhoto();
+      }, 500);
+    }
+  }, [route?.params?.fromDailyVisionImage]);
 
-  const loadItems = async () => {
+  const loadData = async () => {
     try {
-      const data = await AsyncStorage.getItem(STORAGE_KEY);
-      if (data) {
-        setItems(JSON.parse(data));
-      }
+      const photosData = await AsyncStorage.getItem(STORAGE_KEY_PHOTOS);
+      const loadedPhotos: VisionBoardPhoto[] = photosData ? JSON.parse(photosData) : [];
+      setPhotos(loadedPhotos);
     } catch (error) {
-      console.error('Error loading vision board items:', error);
+      console.error('Error loading vision board data:', error);
+      showError('Error', 'Failed to load your vision boards');
     } finally {
       setLoading(false);
     }
   };
 
-  const saveItems = async (newItems: VisionBoardItem[]) => {
+  const savePhotos = async (newPhotos: VisionBoardPhoto[]) => {
     try {
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(newItems));
-      setItems(newItems);
+      await AsyncStorage.setItem(STORAGE_KEY_PHOTOS, JSON.stringify(newPhotos));
+      setPhotos(newPhotos);
     } catch (error) {
-      console.error('Error saving vision board items:', error);
-      showError('Error', 'Failed to save item');
+      console.error('Error saving photos:', error);
+      showError('Error', 'Failed to save photo');
     }
   };
 
+  // ============================================
+  // IMAGE PICKING
+  // ============================================
+
   const requestPermissions = async () => {
     if (Platform.OS !== 'web') {
-      const { status: cameraStatus } = await ImagePicker.requestCameraPermissionsAsync();
-      const { status: mediaLibraryStatus } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      
-      if (cameraStatus !== 'granted' || mediaLibraryStatus !== 'granted') {
-        Alert.alert(
-          'Permissions Required',
-          'We need camera and photo library permissions to add images to your vision board.',
-          [{ text: 'OK' }]
-        );
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permissions Required', 'We need photo library permissions to add images.', [
+          { text: 'OK' },
+        ]);
         return false;
       }
     }
     return true;
   };
 
-  const addImage = async () => {
+  const addPhoto = async () => {
+    if (Platform.OS === 'web') {
+      await pickImageFromGallery();
+      return;
+    }
+
     Alert.alert(
-      'Add Image',
+      'Add Vision Image',
       'Choose an option',
       [
         {
           text: 'Take Photo',
           onPress: async () => {
             const hasPermission = await requestPermissions();
-            if (hasPermission) {
-              await pickImageFromCamera();
-            }
+            if (hasPermission) await pickImageFromCamera();
           },
         },
         {
           text: 'Choose from Gallery',
           onPress: async () => {
             const hasPermission = await requestPermissions();
-            if (hasPermission) {
-              await pickImageFromGallery();
-            }
+            if (hasPermission) await pickImageFromGallery();
           },
         },
-        {
-          text: 'Sample Image (Demo)',
-          onPress: () => addSampleImage(),
-        },
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
+        { text: 'Cancel', style: 'cancel' },
       ],
       { cancelable: true }
     );
@@ -134,16 +167,18 @@ export default function VisionBoardScreen({ navigation }: any) {
       const result = await ImagePicker.launchCameraAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.8,
+        aspect: [4, 5],
+        quality: 0.85,
       });
 
-      if (!result.canceled && result.assets && result.assets[0]) {
-        await handleImageSelected(result.assets[0].uri);
+      if (!result.canceled && result.assets?.[0]) {
+        setPendingImageUri(result.assets[0].uri);
+        setCaptionInput('');
+        setShowPhotoModal(true);
       }
     } catch (error) {
       console.error('Error picking image from camera:', error);
-      showError('Error', 'Failed to take photo. Please try again.');
+      showError('Error', 'Failed to take photo');
     }
   };
 
@@ -152,462 +187,638 @@ export default function VisionBoardScreen({ navigation }: any) {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.8,
+        aspect: [4, 5],
+        quality: 0.85,
       });
 
-      if (!result.canceled && result.assets && result.assets[0]) {
-        await handleImageSelected(result.assets[0].uri);
+      if (!result.canceled && result.assets?.[0]) {
+        setPendingImageUri(result.assets[0].uri);
+        setCaptionInput('');
+        setShowPhotoModal(true);
       }
     } catch (error) {
       console.error('Error picking image from gallery:', error);
-      showError('Error', 'Failed to select image. Please try again.');
+      showError('Error', 'Failed to select image');
     }
   };
 
-  const handleImageSelected = async (imageUri: string) => {
-    setPendingImageUri(imageUri);
-    setTitleInput('');
-    setShowTitleModal(true);
-  };
+  // ============================================
+  // PHOTO MANAGEMENT
+  // ============================================
 
-  const handleSaveTitle = async () => {
-    if (!pendingImageUri || !titleInput.trim()) {
-      showError('Error', 'Please enter a title for your vision.');
+  const savePhoto = async () => {
+    if (!pendingImageUri || !captionInput.trim()) {
+      showError('Error', 'Please add a caption for your vision');
       return;
     }
 
     try {
-      // Check if we're editing an existing item
-      const existingItem = items.find(item => item.imageUri === pendingImageUri && item.id);
-      if (existingItem) {
-        // Update existing item
-        const updatedItems = items.map((i) =>
-          i.id === existingItem.id ? { ...i, title: titleInput.trim() } : i
-        );
-        await saveItems(updatedItems);
-        showSuccess('Updated!', 'Vision title updated.');
-      } else {
-        // Create new item
-        const newItem: VisionBoardItem = {
-          id: Date.now().toString(),
-          imageUri: pendingImageUri,
-          title: titleInput.trim(),
-          createdAt: new Date().toISOString(),
-        };
+      mediumHaptic();
 
-        const updatedItems = [...items, newItem];
-        await saveItems(updatedItems);
-        await addGlowPoints(15, 'Added vision to vision board');
-        showSuccess('Vision Added!', 'Your vision has been added to the board.');
-        showPoints(15, 'Added vision to vision board');
+      if (todayPhoto) {
+        const updatedPhotos = photos.map(p =>
+          p.id === todayPhoto.id
+            ? {
+                ...p,
+                imageUri: pendingImageUri,
+                caption: captionInput.trim(),
+                createdAt: new Date().toISOString(),
+              }
+            : p
+        );
+        await savePhotos(updatedPhotos);
+      } else {
+        const newPhoto: VisionBoardPhoto = {
+          id: Date.now().toString(),
+          boardId: 'today',
+          imageUri: pendingImageUri,
+          caption: captionInput.trim(),
+          createdAt: new Date().toISOString(),
+          dayKey: todayKey,
+        };
+        await savePhotos([...photos, newPhoto]);
       }
-      
-      setShowTitleModal(false);
+
+      if (!hasVisionImageAddedToday()) {
+        await addGlowPoints(15, 'Added vision image');
+        await markVisionImageAdded();
+        showPoints(15, 'Vision image added');
+
+        setTimeout(() => {
+          navigation.navigate('Today');
+        }, 1500);
+      }
+
+      showSuccess('Added!', 'Vision image added');
+      setShowPhotoModal(false);
       setPendingImageUri(null);
-      setTitleInput('');
+      setCaptionInput('');
     } catch (error) {
-      console.error('Error saving vision:', error);
-      showError('Error', 'Failed to save vision. Please try again.');
+      console.error('Error saving photo:', error);
+      showError('Error', 'Failed to save photo');
     }
   };
 
-  const addSampleImage = () => {
-    const randomImage = PLACEHOLDER_IMAGES[Math.floor(Math.random() * PLACEHOLDER_IMAGES.length)];
-    setPendingImageUri(randomImage);
-    setTitleInput('');
-    setShowTitleModal(true);
+  const deletePhoto = (photoId: string) => {
+    Alert.alert('Delete Vision', 'Remove this vision image?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          const updatedPhotos = photos.filter(p => p.id !== photoId);
+          await savePhotos(updatedPhotos);
+          showSuccess('Deleted', 'Vision image removed');
+        },
+      },
+    ]);
   };
 
-  const deleteItem = (id: string) => {
-    Alert.alert(
-      'Delete Vision',
-      'Are you sure you want to remove this from your vision board?',
-      [
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            const updatedItems = items.filter((item) => item.id !== id);
-            await saveItems(updatedItems);
-          },
-        },
-      ]
-    );
+  const openPreview = (photo: VisionBoardPhoto) => {
+    setPreviewPhoto(photo);
+    setShowPreviewModal(true);
   };
 
-  const editItem = (item: VisionBoardItem) => {
-    setPendingImageUri(item.imageUri);
-    setTitleInput(item.title);
-    setShowTitleModal(true);
-  };
+  // ============================================
+  // RENDER
+  // ============================================
 
   if (loading) {
     return (
-      <Screen style={styles.container}>
-        <AppHeader
-          title="Vision Board"
-          subtitle="Visualize your dreams"
-          leftIcon={{
-            name: 'chevron-back',
-            onPress: () => navigation.goBack(),
-            accessibilityLabel: 'Go back',
-          }}
-        />
+      <Screen title="Vision Board" subtitle="Visualize your dreams">
         <View style={styles.centerContainer}>
-          <Text style={styles.loadingText}>Loading...</Text>
+          <Text style={[styles.loadingText, { color: theme.colors.textSecondary }]}>Loading...</Text>
         </View>
       </Screen>
     );
   }
 
   return (
-    <Screen style={styles.container}>
-      <AppHeader
+    <>
+      <Screen
         title="Vision Board"
-        subtitle="Visualize your dreams"
-        leftIcon={{
-          name: 'chevron-back',
-          onPress: () => navigation.goBack(),
-          accessibilityLabel: 'Go back',
+        subtitle="See it, believe it, achieve it"
+        rightAction={{
+          icon: 'home-outline',
+          onPress: () => navigation.navigate('Today'),
+          label: 'Back to Today',
         }}
-        rightIcon={{
-          name: 'add-circle-outline',
-          onPress: addImage,
-          accessibilityLabel: 'Add image',
-          color: Theme.colors.accent,
-        }}
-      />
-
-      {items.length === 0 ? (
-        <View style={styles.emptyContainer}>
-          <LinearGradient
-            colors={['#C77DFF', '#9D4EDD']}
-            style={styles.emptyCircle}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-          >
-            <Ionicons name="images-outline" size={60} color={Theme.colors.textInverse} />
-          </LinearGradient>
-
-          <Text style={styles.emptyTitle}>Create Your Vision Board</Text>
-          <Text style={styles.emptySubtitle}>
-            Add images that represent your goals, dreams, and aspirations. Visualize what you want to manifest.
-          </Text>
-
-          <TouchableOpacity style={styles.emptyButton} onPress={addImage} activeOpacity={0.7}>
-            <LinearGradient
-              colors={['#4ECDC4', '#44A08D']}
-              style={styles.emptyButtonGradient}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-            >
-              <Ionicons name="add" size={24} color={Theme.colors.textInverse} />
-              <Text style={styles.emptyButtonText}>Add First Image</Text>
-            </LinearGradient>
-          </TouchableOpacity>
-
-          <View style={styles.tipsContainer}>
-            <Text style={styles.tipsTitle}>Tips for Your Vision Board:</Text>
-            {[
-              'Choose images that inspire you',
-              'Include goals from different life areas',
-              'Look at your board daily for manifestation',
-              'Update it as your dreams evolve',
-            ].map((tip, index) => (
-              <View key={index} style={styles.tipItem}>
-                <Ionicons name="sparkles" size={16} color={Theme.colors.gold} />
-                <Text style={styles.tipText}>{tip}</Text>
-              </View>
-            ))}
-          </View>
-        </View>
-      ) : (
+        scroll={false}
+      >
         <ScrollView
           style={styles.scrollView}
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: tabBarInset }]}
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.scrollContent}
         >
-          <View style={styles.header}>
-            <Text style={styles.countText}>{items.length} {items.length === 1 ? 'Vision' : 'Visions'}</Text>
-            <TouchableOpacity onPress={addImage} style={styles.addButton}>
-              <Ionicons name="add-circle" size={28} color={Theme.colors.accent} />
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.grid}>
-            {items.map((item) => (
+          {/* Today's Vision */}
+          {todayPhoto ? (
+            <SectionCard style={styles.todayCard}>
               <TouchableOpacity
-                key={item.id}
-                style={styles.card}
-                activeOpacity={0.8}
+                activeOpacity={0.95}
+                onPress={() => openPreview(todayPhoto)}
                 onLongPress={() => {
-                  Alert.alert(
-                    item.title,
-                    'What would you like to do?',
-                    [
-                      { text: 'Edit Title', onPress: () => editItem(item) },
-                      { text: 'Delete', style: 'destructive', onPress: () => deleteItem(item.id) },
-                      { text: 'Cancel', style: 'cancel' },
-                    ]
-                  );
+                  Alert.alert('Options', todayPhoto.caption, [
+                    { text: 'Replace Photo', onPress: () => addPhoto() },
+                    { text: 'Delete', style: 'destructive', onPress: () => deletePhoto(todayPhoto.id) },
+                    { text: 'Cancel', style: 'cancel' },
+                  ]);
                 }}
               >
-                <View style={styles.imageContainer}>
-                  <Image source={{ uri: item.imageUri }} style={styles.image} resizeMode="cover" />
-                  <LinearGradient
-                    colors={['transparent', 'rgba(0,0,0,0.7)']}
-                    style={styles.imageOverlay}
-                  >
-                    <Text style={styles.cardTitle} numberOfLines={2}>
-                      {item.title}
-                    </Text>
-                  </LinearGradient>
-                </View>
+                <Image source={{ uri: todayPhoto.imageUri }} style={styles.todayImage} resizeMode="cover" />
+                <LinearGradient
+                  colors={['transparent', 'rgba(0, 0, 0, 0.85)']}
+                  style={styles.imageOverlay}
+                >
+                  <View style={styles.completeBadge}>
+                    <Ionicons name="checkmark-circle" size={18} color={tokens.colors.success} />
+                    <Text style={styles.completeBadgeText}>Today's Vision</Text>
+                  </View>
+                  <Text style={styles.imageCaption}>{todayPhoto.caption}</Text>
+                </LinearGradient>
               </TouchableOpacity>
-            ))}
-          </View>
+            </SectionCard>
+          ) : (
+            <GlassCard style={styles.emptyCard}>
+              <View style={styles.emptyContent}>
+                <View style={[styles.emptyIcon, { backgroundColor: `${tokens.colors.accent}15` }]}>
+                  <Ionicons name="sparkles" size={52} color={tokens.colors.accent} />
+                </View>
 
-          <View style={styles.footerTip}>
-            <Ionicons name="information-circle-outline" size={20} color={Theme.colors.textSecondary} />
-            <Text style={styles.footerTipText}>Long press any image to edit or delete</Text>
-          </View>
+                <Text style={[styles.emptyTitle, { color: theme.colors.textPrimary }]}>
+                  Today's Vision Ritual
+                </Text>
+                <Text style={[styles.emptySubtitle, { color: theme.colors.textSecondary }]}>
+                  Choose one powerful image representing what you're manifesting today
+                </Text>
 
-          <View style={{ height: Theme.spacing.xxxl }} />
+                <PrimaryButton
+                  title="Add Your Vision"
+                  onPress={() => {
+                    mediumHaptic();
+                    addPhoto();
+                  }}
+                  style={styles.addButton}
+                  size="large"
+                />
+              </View>
+            </GlassCard>
+          )}
+
+          {/* Past Visions Gallery */}
+          {pastVisionImages.length > 0 && (
+            <View style={styles.pastSection}>
+              <View style={styles.pastHeader}>
+                <Text style={[styles.pastTitle, { color: theme.colors.textPrimary }]}>Past Visions</Text>
+                <Text style={[styles.pastCount, { color: theme.colors.textSecondary }]}>
+                  {pastVisionImages.length}
+                </Text>
+              </View>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.pastGallery}
+              >
+                {pastVisionImages.map(photo => (
+                  <TouchableOpacity
+                    key={photo.id}
+                    style={styles.pastItem}
+                    onPress={() => openPreview(photo)}
+                    activeOpacity={0.9}
+                  >
+                    <Image source={{ uri: photo.imageUri }} style={styles.pastImage} resizeMode="cover" />
+                    <LinearGradient
+                      colors={['transparent', 'rgba(0, 0, 0, 0.75)']}
+                      style={styles.pastOverlay}
+                    >
+                      <Text style={styles.pastCaption} numberOfLines={2}>
+                        {photo.caption}
+                      </Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          )}
         </ScrollView>
-      )}
-    </Screen>
+      </Screen>
+
+      {/* Add Photo Modal */}
+      <Modal
+        visible={showPhotoModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => {
+          setShowPhotoModal(false);
+          setPendingImageUri(null);
+          setCaptionInput('');
+        }}
+        presentationStyle="overFullScreen"
+      >
+        <View style={styles.modalOverlay}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={styles.modalKeyboardView}
+          >
+            <TouchableOpacity
+              style={styles.modalBackdrop}
+              activeOpacity={1}
+              onPress={() => {
+                setShowPhotoModal(false);
+                setPendingImageUri(null);
+                setCaptionInput('');
+              }}
+            />
+            <View style={[styles.modalContent, { backgroundColor: theme.colors.surface }]}>
+              {pendingImageUri && (
+                <View style={styles.modalPreviewContainer}>
+                  <Image source={{ uri: pendingImageUri }} style={styles.modalPreview} resizeMode="cover" />
+                </View>
+              )}
+              <Text style={[styles.modalTitle, { color: theme.colors.textPrimary }]}>
+                Describe your vision
+              </Text>
+              <TextInput
+                style={[
+                  styles.modalInput,
+                  {
+                    backgroundColor: theme.colors.bg,
+                    color: theme.colors.textPrimary,
+                    borderColor: theme.colors.border,
+                  },
+                ]}
+                placeholder="What does this vision represent?"
+                placeholderTextColor={theme.colors.textTertiary}
+                value={captionInput}
+                onChangeText={setCaptionInput}
+                autoFocus
+                returnKeyType="done"
+                onSubmitEditing={savePhoto}
+                multiline
+                maxLength={150}
+              />
+              <Text style={[styles.charCount, { color: theme.colors.textTertiary }]}>
+                {captionInput.length}/150
+              </Text>
+              <View style={styles.modalActions}>
+                <TouchableOpacity
+                  style={[styles.modalCancelButton, { borderColor: theme.colors.border }]}
+                  onPress={() => {
+                    setShowPhotoModal(false);
+                    setPendingImageUri(null);
+                    setCaptionInput('');
+                  }}
+                >
+                  <Text style={[styles.modalCancelText, { color: theme.colors.textSecondary }]}>
+                    Cancel
+                  </Text>
+                </TouchableOpacity>
+                <PrimaryButton
+                  title="Save Vision"
+                  onPress={savePhoto}
+                  disabled={!captionInput.trim()}
+                  style={styles.modalSaveButton}
+                />
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </View>
+      </Modal>
+
+      {/* Preview Modal */}
+      <Modal
+        visible={showPreviewModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          setShowPreviewModal(false);
+          setPreviewPhoto(null);
+        }}
+      >
+        <View style={styles.previewOverlay}>
+          {previewPhoto && (
+            <>
+              <TouchableOpacity
+                style={styles.previewClose}
+                onPress={() => {
+                  setShowPreviewModal(false);
+                  setPreviewPhoto(null);
+                }}
+              >
+                <Ionicons name="close" size={28} color="#FFFFFF" />
+              </TouchableOpacity>
+              <TouchableOpacity
+                activeOpacity={1}
+                onPress={() => {
+                  setShowPreviewModal(false);
+                  setPreviewPhoto(null);
+                }}
+              >
+                <Image
+                  source={{ uri: previewPhoto.imageUri }}
+                  style={styles.previewImage}
+                  resizeMode="contain"
+                />
+              </TouchableOpacity>
+              <View style={styles.previewContent}>
+                <Text style={styles.previewCaption}>{previewPhoto.caption}</Text>
+                <TouchableOpacity
+                  style={styles.previewDeleteButton}
+                  onPress={() => {
+                    setShowPreviewModal(false);
+                    deletePhoto(previewPhoto.id);
+                  }}
+                >
+                  <Ionicons name="trash-outline" size={20} color="#FFFFFF" />
+                  <Text style={styles.previewDeleteText}>Delete</Text>
+                </TouchableOpacity>
+              </View>
+            </>
+          )}
+        </View>
+      </Modal>
+    </>
   );
 }
 
+// ============================================
+// STYLES
+// ============================================
+
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Theme.colors.bg,
-  },
   centerContainer: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
   loadingText: {
-    ...Theme.typography.body,
-    color: Theme.colors.textSecondary,
-  },
-  emptyContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: Theme.spacing.xl,
-  },
-  emptyCircle: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: Theme.spacing.xl,
-    ...Theme.shadow.large,
-  },
-  emptyTitle: {
-    ...Theme.typography.h2,
-    color: Theme.colors.textPrimary,
-    marginBottom: Theme.spacing.md,
-    textAlign: 'center',
-  },
-  emptySubtitle: {
-    ...Theme.typography.body,
-    color: Theme.colors.textSecondary,
-    textAlign: 'center',
-    marginBottom: Theme.spacing.xl,
-    lineHeight: 22,
-  },
-  emptyButton: {
-    borderRadius: Theme.radius.lg,
-    overflow: 'hidden',
-    marginBottom: Theme.spacing.xxxl,
-    ...Theme.shadow.medium,
-  },
-  emptyButtonGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: Theme.spacing.lg,
-    paddingHorizontal: Theme.spacing.xl,
-    gap: Theme.spacing.sm,
-  },
-  emptyButtonText: {
-    ...Theme.typography.bodyBold,
-    color: Theme.colors.textInverse,
-  },
-  tipsContainer: {
-    backgroundColor: Theme.colors.surface,
-    padding: Theme.spacing.lg,
-    borderRadius: Theme.radius.lg,
-    alignSelf: 'stretch',
-    ...Theme.shadow.subtle,
-  },
-  tipsTitle: {
-    ...Theme.typography.bodyBold,
-    color: Theme.colors.textPrimary,
-    marginBottom: Theme.spacing.md,
-  },
-  tipItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Theme.spacing.sm,
-    marginBottom: Theme.spacing.sm,
-  },
-  tipText: {
-    ...Theme.typography.caption,
-    color: Theme.colors.textSecondary,
-    flex: 1,
+    ...tokens.typography.body,
   },
   scrollView: {
     flex: 1,
   },
   scrollContent: {
-    padding: Theme.spacing.lg,
+    padding: tokens.spacing.lg,
+    gap: tokens.spacing.xl,
   },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: Theme.spacing.lg,
-  },
-  countText: {
-    ...Theme.typography.h3,
-    color: Theme.colors.textPrimary,
-  },
-  addButton: {
-    padding: Theme.spacing.xs,
-  },
-  grid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: Theme.spacing.md,
-  },
-  card: {
-    width: CARD_WIDTH,
-    height: CARD_WIDTH * 1.3,
-    borderRadius: Theme.radius.lg,
+
+  // Today's Vision Card
+  todayCard: {
+    padding: 0,
     overflow: 'hidden',
-    ...Theme.shadow.medium,
   },
-  imageContainer: {
+  todayImage: {
     width: '100%',
-    height: '100%',
-  },
-  image: {
-    width: '100%',
-    height: '100%',
-    backgroundColor: Theme.colors.surface,
+    height: 400,
+    backgroundColor: tokens.colors.bg,
   },
   imageOverlay: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    padding: Theme.spacing.md,
-    justifyContent: 'flex-end',
+    padding: tokens.spacing.xl,
+    paddingTop: tokens.spacing.xxl * 2,
   },
-  cardTitle: {
-    ...Theme.typography.bodyBold,
-    color: Theme.colors.textInverse,
-  },
-  footerTip: {
+  completeBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Theme.spacing.sm,
-    marginTop: Theme.spacing.xl,
-    padding: Theme.spacing.md,
-    backgroundColor: Theme.colors.surface,
-    borderRadius: Theme.radius.md,
+    gap: 6,
+    alignSelf: 'flex-start',
+    marginBottom: tokens.spacing.md,
+    paddingHorizontal: tokens.spacing.md,
+    paddingVertical: tokens.spacing.xs,
+    borderRadius: tokens.radii.full,
+    backgroundColor: 'rgba(16, 185, 129, 0.25)',
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.4)',
   },
-  footerTipText: {
-    ...Theme.typography.caption,
-    color: Theme.colors.textSecondary,
-    flex: 1,
+  completeBadgeText: {
+    ...tokens.typography.caption,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    letterSpacing: 0.5,
   },
+  imageCaption: {
+    ...tokens.typography.h3,
+    fontSize: 22,
+    color: '#FFFFFF',
+    fontWeight: '700',
+    lineHeight: 30,
+    letterSpacing: -0.4,
+  },
+
+  // Empty State
+  emptyCard: {
+    padding: tokens.spacing.xl * 2,
+    alignItems: 'center',
+  },
+  emptyContent: {
+    alignItems: 'center',
+    width: '100%',
+    maxWidth: 360,
+  },
+  emptyIcon: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: tokens.spacing.xl,
+    borderWidth: 2,
+    borderColor: `${tokens.colors.accent}25`,
+    ...tokens.shadows.card,
+  },
+  emptyTitle: {
+    ...tokens.typography.h2,
+    fontSize: 24,
+    fontWeight: '800',
+    textAlign: 'center',
+    marginBottom: tokens.spacing.md,
+    letterSpacing: -0.5,
+  },
+  emptySubtitle: {
+    ...tokens.typography.body,
+    fontSize: 16,
+    lineHeight: 24,
+    textAlign: 'center',
+    marginBottom: tokens.spacing.xl * 1.5,
+  },
+  addButton: {
+    width: '100%',
+  },
+
+  // Past Visions Gallery
+  pastSection: {
+    gap: tokens.spacing.md,
+  },
+  pastHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  pastTitle: {
+    ...tokens.typography.h3,
+    fontWeight: '800',
+    letterSpacing: -0.4,
+  },
+  pastCount: {
+    ...tokens.typography.caption,
+    fontWeight: '600',
+  },
+  pastGallery: {
+    gap: tokens.spacing.md,
+    paddingRight: tokens.spacing.lg,
+  },
+  pastItem: {
+    width: 140,
+    height: 200,
+    borderRadius: tokens.radii.md,
+    overflow: 'hidden',
+    backgroundColor: tokens.colors.surface,
+    ...tokens.shadows.card,
+  },
+  pastImage: {
+    width: '100%',
+    height: '100%',
+  },
+  pastOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    padding: tokens.spacing.md,
+  },
+  pastCaption: {
+    ...tokens.typography.caption,
+    fontSize: 12,
+    color: '#FFFFFF',
+    fontWeight: '600',
+    lineHeight: 16,
+  },
+
+  // Modals
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
     justifyContent: 'flex-end',
   },
-  modalContainer: {
+  modalKeyboardView: {
     flex: 1,
     justifyContent: 'flex-end',
   },
+  modalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+  },
   modalContent: {
-    backgroundColor: Theme.colors.surface,
-    borderTopLeftRadius: Theme.radius.xl,
-    borderTopRightRadius: Theme.radius.xl,
-    padding: Theme.spacing.xl,
-    paddingBottom: Theme.spacing.xxxl,
-    ...Theme.shadow.large,
+    borderTopLeftRadius: tokens.radii.xl,
+    borderTopRightRadius: tokens.radii.xl,
+    padding: tokens.spacing.xl,
+    maxHeight: '85%',
   },
-  modalTitle: {
-    ...Theme.typography.h2,
-    color: Theme.colors.textPrimary,
-    marginBottom: Theme.spacing.xs,
-  },
-  modalSubtitle: {
-    ...Theme.typography.body,
-    color: Theme.colors.textSecondary,
-    marginBottom: Theme.spacing.lg,
+  modalPreviewContainer: {
+    width: '100%',
+    height: 220,
+    marginBottom: tokens.spacing.lg,
+    borderRadius: tokens.radii.md,
+    overflow: 'hidden',
+    backgroundColor: tokens.colors.bg,
   },
   modalPreview: {
     width: '100%',
-    height: 200,
-    borderRadius: Theme.radius.md,
-    marginBottom: Theme.spacing.lg,
-    backgroundColor: Theme.colors.surfaceSecondary,
+    height: '100%',
+  },
+  modalTitle: {
+    ...tokens.typography.h3,
+    fontWeight: '700',
+    marginBottom: tokens.spacing.md,
   },
   modalInput: {
-    ...Theme.typography.body,
-    color: Theme.colors.textPrimary,
-    backgroundColor: Theme.colors.bg,
-    borderRadius: Theme.radius.md,
-    padding: Theme.spacing.md,
-    marginBottom: Theme.spacing.lg,
-    borderWidth: 1,
-    borderColor: Theme.colors.border,
+    ...tokens.typography.body,
+    padding: tokens.spacing.lg,
+    borderRadius: tokens.radii.md,
+    borderWidth: 2,
+    minHeight: 100,
+    textAlignVertical: 'top',
+    marginBottom: tokens.spacing.xs,
+  },
+  charCount: {
+    ...tokens.typography.caption,
+    textAlign: 'right',
+    marginBottom: tokens.spacing.lg,
   },
   modalActions: {
     flexDirection: 'row',
-    gap: Theme.spacing.md,
+    gap: tokens.spacing.md,
   },
   modalCancelButton: {
     flex: 1,
-    paddingVertical: Theme.spacing.md,
+    paddingVertical: tokens.spacing.md,
+    borderRadius: tokens.radii.md,
+    borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: Theme.radius.md,
-    backgroundColor: Theme.colors.surfaceSecondary,
+    minHeight: 50,
   },
   modalCancelText: {
-    ...Theme.typography.bodyBold,
-    color: Theme.colors.textSecondary,
+    ...tokens.typography.bodyMedium,
+    fontWeight: '600',
   },
   modalSaveButton: {
     flex: 1,
-    borderRadius: Theme.radius.md,
-    overflow: 'hidden',
   },
-  modalSaveButtonDisabled: {
-    opacity: 0.5,
+
+  // Preview Modal
+  previewOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.95)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  modalSaveGradient: {
-    paddingVertical: Theme.spacing.md,
+  previewClose: {
+    position: 'absolute',
+    top: 50,
+    right: tokens.spacing.lg,
+    width: 44,
+    height: 44,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    borderRadius: 22,
+    zIndex: 1,
   },
-  modalSaveText: {
-    ...Theme.typography.bodyBold,
-    color: Theme.colors.textInverse,
+  previewImage: {
+    width: width - tokens.spacing.xl * 2,
+    height: '70%',
+    maxHeight: 600,
+  },
+  previewContent: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    padding: tokens.spacing.xl,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    gap: tokens.spacing.md,
+  },
+  previewCaption: {
+    ...tokens.typography.h3,
+    fontSize: 20,
+    color: '#FFFFFF',
+    fontWeight: '600',
+    lineHeight: 28,
+  },
+  previewDeleteButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: tokens.spacing.md,
+    borderRadius: tokens.radii.md,
+    backgroundColor: 'rgba(255, 59, 48, 0.3)',
+  },
+  previewDeleteText: {
+    ...tokens.typography.bodyMedium,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
 });

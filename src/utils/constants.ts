@@ -27,6 +27,7 @@ export const POINTS = {
   MEDITATION_COMPLETE: 30,
   DAY_COMPLETE_BONUS: 50,
   MOOD_CHECKIN: 5,
+  VISION_IMAGE: 10,
 } as const;
 
 // Streak Milestones (days)

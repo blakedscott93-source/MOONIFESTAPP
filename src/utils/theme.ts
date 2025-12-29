@@ -18,37 +18,37 @@ export const createTheme = (isDark: boolean = false) => ({
     xxxl: 40,
   },
 
-  // Border Radius Scale (Premium values)
+  // Border Radius Scale (20-24 for cards - grounded feel)
   radius: {
     sm: 14, // Small card
     md: 16,
-    lg: 20, // Large card/hero
+    lg: 22, // Large card/hero (within 20-24 range)
     xl: 32,
     full: 999, // Pill
   },
 
-  // Shadow/Elevation Tokens (Premium iOS-style)
+  // Shadow/Elevation Tokens (Grounded, calm shadows - not floating)
   shadow: {
     subtle: {
       shadowColor: '#000',
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.05,
-      shadowRadius: 4,
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.08,
+      shadowRadius: 6,
       elevation: 2,
     },
     medium: {
       shadowColor: '#000',
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.08,
+      shadowOffset: { width: 0, height: 5 },
+      shadowOpacity: 0.1,
       shadowRadius: 8,
-      elevation: 3,
+      elevation: 2,
     },
     large: {
       shadowColor: '#000',
       shadowOffset: { width: 0, height: 6 },
-      shadowOpacity: 0.08,
-      shadowRadius: 12,
-      elevation: 4,
+      shadowOpacity: 0.12,
+      shadowRadius: 10,
+      elevation: 3,
     },
     fab: {
       shadowColor: '#FF6B9D',

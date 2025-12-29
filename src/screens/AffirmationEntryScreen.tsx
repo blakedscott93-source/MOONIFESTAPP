@@ -10,6 +10,7 @@ import {
   Platform,
   Alert,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useApp } from '../context/AppContext';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen } from '../components/layout/Screen';
@@ -70,10 +71,23 @@ export default function AffirmationEntryScreen({ route, navigation }: Affirmatio
   );
 
   useEffect(() => {
-    // Load existing affirmations if available
-    // TODO: Load from storage when affirmation storage is implemented
-    // For now, start with empty affirmations
-  }, []);
+    loadSavedAffirmations();
+  }, [period, count]);
+
+  const loadSavedAffirmations = async () => {
+    try {
+      const storageKey = `@custom_affirmations_${period}_${count}`;
+      const saved = await AsyncStorage.getItem(storageKey);
+      if (saved) {
+        const savedAffirmations = saved.split('|||');
+        if (savedAffirmations.length === count) {
+          setAffirmations(savedAffirmations);
+        }
+      }
+    } catch (error) {
+      console.error('Error loading saved affirmations:', error);
+    }
+  };
 
   const updateAffirmation = (index: number, text: string) => {
     const updated = [...affirmations];
@@ -81,7 +95,7 @@ export default function AffirmationEntryScreen({ route, navigation }: Affirmatio
     setAffirmations(updated);
   };
 
-  const handleComplete = () => {
+  const handleComplete = async () => {
     // Check if all affirmations are filled
     const allFilled = affirmations.every((aff) => aff.trim().length > 0);
 
@@ -94,11 +108,16 @@ export default function AffirmationEntryScreen({ route, navigation }: Affirmatio
       return;
     }
 
-    // Save affirmations
+    // Save affirmations to AsyncStorage
     const affirmationText = affirmations.join('|||');
-    // TODO: Implement affirmation saving when backend is ready
-    // For now, just store locally
-    console.log('Affirmations saved:', { period, affirmationText });
+    const storageKey = `@custom_affirmations_${period}_${count}`;
+
+    try {
+      await AsyncStorage.setItem(storageKey, affirmationText);
+      console.log('Affirmations saved:', { period, count, storageKey });
+    } catch (error) {
+      console.error('Error saving affirmations:', error);
+    }
 
     Alert.alert(
       'Complete! ✨',

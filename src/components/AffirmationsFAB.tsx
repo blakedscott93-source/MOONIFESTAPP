@@ -2,13 +2,11 @@ import React, { useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Animated } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Theme } from '../utils/theme';
+import { useTabBarInset } from '../hooks/useTabBarInset';
 
-// Bottom tab bar height from AppNavigator
-const BOTTOM_TAB_HEIGHT = 85;
 // Target spacing above tab bar
-const FAB_SPACING_ABOVE_TAB = 16;
+const FAB_SPACING_ABOVE_TAB = 20;
 // Fixed FAB height for perfect pill shape
 const FAB_HEIGHT = 56;
 
@@ -17,7 +15,7 @@ interface AffirmationsFABProps {
 }
 
 export const AffirmationsFAB: React.FC<AffirmationsFABProps> = ({ onPress }) => {
-  const insets = useSafeAreaInsets();
+  const tabBarInset = useTabBarInset();
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const opacityAnim = useRef(new Animated.Value(1)).current;
 
@@ -51,7 +49,7 @@ export const AffirmationsFAB: React.FC<AffirmationsFABProps> = ({ onPress }) => 
     ]).start();
   };
 
-  const bottomPosition = BOTTOM_TAB_HEIGHT + insets.bottom + FAB_SPACING_ABOVE_TAB;
+  const bottomPosition = tabBarInset + FAB_SPACING_ABOVE_TAB;
 
   return (
     <Animated.View
@@ -93,7 +91,8 @@ const styles = StyleSheet.create({
   container: {
     position: 'absolute',
     right: Theme.spacing.lg,
-    zIndex: 1000,
+    zIndex: 1001, // Above FloatingTabBar (1000)
+    elevation: 1001, // Android elevation
   },
   button: {
     height: FAB_HEIGHT,

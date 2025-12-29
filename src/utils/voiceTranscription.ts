@@ -1,6 +1,21 @@
 import { Platform } from 'react-native';
 import * as FileSystem from 'expo-file-system';
-import { OPENAI_API_KEY, GOOGLE_CLOUD_API_KEY, DEEPGRAM_API_KEY } from '@env';
+
+// Safely import env variables with fallback for web
+let OPENAI_API_KEY: string | undefined;
+let GOOGLE_CLOUD_API_KEY: string | undefined;
+let DEEPGRAM_API_KEY: string | undefined;
+try {
+  const env = require('@env');
+  OPENAI_API_KEY = env.OPENAI_API_KEY;
+  GOOGLE_CLOUD_API_KEY = env.GOOGLE_CLOUD_API_KEY;
+  DEEPGRAM_API_KEY = env.DEEPGRAM_API_KEY;
+} catch (error) {
+  // @env might not be available on web or if .env file doesn't exist
+  OPENAI_API_KEY = undefined;
+  GOOGLE_CLOUD_API_KEY = undefined;
+  DEEPGRAM_API_KEY = undefined;
+}
 
 /**
  * Voice-to-Text Transcription Service

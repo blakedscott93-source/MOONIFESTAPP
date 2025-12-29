@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useCallback } from 'react';
 import { View, StyleSheet, Animated, TouchableOpacity, ViewStyle, Pressable } from 'react-native';
-import { Theme } from '../utils/theme';
+import { tokens } from '../theme/tokens';
 import { lightHaptic } from '../utils/haptics';
 
 interface UnifiedCardProps {
@@ -43,7 +43,7 @@ export const UnifiedCard: React.FC<UnifiedCardProps> = ({
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
-        duration: Theme.animation.medium,
+        duration: 300, // Unified animation duration
         delay,
         useNativeDriver: true,
       }),
@@ -296,23 +296,23 @@ export const IconButton: React.FC<IconButtonProps> = ({
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: Theme.colors.surface,
-    borderRadius: Theme.radius.lg,
-    padding: Theme.spacing.lg,
-    marginHorizontal: Theme.spacing.lg,
-    marginBottom: Theme.spacing.md, // 12px gap between cards (more compact)
+    backgroundColor: tokens.colors.card,
+    borderRadius: tokens.radii.md, // 16px - unified card radius
+    padding: tokens.spacing.md, // 16px - unified padding
+    marginHorizontal: tokens.spacing.md,
+    marginBottom: tokens.spacing.sm, // 12px gap between cards
     borderWidth: 1,
-    borderColor: Theme.colors.border,
-    ...Theme.shadow.medium,
+    borderColor: tokens.colors.border,
+    ...tokens.shadows.card, // Unified subtle shadow
   },
   cardElevated: {
-    ...Theme.shadow.large,
+    ...tokens.shadows.elevated,
     borderWidth: 0,
   },
   cardOutlined: {
     backgroundColor: 'transparent',
-    borderWidth: 2,
-    borderColor: Theme.colors.border,
+    borderWidth: 1,
+    borderColor: tokens.colors.border,
     shadowOpacity: 0,
     elevation: 0,
   },
@@ -321,17 +321,17 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   compactCard: {
-    backgroundColor: Theme.colors.surface,
-    borderRadius: Theme.radius.md,
-    padding: Theme.spacing.md,
+    backgroundColor: tokens.colors.card,
+    borderRadius: tokens.radii.md,
+    padding: tokens.spacing.sm,
     borderWidth: 1,
-    borderColor: Theme.colors.border,
-    ...Theme.shadow.subtle,
+    borderColor: tokens.colors.border,
+    ...tokens.shadows.subtle,
   },
   iconButton: {
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: Theme.radius.full,
+    borderRadius: tokens.radii.full,
   },
   iconButtonSmall: {
     width: 36,
@@ -346,13 +346,13 @@ const styles = StyleSheet.create({
     height: 56,
   },
   iconButtonDefault: {
-    backgroundColor: Theme.colors.surfaceSecondary,
+    backgroundColor: tokens.colors.card,
   },
   iconButtonPrimary: {
-    backgroundColor: Theme.colors.accent,
+    backgroundColor: tokens.colors.accent,
   },
   iconButtonSecondary: {
-    backgroundColor: Theme.colors.accentSoft,
+    backgroundColor: tokens.colors.accentSoft,
   },
 });
 

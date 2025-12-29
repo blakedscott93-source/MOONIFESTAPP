@@ -35,10 +35,15 @@ export const ListRow: React.FC<ListRowProps> = React.memo(({
   const content = (
     <View style={styles.container}>
       {icon && (
-        <View style={styles.iconContainer}>
+        <View
+          style={[
+            styles.iconCircle,
+            { backgroundColor: iconColor ? `${iconColor}15` : `${Theme.colors.accentSoft}` },
+          ]}
+        >
           <Ionicons
             name={icon}
-            size={24}
+            size={22}
             color={iconColor || Theme.colors.accent}
           />
         </View>
@@ -57,17 +62,12 @@ export const ListRow: React.FC<ListRowProps> = React.memo(({
         )}
       </View>
       {rightIcon && (
-        <TouchableOpacity
-          onPress={onRightIconPress || onPress}
-          disabled={!onRightIconPress && !onPress}
-          style={styles.rightIconContainer}
-        >
-          <Ionicons
-            name={rightIcon}
-            size={20}
-            color={onRightIconPress ? Theme.colors.danger : Theme.colors.textTertiary}
-          />
-        </TouchableOpacity>
+        <Ionicons
+          name={rightIcon}
+          size={18}
+          color={onRightIconPress ? Theme.colors.danger : Theme.colors.textTertiary}
+          style={styles.rightIcon}
+        />
       )}
     </View>
   );
@@ -92,7 +92,7 @@ export const ListRow: React.FC<ListRowProps> = React.memo(({
 
 const styles = StyleSheet.create({
   row: {
-    minHeight: 56, // More compact (was 44 + 12 = 56, keeping same but cleaner)
+    minHeight: 60, // Comfortable touch target
     justifyContent: 'center',
   },
   container: {
@@ -100,13 +100,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: Theme.spacing.md,
   },
-  iconContainer: {
+  iconCircle: {
     width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: 'center',
+    justifyContent: 'center',
     marginRight: Theme.spacing.md,
   },
   textContainer: {
     flex: 1,
+    gap: 2,
   },
   title: {
     ...Theme.typography.bodyBold,
@@ -119,14 +123,11 @@ const styles = StyleSheet.create({
   subtitle: {
     ...Theme.typography.caption,
     color: Theme.colors.textSecondary,
-    marginTop: Theme.spacing.xs,
+    marginTop: Theme.spacing.xs / 2,
   },
-  rightIconContainer: {
-    padding: Theme.spacing.xs,
-    minWidth: TOUCH_TARGET_MIN,
-    minHeight: TOUCH_TARGET_MIN,
-    alignItems: 'center',
-    justifyContent: 'center',
+  rightIcon: {
+    marginLeft: Theme.spacing.sm,
+    opacity: 0.4, // Reduced opacity - not dominant
   },
 });
 

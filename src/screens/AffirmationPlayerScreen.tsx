@@ -14,7 +14,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
-import * as Speech from 'expo-speech';
+import { AVPlaybackStatus } from 'expo-av';
 import { GUIDED_SESSIONS, AFFIRMATION_CATEGORIES } from '../data/guidedAffirmations';
 import { useApp } from '../context/AppContext';
 import { GuidedSession } from '../types';
@@ -23,6 +23,7 @@ import { successHaptic, lightHaptic } from '../utils/haptics';
 import { MAX_SESSIONS_PER_DAY, POINTS } from '../utils/constants';
 import { saveAffirmation, isAffirmationSaved } from '../utils/savedAffirmations';
 import { Theme, TOUCH_TARGET_MIN } from '../utils/theme';
+import { AudioPlayer, AFFIRMATION_AUDIO, AffirmationAudioId } from '../utils/audioPlayer';
 
 export default function AffirmationPlayerScreen({ route, navigation }: any) {
   const { sessionId } = route.params;
@@ -38,7 +39,9 @@ export default function AffirmationPlayerScreen({ route, navigation }: any) {
   const [isCompleting, setIsCompleting] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [savedAffirmations, setSavedAffirmations] = useState<Set<string>>(new Set());
-  const speechRef = useRef<{ isActive: boolean }>({ isActive: false });
+  const [duration, setDuration] = useState(0);
+  const [position, setPosition] = useState(0);
+  const audioPlayerRef = useRef<AudioPlayer>(new AudioPlayer());
   
   // Animation values (only transform and opacity for native driver)
   const playButtonScale = useRef(new Animated.Value(1)).current;
@@ -56,15 +59,17 @@ export default function AffirmationPlayerScreen({ route, navigation }: any) {
     );
   }
 
-  // Load saved affirmations
+  // Load saved affirmations and audio
   useEffect(() => {
     loadSavedAffirmations();
+    loadAudio();
   }, []);
 
-  // Clean up speech on unmount or navigation
+  // Clean up audio on unmount or navigation
   useEffect(() => {
     return () => {
-      stopSpeech();
+      stopAudio();
+      audioPlayerRef.current.unloadAudio();
     };
   }, []);
 
@@ -160,81 +165,87 @@ export default function AffirmationPlayerScreen({ route, navigation }: any) {
     }
   };
 
-  // Stop speech when navigating away
+  // Stop audio when navigating away
   useEffect(() => {
     const unsubscribe = navigation.addListener('beforeRemove', () => {
-      stopSpeech();
+      stopAudio();
     });
     return unsubscribe;
   }, [navigation]);
 
-  const stopSpeech = () => {
-    if (speechRef.current.isActive) {
-      Speech.stop();
-      speechRef.current.isActive = false;
-      setIsSpeaking(false);
-      setIsPlaying(false);
+  const loadAudio = async () => {
+    if (!session) return;
+
+    try {
+      const audioId = session.id as AffirmationAudioId;
+      const audioSource = AFFIRMATION_AUDIO[audioId];
+
+      if (audioSource) {
+        await audioPlayerRef.current.loadAudio(audioSource);
+
+        // Set up playback status update
+        audioPlayerRef.current.setOnPlaybackStatusUpdate((status: AVPlaybackStatus) => {
+          if (status.isLoaded) {
+            setDuration(status.durationMillis || 0);
+            setPosition(status.positionMillis || 0);
+            setProgress((status.positionMillis || 0) / (status.durationMillis || 1));
+            setProgressWidth(`${((status.positionMillis || 0) / (status.durationMillis || 1)) * 100}%`);
+
+            if (status.isPlaying) {
+              setIsSpeaking(true);
+              setIsPlaying(true);
+            } else {
+              setIsSpeaking(false);
+            }
+
+            // Handle completion
+            if (status.didJustFinish && !status.isLooping) {
+              handleComplete();
+            }
+          }
+        });
+      }
+    } catch (error) {
+      console.error('Error loading audio:', error);
     }
   };
 
-  const speakAffirmation = async (index: number) => {
-    if (!session || index < 0 || index >= session.affirmations.length) {
-      return;
-    }
-
-    stopSpeech();
-
-    const affirmation = session.affirmations[index];
-    
+  const stopAudio = async () => {
     try {
-      speechRef.current.isActive = true;
-      setIsSpeaking(true);
-      setIsPlaying(true);
-
-      await Speech.speak(affirmation, {
-        language: 'en-US',
-        pitch: 1.0,
-        rate: 0.9,
-        onStart: () => {
-          setIsSpeaking(true);
-          setIsPlaying(true);
-        },
-        onDone: () => {
-          speechRef.current.isActive = false;
-          setIsSpeaking(false);
-          
-          if (index < session.affirmations.length - 1) {
-            setTimeout(() => {
-              speakAffirmation(index + 1);
-              setCurrentAffirmation(index + 1);
-            }, 500);
-          } else {
-            setIsPlaying(false);
-          }
-        },
-        onStopped: () => {
-          speechRef.current.isActive = false;
-          setIsSpeaking(false);
-          setIsPlaying(false);
-        },
-        onError: (error) => {
-          console.error('Speech error:', error);
-          speechRef.current.isActive = false;
-          setIsSpeaking(false);
-          setIsPlaying(false);
-        },
-      });
-    } catch (error) {
-      console.error('Error speaking affirmation:', error);
-      speechRef.current.isActive = false;
+      await audioPlayerRef.current.stop();
       setIsSpeaking(false);
       setIsPlaying(false);
+      setPosition(0);
+      setProgress(0);
+      setProgressWidth('0%');
+    } catch (error) {
+      console.error('Error stopping audio:', error);
+    }
+  };
+
+  const playAudio = async () => {
+    try {
+      await audioPlayerRef.current.play();
+      setIsSpeaking(true);
+      setIsPlaying(true);
+    } catch (error) {
+      console.error('Error playing audio:', error);
+    }
+  };
+
+  const pauseAudio = async () => {
+    try {
+      await audioPlayerRef.current.pause();
+      setIsSpeaking(false);
+      setIsPlaying(false);
+    } catch (error) {
+      console.error('Error pausing audio:', error);
     }
   };
 
   const handlePlayPause = async () => {
     lightHaptic();
-    
+
     // Button press animation
     Animated.sequence([
       Animated.timing(playButtonScale, {
@@ -251,33 +262,39 @@ export default function AffirmationPlayerScreen({ route, navigation }: any) {
     ]).start();
 
     if (isPlaying && isSpeaking) {
-      stopSpeech();
+      await pauseAudio();
     } else {
-      await speakAffirmation(currentAffirmation);
+      await playAudio();
     }
   };
 
-  const handlePrevious = () => {
-    if (currentAffirmation > 0) {
-      lightHaptic();
-      stopSpeech();
-      const newIndex = currentAffirmation - 1;
-      setCurrentAffirmation(newIndex);
-      if (isPlaying) {
-        speakAffirmation(newIndex);
-      }
+  const handlePrevious = async () => {
+    lightHaptic();
+    // Seek backward by 10 seconds
+    if (!audioPlayerRef.current || !audioPlayerRef.current.getIsLoaded()) {
+      return;
+    }
+    const newPosition = Math.max(0, position - 10000);
+    try {
+      await audioPlayerRef.current.seek(newPosition);
+      setPosition(newPosition);
+    } catch (error) {
+      console.error('Error seeking backward:', error);
     }
   };
 
-  const handleNext = () => {
-    if (currentAffirmation < session.affirmations.length - 1) {
-      lightHaptic();
-      stopSpeech();
-      const newIndex = currentAffirmation + 1;
-      setCurrentAffirmation(newIndex);
-      if (isPlaying) {
-        speakAffirmation(newIndex);
-      }
+  const handleNext = async () => {
+    lightHaptic();
+    // Seek forward by 10 seconds
+    if (!audioPlayerRef.current || !audioPlayerRef.current.getIsLoaded()) {
+      return;
+    }
+    const newPosition = Math.min(duration, position + 10000);
+    try {
+      await audioPlayerRef.current.seek(newPosition);
+      setPosition(newPosition);
+    } catch (error) {
+      console.error('Error seeking forward:', error);
     }
   };
 
@@ -324,13 +341,11 @@ export default function AffirmationPlayerScreen({ route, navigation }: any) {
     }
   };
 
-  const handleAffirmationPress = (index: number) => {
+  const handleAffirmationPress = async (index: number) => {
     lightHaptic();
-    stopSpeech();
-    setCurrentAffirmation(index);
-    if (isPlaying) {
-      speakAffirmation(index);
-    }
+    // For audio affirmations, seeking to specific affirmations isn't supported
+    // The audio plays continuously through all affirmations
+    // This function can be removed or disabled in the UI
   };
 
   const playButtonRotationDeg = playButtonRotation.interpolate({
@@ -376,7 +391,15 @@ export default function AffirmationPlayerScreen({ route, navigation }: any) {
           <View style={styles.headerTitleContainer}>
             <Text style={styles.headerTitle} numberOfLines={1}>{session.title}</Text>
           </View>
-          <View style={styles.placeholder} />
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => navigation.navigate('Today')}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          >
+            <BlurView intensity={80} style={styles.backButtonBlur}>
+              <Ionicons name="home-outline" size={24} color={Theme.colors.textPrimary} />
+            </BlurView>
+          </TouchableOpacity>
         </View>
 
         {/* Main Content */}
@@ -497,9 +520,14 @@ export default function AffirmationPlayerScreen({ route, navigation }: any) {
                 </View>
               </View>
               <View style={styles.timeInfo}>
-                <Text style={styles.timeText}>0:00</Text>
                 <Text style={styles.timeText}>
-                  {Math.floor(session.duration / 60)}:{(session.duration % 60).toString().padStart(2, '0')}
+                  {Math.floor(position / 1000 / 60)}:{Math.floor((position / 1000) % 60).toString().padStart(2, '0')}
+                </Text>
+                <Text style={styles.timeText}>
+                  {duration > 0
+                    ? `${Math.floor(duration / 1000 / 60)}:${Math.floor((duration / 1000) % 60).toString().padStart(2, '0')}`
+                    : `${Math.floor(session.duration / 60)}:${(session.duration % 60).toString().padStart(2, '0')}`
+                  }
                 </Text>
               </View>
             </View>
@@ -509,20 +537,20 @@ export default function AffirmationPlayerScreen({ route, navigation }: any) {
               <TouchableOpacity
                 style={[
                   styles.controlButton,
-                  currentAffirmation === 0 && styles.controlButtonDisabled
+                  position === 0 && styles.controlButtonDisabled
                 ]}
                 onPress={handlePrevious}
-                disabled={currentAffirmation === 0}
+                disabled={position === 0}
               >
-                <BlurView 
-                  intensity={currentAffirmation === 0 ? 40 : 60} 
-                  tint="light" 
+                <BlurView
+                  intensity={position === 0 ? 40 : 60}
+                  tint="light"
                   style={styles.controlButtonBlur}
                 >
                   <Ionicons
                     name="play-skip-back"
                     size={24}
-                    color={currentAffirmation === 0 ? Theme.colors.textTertiary : Theme.colors.textPrimary}
+                    color={position === 0 ? Theme.colors.textTertiary : Theme.colors.textPrimary}
                   />
                 </BlurView>
               </TouchableOpacity>
@@ -600,20 +628,20 @@ export default function AffirmationPlayerScreen({ route, navigation }: any) {
               <TouchableOpacity
                 style={[
                   styles.controlButton,
-                  currentAffirmation === session.affirmations.length - 1 && styles.controlButtonDisabled
+                  position >= duration && styles.controlButtonDisabled
                 ]}
                 onPress={handleNext}
-                disabled={currentAffirmation === session.affirmations.length - 1}
+                disabled={position >= duration}
               >
-                <BlurView 
-                  intensity={currentAffirmation === session.affirmations.length - 1 ? 40 : 60} 
+                <BlurView
+                  intensity={position >= duration ? 40 : 60} 
                   tint="light" 
                   style={styles.controlButtonBlur}
                 >
                   <Ionicons
                     name="play-skip-forward"
                     size={24}
-                    color={currentAffirmation === session.affirmations.length - 1 ? Theme.colors.textTertiary : Theme.colors.textPrimary}
+                    color={position >= duration ? Theme.colors.textTertiary : Theme.colors.textPrimary}
                   />
                 </BlurView>
               </TouchableOpacity>
@@ -912,19 +940,17 @@ const styles = StyleSheet.create({
     width: 88,
     height: 88,
     borderRadius: 44,
-    overflow: 'hidden',
     ...Theme.shadow.fab,
   },
   playButton: {
     width: '100%',
     height: '100%',
+    borderRadius: 44,
   },
   playButtonBlur: {
     width: '100%',
     height: '100%',
     borderRadius: 44,
-    borderWidth: 2,
-    borderColor: 'rgba(255, 255, 255, 0.6)',
     overflow: 'hidden',
   },
   playButtonGradient: {

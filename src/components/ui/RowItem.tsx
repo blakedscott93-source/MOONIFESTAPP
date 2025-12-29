@@ -42,12 +42,12 @@ export const RowItem: React.FC<RowItemProps> = ({
         <View
           style={[
             styles.iconCircle,
-            { backgroundColor: iconColor ? `${iconColor}20` : `${tokens.colors.tintLavender}20` },
+            { backgroundColor: iconColor ? `${iconColor}15` : `${tokens.colors.tintLavender}15` },
           ]}
         >
           <Ionicons
             name={icon}
-            size={20}
+            size={22}
             color={iconColor || tokens.colors.tintPurple}
           />
         </View>
@@ -83,8 +83,8 @@ export const RowItem: React.FC<RowItemProps> = ({
       {rightIcon && (
         <Ionicons
           name={rightIcon}
-          size={20}
-          color={tokens.colors.textSecondary}
+          size={18}
+          color={tokens.colors.textTertiary}
           style={styles.chevron}
         />
       )}
@@ -135,6 +135,7 @@ const styles = StyleSheet.create({
   },
   chevron: {
     marginLeft: 8,
+    opacity: 0.4, // Reduced opacity - not dominant
   },
 });
 

@@ -9,62 +9,98 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { AVPlaybackStatus } from 'expo-av';
 import { Screen } from '../components/Screen';
 import { AppHeader } from '../components/AppHeader';
 import { Theme } from '../utils/theme';
 import { useApp } from '../context/AppContext';
+import { AudioPlayer, MEDITATION_AUDIO, MeditationAudioId } from '../utils/audioPlayer';
 
-const MEDITATION_DURATIONS = [
-  { label: '5 min', value: 5 * 60 },
-  { label: '10 min', value: 10 * 60 },
-  { label: '15 min', value: 15 * 60 },
-  { label: '20 min', value: 20 * 60 },
+const MEDITATION_SESSIONS = [
+  { id: 'morning-1', label: 'Morning Clarity', category: 'morning' },
+  { id: 'morning-2', label: 'Energize Day', category: 'morning' },
+  { id: 'morning-3', label: 'Focus Intention', category: 'morning' },
+  { id: 'midday-1', label: 'Midday Reset', category: 'midday' },
+  { id: 'midday-2', label: 'Stress Relief', category: 'midday' },
+  { id: 'midday-3', label: 'Productivity Boost', category: 'midday' },
+  { id: 'sleep-1', label: 'Deep Sleep', category: 'sleep' },
+  { id: 'sleep-2', label: 'Peaceful Rest', category: 'sleep' },
+  { id: 'sleep-3', label: 'Dream Journey', category: 'sleep' },
 ];
 
-export default function MeditationScreen({ navigation }: any) {
+export default function MeditationScreen({ navigation, route }: any) {
   const { completeMeditation, addGlowPoints } = useApp();
-  const [selectedDuration, setSelectedDuration] = useState(MEDITATION_DURATIONS[1].value);
+
+  // Get current time period
+  const getCurrentPeriod = () => {
+    const hour = new Date().getHours();
+    if (hour >= 5 && hour < 12) return 'morning';
+    if (hour >= 12 && hour < 18) return 'midday';
+    return 'sleep';
+  };
+
+  const currentPeriod = getCurrentPeriod();
+
+  // Filter sessions based on time of day
+  const availableSessions = MEDITATION_SESSIONS.filter(
+    session => session.category === currentPeriod
+  );
+
+  // Default to first session of current period
+  const defaultSessionId = availableSessions[0]?.id || 'morning-1';
+  const sessionId = route?.params?.sessionId as MeditationAudioId || defaultSessionId;
+
+  const [selectedSession, setSelectedSession] = useState<MeditationAudioId>(sessionId);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [timeRemaining, setTimeRemaining] = useState(selectedDuration);
+  const [currentPosition, setCurrentPosition] = useState(0);
+  const [duration, setDuration] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
 
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const audioPlayerRef = useRef(new AudioPlayer());
   const breathAnimation = useRef(new Animated.Value(0)).current;
   const pulseAnimation = useRef(new Animated.Value(1)).current;
 
+  // Load audio when component mounts or session changes
+  useEffect(() => {
+    const loadAudio = async () => {
+      try {
+        const audioPath = MEDITATION_AUDIO[selectedSession];
+        await audioPlayerRef.current.loadAudio(audioPath);
+
+        // Set up playback status update listener
+        audioPlayerRef.current.setOnPlaybackStatusUpdate((status: AVPlaybackStatus) => {
+          if (status.isLoaded) {
+            setCurrentPosition(status.positionMillis);
+            setDuration(status.durationMillis || 0);
+
+            // Handle completion
+            if (status.didJustFinish) {
+              handleComplete();
+            }
+          }
+        });
+      } catch (error) {
+        console.error('Error loading meditation audio:', error);
+      }
+    };
+
+    loadAudio();
+
+    return () => {
+      audioPlayerRef.current.unloadAudio();
+    };
+  }, [selectedSession]);
+
+  // Handle animations when playing/paused
   useEffect(() => {
     if (isPlaying && !isPaused) {
       startBreathingAnimation();
       startPulseAnimation();
-      timerRef.current = setInterval(() => {
-        setTimeRemaining((prev) => {
-          if (prev <= 1) {
-            handleComplete();
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
     } else {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-      }
       breathAnimation.stopAnimation();
       pulseAnimation.stopAnimation();
     }
-
-    return () => {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-      }
-    };
   }, [isPlaying, isPaused]);
-
-  useEffect(() => {
-    if (!isPlaying) {
-      setTimeRemaining(selectedDuration);
-    }
-  }, [selectedDuration]);
 
   const startBreathingAnimation = () => {
     Animated.loop(
@@ -103,44 +139,69 @@ export default function MeditationScreen({ navigation }: any) {
   const handleComplete = async () => {
     setIsPlaying(false);
     setIsPaused(false);
-    setTimeRemaining(selectedDuration);
+    await audioPlayerRef.current.stop();
     await completeMeditation();
     await addGlowPoints(30, 'Completed meditation session');
     // Show completion message
     navigation.goBack();
   };
 
-  const handleStart = () => {
-    setIsPlaying(true);
-    setIsPaused(false);
+  const handleStart = async () => {
+    try {
+      await audioPlayerRef.current.play();
+      setIsPlaying(true);
+      setIsPaused(false);
+    } catch (error) {
+      console.error('Error starting meditation:', error);
+    }
   };
 
-  const handlePause = () => {
-    setIsPaused(!isPaused);
+  const handlePause = async () => {
+    try {
+      if (isPaused) {
+        await audioPlayerRef.current.play();
+      } else {
+        await audioPlayerRef.current.pause();
+      }
+      setIsPaused(!isPaused);
+    } catch (error) {
+      console.error('Error pausing meditation:', error);
+    }
   };
 
-  const handleStop = () => {
-    setIsPlaying(false);
-    setIsPaused(false);
-    setTimeRemaining(selectedDuration);
+  const handleStop = async () => {
+    try {
+      await audioPlayerRef.current.stop();
+      setIsPlaying(false);
+      setIsPaused(false);
+      setCurrentPosition(0);
+    } catch (error) {
+      console.error('Error stopping meditation:', error);
+    }
   };
 
-  const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
+  const formatTime = (milliseconds: number) => {
+    const totalSeconds = Math.floor(milliseconds / 1000);
+    const mins = Math.floor(totalSeconds / 60);
+    const secs = totalSeconds % 60;
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const progress = 1 - timeRemaining / selectedDuration;
+  const progress = duration > 0 ? currentPosition / duration : 0;
   const breathScale = breathAnimation.interpolate({
     inputRange: [0, 1],
     outputRange: [0.8, 1.2],
   });
 
   const getBreathText = () => {
-    const cyclePosition = (timeRemaining % 8) / 8;
+    const cyclePosition = ((currentPosition / 1000) % 8) / 8;
     if (cyclePosition < 0.5) return 'Breathe In...';
     return 'Breathe Out...';
+  };
+
+  const getSessionLabel = () => {
+    const session = MEDITATION_SESSIONS.find(s => s.id === selectedSession);
+    return session?.label || 'Meditation Session';
   };
 
   return (
@@ -153,32 +214,44 @@ export default function MeditationScreen({ navigation }: any) {
           onPress: () => navigation.goBack(),
           accessibilityLabel: 'Go back',
         }}
+        rightIcon={{
+          name: 'home-outline',
+          onPress: () => navigation.navigate('Today'),
+          accessibilityLabel: 'Back to Today',
+        }}
       />
 
       <View style={styles.content}>
         {!isPlaying ? (
           <>
-            {/* Duration Selection */}
+            {/* Session Selection */}
             <View style={styles.durationContainer}>
-              <Text style={styles.sectionTitle}>Select Duration</Text>
-              <View style={styles.durationGrid}>
-                {MEDITATION_DURATIONS.map((duration) => (
+              <Text style={styles.sectionTitle}>
+                {currentPeriod === 'morning' && '🌅 Morning Meditations'}
+                {currentPeriod === 'midday' && '☀️ Midday Meditations'}
+                {currentPeriod === 'sleep' && '🌙 Evening Meditations'}
+              </Text>
+              <Text style={styles.sectionSubtitle}>
+                Perfect for {currentPeriod === 'morning' ? 'starting your day' : currentPeriod === 'midday' ? 'a refreshing break' : 'winding down'}
+              </Text>
+              <View style={styles.sessionGrid}>
+                {availableSessions.map((session) => (
                   <TouchableOpacity
-                    key={duration.value}
+                    key={session.id}
                     style={[
                       styles.durationButton,
-                      selectedDuration === duration.value && styles.durationButtonActive,
+                      selectedSession === session.id && styles.durationButtonActive,
                     ]}
-                    onPress={() => setSelectedDuration(duration.value)}
+                    onPress={() => setSelectedSession(session.id as MeditationAudioId)}
                     activeOpacity={0.7}
                   >
                     <Text
                       style={[
                         styles.durationText,
-                        selectedDuration === duration.value && styles.durationTextActive,
+                        selectedSession === session.id && styles.durationTextActive,
                       ]}
                     >
-                      {duration.label}
+                      {session.label}
                     </Text>
                   </TouchableOpacity>
                 ))}
@@ -275,7 +348,8 @@ export default function MeditationScreen({ navigation }: any) {
 
               {/* Timer Display */}
               <View style={styles.timerContainer}>
-                <Text style={styles.timerText}>{formatTime(timeRemaining)}</Text>
+                <Text style={styles.timerText}>{formatTime(currentPosition)}</Text>
+                <Text style={styles.totalDurationText}>of {formatTime(duration)}</Text>
                 <Text style={styles.breathText}>{isPaused ? 'Paused' : getBreathText()}</Text>
               </View>
 
@@ -323,14 +397,25 @@ const styles = StyleSheet.create({
   sectionTitle: {
     ...Theme.typography.h3,
     color: Theme.colors.textPrimary,
+    marginBottom: Theme.spacing.sm,
+  },
+  sectionSubtitle: {
+    ...Theme.typography.body,
+    color: Theme.colors.textSecondary,
     marginBottom: Theme.spacing.md,
   },
   durationGrid: {
     flexDirection: 'row',
     gap: Theme.spacing.md,
   },
+  sessionGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Theme.spacing.md,
+  },
   durationButton: {
     flex: 1,
+    minWidth: '30%',
     padding: Theme.spacing.lg,
     borderRadius: Theme.radius.lg,
     borderWidth: 2,
@@ -451,6 +536,11 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: Theme.colors.textPrimary,
     letterSpacing: -2,
+  },
+  totalDurationText: {
+    ...Theme.typography.body,
+    color: Theme.colors.textSecondary,
+    fontSize: 18,
   },
   breathText: {
     ...Theme.typography.h3,

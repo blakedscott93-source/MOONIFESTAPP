@@ -20,6 +20,7 @@ export interface DayProgress {
   guidedSessions: GuidedSession[]; // Track 3 completed sessions per day
   meditationCompleted: boolean;
   gratitudeEntry: string;
+  visionImageAddedToday?: boolean; // Track if vision image was added today (45 NOW requirement)
   isComplete: boolean;
   moodEntryId?: string; // Reference to mood entry for this day
 }

@@ -1,5 +1,17 @@
 import * as Sentry from '@sentry/react-native';
-import { SENTRY_DSN } from '@env';
+
+// Safely import env variables with fallback for web
+let SENTRY_DSN: string | undefined;
+try {
+  const env = require('@env');
+  SENTRY_DSN = env.SENTRY_DSN;
+} catch (error) {
+  // @env might not be available on web or if .env file doesn't exist
+  SENTRY_DSN = undefined;
+  if (__DEV__) {
+    console.log('⚠️ Could not load @env - Sentry will be disabled');
+  }
+}
 
 /**
  * Initialize Sentry error tracking

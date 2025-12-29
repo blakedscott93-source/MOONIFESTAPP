@@ -4,10 +4,12 @@
  */
 
 import React, { ReactNode } from 'react';
-import { View, StyleSheet, ScrollView, ViewStyle, Text, TouchableOpacity, RefreshControl } from 'react-native';
+import { View, StyleSheet, ScrollView, ViewStyle, Text, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../theme/ThemeProvider';
+import { tokens } from '../../theme/tokens';
+import { IconButton } from '../ui/IconButton';
+import { StarfieldBackground } from '../StarfieldBackground';
 
 interface ScreenProps {
   children: ReactNode;
@@ -21,7 +23,7 @@ interface ScreenProps {
   scroll?: boolean;
   style?: ViewStyle;
   headerStyle?: 'default' | 'compact';
-  refreshControl?: React.ReactElement<typeof RefreshControl>;
+  refreshControl?: React.ReactElement<any>;
   contentContainerStyle?: ViewStyle;
 }
 
@@ -39,39 +41,45 @@ export const Screen: React.FC<ScreenProps> = ({
   refreshControl,
   contentContainerStyle,
 }) => {
-  const { theme } = useTheme();
+  const { theme, isDark } = useTheme();
+  const paddingHorizontal = theme?.spacing?.lg ?? tokens.spacing.lg;
+  const bgColor = theme?.colors?.bg ?? tokens.colors.bg;
+  const textPrimary = theme?.colors?.textPrimary ?? tokens.colors.textPrimary;
+  const textSecondary = theme?.colors?.textSecondary ?? tokens.colors.textSecondary;
 
   const content = (
-    <View style={[styles.content, { paddingHorizontal: theme.spacing[16] }, style]}>
+    <View style={[styles.content, { paddingHorizontal }, style]}>
       {children}
     </View>
   );
 
   return (
     <SafeAreaView
-      style={[styles.container, { backgroundColor: theme.colors.background }]}
+      style={[styles.container, { backgroundColor: bgColor }]}
       edges={['top', 'bottom']}
     >
+      {/* Starfield background - adapts to light/dark mode */}
+      <StarfieldBackground />
       {/* Optional Header */}
       {title && (
         <View style={headerStyle === 'compact' ? styles.compactHeader : styles.defaultHeader}>
-          <View style={[styles.headerContent, headerStyle === 'compact' && { paddingHorizontal: theme.spacing[16] }]}>
+          <View style={[styles.headerContent, headerStyle === 'compact' && { paddingHorizontal }]}>
             <View>
-              <Text style={[styles.title, { color: theme.colors.text }]}>{title}</Text>
+              <Text style={[styles.title, { color: textPrimary }]}>{title}</Text>
               {subtitle && (
-                <Text style={[styles.subtitle, { color: theme.colors.textSecondary }]}>
+                <Text style={[styles.subtitle, { color: textSecondary }]}>
                   {subtitle}
                 </Text>
               )}
             </View>
             {rightAction && (
-              <TouchableOpacity
+              <IconButton
+                icon={rightAction.icon as any}
                 onPress={rightAction.onPress}
                 accessibilityLabel={rightAction.label || 'Action'}
-                style={styles.rightAction}
-              >
-                <Ionicons name={rightAction.icon as any} size={22} color={theme.colors.text} />
-              </TouchableOpacity>
+                variant="glass"
+                iconSize={22}
+              />
             )}
           </View>
         </View>
@@ -97,6 +105,7 @@ export const Screen: React.FC<ScreenProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: tokens.colors.bg,
   },
   compactHeader: {
     paddingTop: 8,
@@ -113,27 +122,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   title: {
-    fontSize: 22,
+    fontSize: 28,
     fontWeight: '700',
     letterSpacing: -0.3,
+    lineHeight: 36,
   },
   subtitle: {
     fontSize: 13,
-    fontWeight: '500',
+    fontWeight: '400',
+    letterSpacing: 0.1,
+    lineHeight: 18,
     marginTop: 2,
-    opacity: 0.65,
-  },
-  rightAction: {
-    width: 44,
-    height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   content: {
     flex: 1,
   },
   scrollView: {
     flex: 1,
+    backgroundColor: 'transparent',
   },
   scrollContent: {
     paddingBottom: 24,

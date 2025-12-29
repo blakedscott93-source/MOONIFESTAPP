@@ -1,9 +1,12 @@
 import React, { useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Animated } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Animated, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Theme } from '../utils/theme';
+import { tokens } from '../theme/tokens';
+import { useTheme } from '../theme/ThemeProvider';
+import { useTabBarInset } from '../hooks/useTabBarInset';
 import { lightHaptic } from '../utils/haptics';
 
 interface JournalFABProps {
@@ -14,12 +17,14 @@ interface JournalFABProps {
   isScrolling?: boolean;
 }
 
-// Constants
-const BOTTOM_TAB_HEIGHT = 85;
-const FAB_SPACING_ABOVE_TAB = 0;
-const FAB_HEIGHT = 56;
-const FULL_WIDTH = 120;
-const COLLAPSED_WIDTH = FAB_HEIGHT;
+// Constants - Premium glass FAB matching footer design
+const FAB_HEIGHT = 56; // Minimum 44px touch target + padding
+const FAB_SPACING_ABOVE_TAB = 20; // Breathing room above footer (increased from 12)
+const FULL_WIDTH = 120; // Expanded width with text
+const COLLAPSED_WIDTH = FAB_HEIGHT; // Collapsed to circle
+const GLASS_BLUR_INTENSITY = 30; // Slightly less than footer (45) for subtlety
+const GLASS_BG_OPACITY_LIGHT = 0.75;
+const GLASS_BG_OPACITY_DARK = 0.68;
 
 export const JournalFAB: React.FC<JournalFABProps> = ({
   onPress,
@@ -29,6 +34,13 @@ export const JournalFAB: React.FC<JournalFABProps> = ({
   isScrolling = false,
 }) => {
   const insets = useSafeAreaInsets();
+  const { isDark } = useTheme();
+  const tabBarInset = useTabBarInset();
+  
+  // Position FAB above footer using tabBarInset hook for accurate calculation
+  // tabBarInset already includes: height + bottomOffset + safe area + breathing room
+  // Add FAB spacing on top
+  const bottomPosition = tabBarInset + FAB_SPACING_ABOVE_TAB;
   
   // Press feedback animations (native driver)
   const pressScale = useRef(new Animated.Value(1)).current;
@@ -106,9 +118,6 @@ export const JournalFAB: React.FC<JournalFABProps> = ({
     ]).start();
   };
 
-  // Calculate bottom position
-  const bottomPosition = BOTTOM_TAB_HEIGHT + insets.bottom + FAB_SPACING_ABOVE_TAB - (FAB_HEIGHT / 2);
-
   // Interpolate width for smooth expansion
   const animatedWidth = expandProgress.interpolate({
     inputRange: [0, 1],
@@ -125,6 +134,14 @@ export const JournalFAB: React.FC<JournalFABProps> = ({
     }),
     textOpacity
   );
+
+  // Glass background color
+  const glassBg = isDark 
+    ? `rgba(20, 20, 24, ${GLASS_BG_OPACITY_DARK})` 
+    : `rgba(255, 255, 255, ${GLASS_BG_OPACITY_LIGHT})`;
+  const glassBorder = isDark 
+    ? 'rgba(255, 255, 255, 0.25)' 
+    : 'rgba(255, 255, 255, 0.55)';
 
   return (
     <Animated.View
@@ -143,7 +160,7 @@ export const JournalFAB: React.FC<JournalFABProps> = ({
         onPress={onPress}
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
-        accessibilityLabel="Write entry"
+        accessibilityLabel="Create new entry"
         accessibilityRole="button"
         accessibilityHint="Start writing a new journal entry"
       >
@@ -164,35 +181,62 @@ export const JournalFAB: React.FC<JournalFABProps> = ({
               },
             ]}
           >
-            <LinearGradient
-              colors={['#FF6B9D', '#E85A8A', '#C44569']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.gradient}
-            >
-              <View style={styles.contentContainer}>
-                {/* Icon - always visible, right-aligned */}
-                <View style={styles.iconContainer}>
-                  <Ionicons name="create" size={20} color="#FFF" />
+            {/* Glass effect - BlurView for iOS, fallback for Android/Web */}
+            {Platform.OS === 'ios' ? (
+              <BlurView
+                intensity={GLASS_BLUR_INTENSITY}
+                tint={isDark ? 'dark' : 'light'}
+                style={styles.blurContainer}
+              >
+                <View style={[styles.glassOverlay, { backgroundColor: glassBg, borderColor: glassBorder }]}>
+                  <View style={styles.contentContainer}>
+                    {/* Icon - plus icon for create action */}
+                    <View style={styles.iconContainer}>
+                      <Ionicons name="add" size={24} color={tokens.colors.primary} />
+                    </View>
+                    
+                    {/* Text - fades and slides in/out smoothly */}
+                    <Animated.View
+                      style={[
+                        styles.textContainer,
+                        {
+                          opacity: combinedTextOpacity,
+                          transform: [{ translateX: textTranslateX }],
+                        },
+                      ]}
+                      pointerEvents="none"
+                    >
+                      <Text style={[styles.text, { color: tokens.colors.primary }]} numberOfLines={1}>
+                        Create
+                      </Text>
+                    </Animated.View>
+                  </View>
                 </View>
-                
-                {/* Text - fades and slides in/out smoothly */}
-                <Animated.View
-                  style={[
-                    styles.textContainer,
-                    {
-                      opacity: combinedTextOpacity,
-                      transform: [{ translateX: textTranslateX }],
-                    },
-                  ]}
-                  pointerEvents="none"
-                >
-                  <Text style={styles.text} numberOfLines={1}>
-                    Write
-                  </Text>
-                </Animated.View>
+              </BlurView>
+            ) : (
+              // Fallback for Android/Web - simulated glass
+              <View style={[styles.glassOverlay, { backgroundColor: glassBg, borderColor: glassBorder }]}>
+                  <View style={styles.contentContainer}>
+                    <View style={styles.iconContainer}>
+                      <Ionicons name="add" size={24} color={tokens.colors.primary} />
+                    </View>
+                  <Animated.View
+                    style={[
+                      styles.textContainer,
+                      {
+                        opacity: combinedTextOpacity,
+                        transform: [{ translateX: textTranslateX }],
+                      },
+                    ]}
+                    pointerEvents="none"
+                  >
+                    <Text style={[styles.text, { color: tokens.colors.primary }]} numberOfLines={1}>
+                      Create
+                    </Text>
+                  </Animated.View>
+                </View>
               </View>
-            </LinearGradient>
+            )}
           </Animated.View>
         </Animated.View>
       </TouchableOpacity>
@@ -203,14 +247,15 @@ export const JournalFAB: React.FC<JournalFABProps> = ({
 const styles = StyleSheet.create({
   container: {
     position: 'absolute',
-    right: Theme.spacing.lg,
-    zIndex: 1000,
+    right: tokens.spacing.lg,
+    zIndex: 1001, // Above footer (footer is 1000)
+    elevation: 1001, // Android elevation above footer
     height: FAB_HEIGHT,
   },
   buttonWrapper: {
     height: FAB_HEIGHT,
     borderRadius: FAB_HEIGHT / 2,
-    ...Theme.shadow.fab,
+    ...tokens.shadows.floating, // Premium shadow matching footer
   },
   buttonContainer: {
     height: FAB_HEIGHT,
@@ -218,24 +263,38 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     minWidth: COLLAPSED_WIDTH,
   },
-  gradient: {
+  blurContainer: {
     flex: 1,
     borderRadius: FAB_HEIGHT / 2,
-    justifyContent: 'center',
-    alignItems: 'flex-end',
+    overflow: 'hidden',
+  },
+  glassOverlay: {
+    flex: 1,
+    borderRadius: FAB_HEIGHT / 2,
+    borderWidth: 1,
+    // Subtle inner highlight for glass effect
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+      },
+      default: {},
+    }),
   },
   contentContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'flex-end',
     height: FAB_HEIGHT,
-    paddingRight: Theme.spacing.md,
-    paddingLeft: Theme.spacing.md,
-    gap: Theme.spacing.xs,
+    paddingRight: tokens.spacing.md,
+    paddingLeft: tokens.spacing.md,
+    gap: tokens.spacing.xs,
   },
   iconContainer: {
-    width: 20,
-    height: 20,
+    width: 24,
+    height: 24,
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
@@ -246,10 +305,9 @@ const styles = StyleSheet.create({
     minWidth: 50,
   },
   text: {
-    ...Theme.typography.bodyBold,
-    color: Theme.colors.textInverse,
+    ...tokens.typography.bodyBold,
     fontSize: 15,
     fontWeight: '700',
-    letterSpacing: 0.3,
+    letterSpacing: 0.2,
   },
 });

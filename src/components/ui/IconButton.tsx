@@ -1,6 +1,7 @@
 /**
  * Icon Button Component
- * Circular tap target with light glass background and border
+ * Consistent icon hit areas with Apple-clean styling
+ * Guarantees minimum touch size (44x44pt)
  */
 
 import React from 'react';
@@ -17,10 +18,14 @@ interface IconButtonProps {
   style?: ViewStyle;
   accessibilityLabel?: string;
   accessibilityRole?: AccessibilityRole;
+  variant?: 'default' | 'glass' | 'minimal';
 }
 
+const TOUCH_TARGET_MIN = 44;
+
 /**
- * Icon button component with glass effect
+ * Icon button component
+ * Uses tokens, enforces minimum touch size, consistent styling
  */
 export const IconButton: React.FC<IconButtonProps> = ({
   icon,
@@ -31,18 +36,42 @@ export const IconButton: React.FC<IconButtonProps> = ({
   style,
   accessibilityLabel,
   accessibilityRole = 'button',
+  variant = 'default',
 }) => {
+  const buttonSize = Math.max(size, TOUCH_TARGET_MIN);
+  
+  const getBackgroundColor = () => {
+    if (variant === 'glass') {
+      return `rgba(255, 255, 255, ${tokens.glass.bgAlpha})`;
+    }
+    if (variant === 'minimal') {
+      return 'transparent';
+    }
+    return tokens.colors.card;
+  };
+
+  const getBorderColor = () => {
+    if (variant === 'glass') {
+      return `rgba(255, 255, 255, ${tokens.glass.borderAlpha})`;
+    }
+    if (variant === 'minimal') {
+      return 'transparent';
+    }
+    return tokens.colors.border;
+  };
+
   return (
     <TouchableOpacity
       onPress={onPress}
       style={[
         styles.container,
         {
-          width: size,
-          height: size,
-          borderRadius: size / 2,
-          backgroundColor: tokens.colors.card,
-          borderColor: tokens.colors.border,
+          width: buttonSize,
+          height: buttonSize,
+          borderRadius: buttonSize / 2,
+          backgroundColor: getBackgroundColor(),
+          borderColor: getBorderColor(),
+          borderWidth: variant === 'minimal' ? 0 : 1,
         },
         style,
       ]}
@@ -63,7 +92,7 @@ const styles = StyleSheet.create({
   container: {
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
+    ...tokens.shadows.subtle,
   },
 });
 

@@ -1,10 +1,13 @@
 /**
  * Theme Provider
- * Provides theme tokens and dark mode state via React Context
+ * Provides unified design tokens via React Context
+ * Syncs with the main ThemeContext for consistent theming across the app
+ * Provides dark mode aware tokens
  */
 
-import React, { createContext, useContext, useState, ReactNode } from 'react';
-import { tokens, Tokens } from './tokens';
+import React, { createContext, useContext, ReactNode, useMemo } from 'react';
+import { getTokens, Tokens } from './tokens';
+import { useTheme as useMainTheme } from '../context/ThemeContext';
 
 interface ThemeContextValue {
   theme: Tokens;
@@ -12,34 +15,41 @@ interface ThemeContextValue {
   toggleTheme?: () => void;
 }
 
+// Default light mode tokens for initial context
+const defaultTokens = getTokens(false);
+
 const ThemeContext = createContext<ThemeContextValue>({
-  theme: tokens,
+  theme: defaultTokens,
   isDark: false,
 });
 
 interface ThemeProviderProps {
   children: ReactNode;
-  initialIsDark?: boolean;
 }
 
 /**
  * Theme Provider Component
- * Wraps app to provide theme context
+ * Wraps app to provide unified design tokens
+ * Syncs with the main ThemeContext to ensure consistent theming
+ * Provides theme-aware tokens (light/dark mode)
  */
-export const ThemeProvider: React.FC<ThemeProviderProps> = ({
-  children,
-  initialIsDark = false,
-}) => {
-  const [isDark, setIsDark] = useState(initialIsDark);
+export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
+  if (__DEV__) {
+    console.log('✅ ThemeProvider rendering...');
+  }
+  
+  // Sync with the main ThemeContext from ThemeContext.tsx
+  // This ensures all components use the same theme state
+  const mainTheme = useMainTheme();
+  const isDark = mainTheme.isDark;
 
-  const toggleTheme = () => {
-    setIsDark((prev) => !prev);
-  };
+  // Get theme-aware tokens (light or dark)
+  const theme = useMemo(() => getTokens(isDark), [isDark]);
 
   const value: ThemeContextValue = {
-    theme: tokens, // For now, tokens are static (light mode)
+    theme, // Theme-aware tokens (light or dark)
     isDark,
-    toggleTheme,
+    // Note: toggleTheme is handled by the main ThemeContext
   };
 
   return (
@@ -50,7 +60,8 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({
 };
 
 /**
- * Hook to access theme context
+ * Hook to access unified theme tokens
+ * This hook provides the same interface but syncs with the main theme
  */
 export const useTheme = (): ThemeContextValue => {
   const context = useContext(ThemeContext);
@@ -59,5 +70,9 @@ export const useTheme = (): ThemeContextValue => {
   }
   return context;
 };
+
+
+
+
 
 

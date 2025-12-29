@@ -12,6 +12,10 @@ interface WebPhoneWrapperProps {
 }
 
 export const WebPhoneWrapper: React.FC<WebPhoneWrapperProps> = ({ children }) => {
+  if (__DEV__) {
+    console.log('✅ WebPhoneWrapper rendering, Platform.OS:', Platform.OS);
+  }
+  
   // Only apply phone wrapper on web
   if (Platform.OS !== 'web') {
     return <>{children}</>;

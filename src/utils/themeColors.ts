@@ -43,8 +43,8 @@ export interface ThemeColors {
 }
 
 export const lightColors: ThemeColors = {
-  // Backgrounds (Premium Calm/Apple-like)
-  bg: '#F7F5FF', // Very light lavender
+  // Backgrounds (Premium Calm/Apple-like - soft neutral)
+  bg: '#F6F5FB', // Soft neutral background - calm/Apple-style
   surface: '#FFFFFF',
   surfaceSecondary: '#F5F0FF',
   surfaceElevated: '#FFFFFF',

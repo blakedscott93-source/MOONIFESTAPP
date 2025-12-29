@@ -67,7 +67,7 @@ export default function AffirmationLibraryScreen({ navigation }: any) {
             style={[
               styles.categoryCard,
               { backgroundColor: category.color + '20' },
-            ]}
+            ] as any}
           >
             <TouchableOpacity
               onPress={() => setSelectedCategory(category.id)}
@@ -77,7 +77,7 @@ export default function AffirmationLibraryScreen({ navigation }: any) {
               <View style={[styles.categoryIconCircle, { backgroundColor: category.color + '40' }]}>
                 <Ionicons name={category.icon as any} size={32} color={category.color} />
               </View>
-              <Text style={[styles.categoryName, { color: designTheme.colors.text }]}>{category.name}</Text>
+              <Text style={[styles.categoryName, { color: designTheme.colors.textPrimary }]}>{category.name}</Text>
               <Text style={[styles.categoryCount, { color: designTheme.colors.textSecondary }]}>{category.affirmations.length} affirmations</Text>
             </TouchableOpacity>
           </Card>
@@ -126,7 +126,7 @@ export default function AffirmationLibraryScreen({ navigation }: any) {
               <Card key={index} style={styles.affirmationCard}>
                 <View style={styles.affirmationContent}>
                   <Ionicons name="chatbubble-ellipses-outline" size={24} color={category.color} style={styles.quoteIcon} />
-                  <Text style={[styles.affirmationText, { color: designTheme.colors.text }]}>{affirmation}</Text>
+                  <Text style={[styles.affirmationText, { color: designTheme.colors.textPrimary }]}>{affirmation}</Text>
                 </View>
                 <TouchableOpacity
                   style={styles.saveButton}
@@ -172,7 +172,7 @@ export default function AffirmationLibraryScreen({ navigation }: any) {
                   <View style={styles.searchResultCategory}>
                     <Text style={styles.searchResultCategoryText}>{result.category}</Text>
                   </View>
-                  <Text style={[styles.affirmationText, { color: designTheme.colors.text }]}>{result.affirmation}</Text>
+                  <Text style={[styles.affirmationText, { color: designTheme.colors.textPrimary }]}>{result.affirmation}</Text>
                 </View>
                 <TouchableOpacity
                   style={styles.saveButton}

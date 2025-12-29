@@ -192,9 +192,9 @@ export default function AffirmationsScreen({ navigation }: any) {
           : 'Find peace and clarity with guided meditations'
       }
       rightAction={{
-        icon: 'lock-closed-outline',
-        onPress: () => {},
-        label: 'Locked sessions',
+        icon: 'home-outline',
+        onPress: () => navigation.navigate('Today'),
+        label: 'Back to Today',
       }}
     >
       <FlatList
@@ -206,7 +206,7 @@ export default function AffirmationsScreen({ navigation }: any) {
         contentContainerStyle={styles.listContent}
         columnWrapperStyle={styles.row}
         showsVerticalScrollIndicator={false}
-        ListFooterComponent={<View style={{ height: designTheme.spacing[32] + 80 }} />}
+        ListFooterComponent={<View style={{ height: 120 }} />}
       />
 
       {/* Premium FAB */}
@@ -243,14 +243,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   segmentActive: {
-    backgroundColor: '#F7F5FF',
+    backgroundColor: 'rgba(124, 58, 237, 0.1)',
   },
   segmentText: {
     fontSize: 15,
-    fontWeight: '600',
+    fontWeight: '500',
   },
   segmentTextActive: {
     color: '#7C3AED',
+    fontWeight: '600',
   },
   card: {
     marginBottom: 16,

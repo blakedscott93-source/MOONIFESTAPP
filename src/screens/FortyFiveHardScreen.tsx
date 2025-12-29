@@ -1,570 +1,576 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+/**
+ * 45 NOW Screen - THE CONTRACT
+ * Shows the system, rules, progress, and motivation
+ * NOT for task execution (that's the Today tab)
+ */
+
+import React, { useMemo } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  TextInput,
-  Alert,
-  Animated,
 } from 'react-native';
-import { Swipeable } from 'react-native-gesture-handler';
 import { useApp } from '../context/AppContext';
-import { Task } from '../types';
 import { Ionicons } from '@expo/vector-icons';
-import { Screen } from '../components/Screen';
-import { AppHeader } from '../components/AppHeader';
-import { UnifiedCard } from '../components/UnifiedCard';
-import { ListRow } from '../components/ListRow';
-import { Theme, TOUCH_TARGET_MIN } from '../utils/theme';
-import { successHaptic, lightHaptic, warningHaptic, celebrationHaptic } from '../utils/haptics';
-import { DayCompleteCelebration } from '../components/DayCompleteCelebration';
-import { 
-  REQUIRED_DAILY_AFFIRMATION_SESSIONS, 
-  REQUIRED_DAILY_MUST_DO_TASKS,
+import { LinearGradient } from 'expo-linear-gradient';
+import { Screen } from '../components/layout/Screen';
+import { GlassCard, SectionCard, ProgressBar, PrimaryButton } from '../components/ui';
+import { tokens } from '../theme/tokens';
+import { useTheme } from '../context/ThemeContext';
+import { useTabBarInset } from '../hooks/useTabBarInset';
+import {
   CHALLENGE_DURATION_DAYS,
-  POINTS 
 } from '../utils/constants';
 
 export default function FortyFiveHardScreen({ navigation }: any) {
-  const { getTodayProgress, updateTasks, completeMeditation, appState, addGlowPoints } = useApp();
-  // Memoize todayProgress to prevent recalculation
+  const { theme, isDark } = useTheme();
+  const { appState, getTodayProgress } = useApp();
+  const tabBarInset = useTabBarInset();
   const todayProgress = useMemo(() => getTodayProgress(), [getTodayProgress]);
-  const [newTaskText, setNewTaskText] = useState('');
-  const [showCelebration, setShowCelebration] = useState(false);
-  const hasShownCelebration = useRef(false);
-  const previousCompletionState = useRef(false);
 
-  // Memoize tasks initialization
-  const tasks = useMemo(() => 
-    todayProgress.tasks.length === 0
-      ? Array.from({ length: REQUIRED_DAILY_MUST_DO_TASKS }, (_, i) => ({
-          id: String(i + 1),
-          text: '',
-          completed: false,
-          isMustDo: true,
-          createdAt: new Date().toISOString(),
-        }))
-      : todayProgress.tasks,
-    [todayProgress.tasks]
-  );
+  // Calculate challenge progress
+  const currentDay = appState.totalDays || 1;
+  const daysRemaining = Math.max(0, CHALLENGE_DURATION_DAYS - currentDay);
+  const challengeProgress = (currentDay / CHALLENGE_DURATION_DAYS) * 100;
 
-  // Memoize completion checks
-  const mustDoTasks = useMemo(() => tasks.filter((t) => t.isMustDo), [tasks]);
-  const allMustDoComplete = useMemo(() => 
-    mustDoTasks.every((t) => t.completed && t.text.trim() !== ''),
-    [mustDoTasks]
-  );
-  const allAffirmationsComplete = useMemo(() => 
-    (todayProgress.guidedSessions?.length || 0) >= REQUIRED_DAILY_AFFIRMATION_SESSIONS,
-    [todayProgress.guidedSessions?.length]
-  );
-  const meditationComplete = useMemo(() => 
-    todayProgress.meditationCompleted === true,
-    [todayProgress.meditationCompleted]
-  );
-  const isDayComplete = useMemo(() => 
-    allMustDoComplete && allAffirmationsComplete && meditationComplete,
-    [allMustDoComplete, allAffirmationsComplete, meditationComplete]
-  );
+  // Calculate daily completion status from Today's data
+  const dailyRequirements = [
+    {
+      id: 'tasks',
+      title: '3 Must-Do Tasks',
+      icon: 'star',
+      color: tokens.colors.warning,
+      completed: todayProgress.tasks.filter(t => t.isMustDo && t.completed).length >= 3,
+    },
+    {
+      id: 'affirmations',
+      title: '3 Affirmation Sessions',
+      icon: 'sparkles',
+      color: tokens.colors.accent,
+      completed: (todayProgress.guidedSessions?.length || 0) >= 3,
+    },
+    {
+      id: 'meditation',
+      title: '1 Meditation',
+      icon: 'leaf',
+      color: '#4ECDC4',
+      completed: todayProgress.meditationCompleted === true,
+    },
+    {
+      id: 'vision',
+      title: '1 Vision Image',
+      icon: 'images',
+      color: '#9D4EDD',
+      completed: todayProgress.visionImageAddedToday === true,
+    },
+    {
+      id: 'journal',
+      title: '1 Journal Entry',
+      icon: 'book',
+      color: '#FF6B9D',
+      completed: todayProgress.gratitudeEntry?.trim().length > 0,
+    },
+  ];
 
-  // Watch for day completion to trigger celebration
-  useEffect(() => {
-    // Only show celebration when transitioning from incomplete to complete
-    // And only once per session
-    if (isDayComplete && !previousCompletionState.current && !hasShownCelebration.current) {
-      hasShownCelebration.current = true;
-      setShowCelebration(true);
-      celebrationHaptic();
-      
-      // Award bonus glow points for completing the day
-      if (addGlowPoints) {
-        addGlowPoints(POINTS.DAY_COMPLETE_BONUS, 'Day Complete Bonus');
-      }
-
-      // Check if this is first day complete and prompt for rating after a delay
-      const checkFirstDayComplete = async () => {
-        const { promptForRating } = await import('../utils/appRating');
-        const completedDays = Object.values(appState.dailyProgress || {}).filter(day => day.isComplete).length;
-        const isFirstDayComplete = completedDays === 1;
-        
-        // Prompt after celebration animation (2 seconds delay)
-        setTimeout(async () => {
-          await promptForRating({
-            streak: appState.currentStreak,
-            totalDays: appState.totalDays,
-            dayCompleted: true,
-            isFirstDayComplete,
-          });
-        }, 2000);
-      };
-      
-      checkFirstDayComplete();
-    }
-    previousCompletionState.current = isDayComplete;
-  }, [isDayComplete, appState]);
-
-  // Reset celebration flag at midnight (when day changes)
-  useEffect(() => {
-    hasShownCelebration.current = false;
-    previousCompletionState.current = false;
-  }, [todayProgress.date]);
-
-  const toggleTask = useCallback((taskId: string) => {
-    const task = tasks.find(t => t.id === taskId);
-    const wasCompleted = task?.completed || false;
-    
-    const updatedTasks = tasks.map((task) =>
-      task.id === taskId ? { ...task, completed: !task.completed } : task
-    );
-    updateTasks(updatedTasks);
-    
-    // Haptic feedback
-    if (!wasCompleted) {
-      successHaptic(); // Task completed
-    } else {
-      lightHaptic(); // Task uncompleted
-    }
-  }, [updateTasks]);
-
-  const updateTaskText = useCallback((taskId: string, text: string) => {
-    const updatedTasks = tasks.map((task) =>
-      task.id === taskId ? { ...task, text } : task
-    );
-    updateTasks(updatedTasks);
-  }, [updateTasks, tasks]);
-
-  const addTask = useCallback(() => {
-    if (newTaskText.trim()) {
-      const newTask: Task = {
-        id: Date.now().toString(),
-        text: newTaskText,
-        completed: false,
-        isMustDo: false,
-        createdAt: new Date().toISOString(),
-      };
-      updateTasks([...tasks, newTask]);
-      setNewTaskText('');
-      lightHaptic();
-    }
-  }, [updateTasks, tasks, newTaskText]);
-
-  const deleteTask = useCallback((taskId: string) => {
-    const task = tasks.find((t) => t.id === taskId);
-    if (task?.isMustDo) {
-      warningHaptic();
-      Alert.alert('Cannot Delete', 'The 3 must-do tasks cannot be deleted.');
-      return;
-    }
-    const updatedTasks = tasks.filter((t) => t.id !== taskId);
-    updateTasks(updatedTasks);
-    lightHaptic();
-  }, [updateTasks, tasks]);
-
-  const openAffirmationEntry = useCallback((period: 'morning' | 'afternoon' | 'evening') => {
-    navigation.navigate('AffirmationEntry', { period });
-  }, [navigation]);
-
-  const getCurrentPeriod = (): 'morning' | 'afternoon' | 'evening' | null => {
-    const hour = new Date().getHours();
-    if (hour >= 6 && hour < 12) return 'morning';
-    if (hour >= 12 && hour < 18) return 'afternoon';
-    if (hour >= 18 && hour < 24) return 'evening';
-    return null;
-  };
-
-  const optionalTasks = tasks.filter((t) => !t.isMustDo);
-  const currentPeriod = getCurrentPeriod();
-
-  const handleCelebrationClose = () => {
-    setShowCelebration(false);
-  };
+  const completedToday = dailyRequirements.filter(r => r.completed).length;
+  const isDayComplete = completedToday === dailyRequirements.length;
 
   return (
-    <Screen>
-      <AppHeader
-        title="Today's Tasks"
-        subtitle={`Day ${appState.totalDays} of ${CHALLENGE_DURATION_DAYS}`}
-        rightIcon={{
-          name: 'notifications-outline',
-          onPress: () => navigation.navigate('NotificationSettings'),
-          accessibilityLabel: 'Notification Settings',
-          color: Theme.colors.accent,
-        }}
-      />
+    <Screen
+      scroll
+      title="45 NOW Challenge"
+      subtitle="Transform your life in 45 days"
+      contentContainerStyle={{
+        paddingTop: tokens.spacing.xs,
+        paddingBottom: tabBarInset,
+      }}
+    >
+      {/* Challenge Explanation - Hero Card */}
+      <GlassCard style={styles.heroCard}>
+        <View style={styles.heroContent}>
+          <View style={styles.heroIcon}>
+            <Ionicons name="trophy" size={32} color={tokens.colors.warning} />
+          </View>
+          <Text style={[styles.heroTitle, { color: theme.colors.textPrimary }]}>The 45 NOW Challenge</Text>
+          <Text style={[styles.heroDescription, { color: theme.colors.textSecondary }]}>
+            Complete 5 daily tasks for 45 consecutive days to transform your habits and manifest your goals through consistent action.
+          </Text>
+        </View>
+      </GlassCard>
 
-      <ScrollView
-        style={styles.scrollView}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
-      >
-        {/* Day Complete Banner */}
-        {isDayComplete && (
-          <UnifiedCard delay={0}>
-            <View style={styles.completeBanner}>
-              <View style={styles.completeBannerIcon}>
-                <Ionicons name="trophy" size={32} color="#FFD700" />
-              </View>
-              <View style={styles.completeBannerText}>
-                <Text style={styles.completeBannerTitle}>🎉 Day Complete!</Text>
-                <Text style={styles.completeBannerSubtitle}>
-                  Amazing work! You've completed all tasks for today.
-                </Text>
-              </View>
+      {/* Day Progress - Big & Prominent */}
+      <SectionCard style={styles.progressCard}>
+        <View style={styles.progressHeader}>
+          <Text style={[styles.progressLabel, { color: theme.colors.textPrimary }]}>Your Progress</Text>
+          {isDayComplete && (
+            <View style={styles.todayCompleteBadge}>
+              <Ionicons name="checkmark-circle" size={18} color={tokens.colors.success} />
+              <Text style={styles.todayCompleteText}>Today Done!</Text>
             </View>
-          </UnifiedCard>
-        )}
+          )}
+        </View>
 
-        {/* Must-Do Tasks */}
-        <UnifiedCard delay={0}>
-          <Text style={styles.sectionTitle}>⭐ {REQUIRED_DAILY_MUST_DO_TASKS} Must-Do Tasks</Text>
-          <Text style={styles.sectionSubtitle}>These MUST be completed today</Text>
-          {mustDoTasks.map((task, index) => (
-            <View key={task.id} style={styles.mustDoTaskContainer}>
-              <TouchableOpacity
-                onPress={() => toggleTask(task.id)}
-                style={styles.checkbox}
-                accessibilityLabel={task.completed ? 'Mark incomplete' : 'Mark complete'}
-                accessibilityRole="button"
-              >
-                <Ionicons
-                  name={task.completed ? 'checkbox' : 'square-outline'}
-                  size={28}
-                  color={task.completed ? Theme.colors.gold : Theme.colors.accent}
-                />
-              </TouchableOpacity>
-              <TextInput
-                style={styles.mustDoInput}
-                placeholder={`Must-Do Task ${index + 1}`}
-                placeholderTextColor={Theme.colors.textTertiary}
-                value={task.text}
-                onChangeText={(text) => updateTaskText(task.id, text)}
-              />
+        <View style={styles.dayCounterContainer}>
+          <View style={styles.dayCounter}>
+            <Text style={[styles.dayNumberLabel, { color: theme.colors.textSecondary }]}>Day</Text>
+            <Text style={[styles.dayNumber, { color: theme.colors.accent }]}>{currentDay}</Text>
+          </View>
+          <Text style={[styles.dayDivider, { color: theme.colors.textSecondary }]}>of</Text>
+          <View style={styles.dayTotal}>
+            <Text style={[styles.dayTotalNumber, { color: theme.colors.textSecondary }]}>{CHALLENGE_DURATION_DAYS}</Text>
+          </View>
+        </View>
+
+        <ProgressBar
+          progress={challengeProgress / 100}
+          height={12}
+          fillColor={challengeProgress === 100 ? tokens.colors.success : tokens.colors.accent}
+          trackColor={`${tokens.colors.accent}15`}
+        />
+
+        <Text style={[styles.daysRemainingText, { color: theme.colors.textSecondary }]}>
+          {daysRemaining === 0
+            ? '🎉 Challenge complete! Amazing work!'
+            : `${daysRemaining} day${daysRemaining === 1 ? '' : 's'} to go`}
+        </Text>
+      </SectionCard>
+
+      {/* Daily Requirements - Reference Only (NOT Interactive) */}
+      <SectionCard style={styles.requirementsCard}>
+        <Text style={[styles.requirementsTitle, { color: theme.colors.textPrimary }]}>Daily Requirements</Text>
+        <Text style={[styles.requirementsSubtitle, { color: theme.colors.textSecondary }]}>
+          Complete these 5 tasks every day
+        </Text>
+
+        <View style={styles.requirementsList}>
+          {dailyRequirements.map((req, index) => (
+            <View key={req.id}>
+              <View style={styles.requirementRow}>
+                <View style={[styles.requirementIcon, { backgroundColor: `${req.color}20` }]}>
+                  <Ionicons name={req.icon as any} size={20} color={req.color} />
+                </View>
+                <Text style={[styles.requirementText, { color: theme.colors.textPrimary }]}>{req.title}</Text>
+                {req.completed && (
+                  <Ionicons name="checkmark-circle" size={20} color={tokens.colors.success} />
+                )}
+              </View>
+              {index < dailyRequirements.length - 1 && (
+                <View style={styles.requirementSeparator} />
+              )}
             </View>
           ))}
-        </UnifiedCard>
+        </View>
 
-        {/* Guided Affirmations */}
-        <UnifiedCard delay={100}>
-          <Text style={styles.sectionTitle}>✨ {REQUIRED_DAILY_AFFIRMATION_SESSIONS} Guided Affirmations</Text>
-          <Text style={styles.sectionSubtitle}>Listen to {REQUIRED_DAILY_AFFIRMATION_SESSIONS} sessions today (any category)</Text>
-
-          <View style={styles.affirmationContainer}>
-            <Text style={styles.progressText}>
-              Completed: {todayProgress.guidedSessions?.length || 0} / {REQUIRED_DAILY_AFFIRMATION_SESSIONS}
-            </Text>
-
-            <ListRow
-              title="Browse Affirmation Sessions"
-              subtitle={
-                todayProgress.guidedSessions?.length === 0
-                  ? 'Start your first session'
-                  : todayProgress.guidedSessions?.length === 1
-                  ? `${REQUIRED_DAILY_AFFIRMATION_SESSIONS - 1} more to go today`
-                  : todayProgress.guidedSessions?.length === 2
-                  ? '1 more to go today'
-                  : 'All done! ✓'
-              }
-              icon="sparkles"
-              iconColor={Theme.colors.gold}
-              onPress={() => navigation.navigate('Affirmations')}
-            />
-
-            {/* Show completed sessions */}
-            {todayProgress.guidedSessions?.map((session) => (
-              <View key={session.id} style={styles.completedSession}>
-                <Ionicons name="checkmark-circle" size={20} color={Theme.colors.success} />
-                <Text style={styles.completedSessionText}>
-                  {session.title} - {session.category}
-                </Text>
-              </View>
-            ))}
-          </View>
-        </UnifiedCard>
-
-        {/* Meditation */}
-        <UnifiedCard delay={200}>
-          <Text style={styles.sectionTitle}>🧘 Guided Meditation</Text>
-          <Text style={styles.sectionSubtitle}>Complete once today</Text>
+        {!isDayComplete && (
           <TouchableOpacity
-            style={[
-              styles.meditationButton,
-              todayProgress.meditationCompleted && styles.meditationCompleted,
-            ]}
-            onPress={() => navigation.navigate('MeditationScreen')}
-            accessibilityRole="button"
-            accessibilityLabel={
-              todayProgress.meditationCompleted
-                ? 'Meditation complete'
-                : 'Start meditation'
-            }
+            style={styles.goToTodayButton}
+            onPress={() => navigation.navigate('Today')}
+            activeOpacity={0.8}
           >
-            <Ionicons
-              name={todayProgress.meditationCompleted ? 'checkmark-circle' : 'play-circle-outline'}
-              size={32}
-              color={Theme.colors.textInverse}
-            />
-            <Text style={styles.meditationButtonText}>
-              {todayProgress.meditationCompleted ? 'Meditation Complete ✓' : 'Start Meditation'}
-            </Text>
-          </TouchableOpacity>
-        </UnifiedCard>
-
-        {/* Optional Tasks */}
-        <UnifiedCard delay={300}>
-          <Text style={styles.sectionTitle}>Additional Tasks</Text>
-          <Text style={styles.sectionSubtitle}>Optional but encouraged</Text>
-          {optionalTasks.map((task) => {
-            const swipeableRef = React.useRef<Swipeable>(null);
-
-            const renderRightActions = (
-              progress: Animated.AnimatedInterpolation<number>,
-              dragX: Animated.AnimatedInterpolation<number>
-            ) => {
-              const scale = dragX.interpolate({
-                inputRange: [-100, 0],
-                outputRange: [1, 0],
-                extrapolate: 'clamp',
-              });
-
-              const handleDelete = () => {
-                swipeableRef.current?.close();
-                deleteTask(task.id);
-              };
-
-              return (
-                <View style={styles.deleteAction}>
-                  <TouchableOpacity
-                    style={styles.deleteActionButton}
-                    onPress={handleDelete}
-                    activeOpacity={0.9}
-                  >
-                    <Animated.View style={[styles.deleteActionContent, { transform: [{ scale }] }]}>
-                      <Ionicons name="trash" size={24} color={Theme.colors.textInverse} />
-                      <Text style={styles.deleteActionText}>Delete</Text>
-                    </Animated.View>
-                  </TouchableOpacity>
-                </View>
-              );
-            };
-
-            return (
-              <Swipeable
-                key={task.id}
-                ref={swipeableRef}
-                renderRightActions={renderRightActions}
-                overshootRight={false}
-                friction={2}
-                rightThreshold={40}
-              >
-                <View style={styles.swipeableRow}>
-                  <ListRow
-                    title={task.text || 'Untitled task'}
-                    completed={task.completed}
-                    icon={task.completed ? 'checkbox' : 'square-outline'}
-                    iconColor={task.completed ? Theme.colors.accent : Theme.colors.textTertiary}
-                    rightIcon="trash-outline"
-                    onPress={() => toggleTask(task.id)}
-                    onRightIconPress={() => deleteTask(task.id)}
-                  />
-                </View>
-              </Swipeable>
-            );
-          })}
-
-          <View style={styles.addTaskContainer}>
-            <TextInput
-              style={styles.addTaskInput}
-              placeholder="Add optional task..."
-              placeholderTextColor={Theme.colors.textTertiary}
-              value={newTaskText}
-              onChangeText={setNewTaskText}
-              onSubmitEditing={addTask}
-            />
-            <TouchableOpacity
-              onPress={addTask}
-              style={styles.addButton}
-              accessibilityRole="button"
-              accessibilityLabel="Add task"
+            <LinearGradient
+              colors={[tokens.colors.accent, tokens.colors.primary]}
+              style={styles.goToTodayGradient}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
             >
-              <Ionicons name="add-circle" size={32} color={Theme.colors.accent} />
-            </TouchableOpacity>
+              <Text style={styles.goToTodayText}>Go to Today Tab to Execute</Text>
+              <Ionicons name="arrow-forward" size={20} color="#FFFFFF" />
+            </LinearGradient>
+          </TouchableOpacity>
+        )}
+      </SectionCard>
+
+      {/* Streak & Consistency */}
+      <SectionCard style={styles.streakCard}>
+        <Text style={[styles.streakTitle, { color: theme.colors.textPrimary }]}>Your Consistency</Text>
+
+        <View style={styles.streakDisplay}>
+          <View style={styles.streakBadge}>
+            <Ionicons name="flame" size={48} color={tokens.colors.warning} />
+            <Text style={styles.streakNumber}>{appState.currentStreak}</Text>
+            <Text style={[styles.streakLabel, { color: theme.colors.textSecondary }]}>Day Streak</Text>
           </View>
-        </UnifiedCard>
 
-        <View style={{ height: Theme.spacing.xxxl }} />
-      </ScrollView>
+          <View style={styles.streakStats}>
+            <View style={styles.streakStat}>
+              <Text style={[styles.streakStatNumber, { color: theme.colors.accent }]}>{appState.totalDays || 0}</Text>
+              <Text style={[styles.streakStatLabel, { color: theme.colors.textSecondary }]}>Total Days</Text>
+            </View>
+            <View style={styles.streakStat}>
+              <Text style={[styles.streakStatNumber, { color: theme.colors.accent }]}>
+                {Math.round((appState.totalDays / CHALLENGE_DURATION_DAYS) * 100)}%
+              </Text>
+              <Text style={[styles.streakStatLabel, { color: theme.colors.textSecondary }]}>Complete</Text>
+            </View>
+          </View>
+        </View>
 
-      {/* Day Complete Celebration Modal */}
-      <DayCompleteCelebration
-        visible={showCelebration}
-        onClose={handleCelebrationClose}
-        dayNumber={appState.totalDays}
-        streakCount={appState.currentStreak}
-        glowPointsEarned={50}
-      />
+        {/* Motivation Quote */}
+        <View style={styles.motivationBox}>
+          <Text style={[styles.motivationQuote, { color: theme.colors.textPrimary }]}>
+            "Consistency is the bridge between goals and accomplishment"
+          </Text>
+          <Text style={[styles.motivationAuthor, { color: theme.colors.textSecondary }]}>— Jim Rohn</Text>
+        </View>
+      </SectionCard>
+
+      {/* Why This Works */}
+      <GlassCard style={styles.whyCard}>
+        <Text style={[styles.whyTitle, { color: theme.colors.textPrimary }]}>Why 45 Days?</Text>
+        <View style={styles.whyList}>
+          <View style={styles.whyItem}>
+            <Ionicons name="checkmark-circle-outline" size={20} color={tokens.colors.accent} />
+            <Text style={[styles.whyText, { color: theme.colors.textSecondary }]}>
+              Research shows it takes <Text style={[styles.whyBold, { color: theme.colors.textPrimary }]}>21-66 days</Text> to form a habit
+            </Text>
+          </View>
+          <View style={styles.whyItem}>
+            <Ionicons name="checkmark-circle-outline" size={20} color={tokens.colors.accent} />
+            <Text style={[styles.whyText, { color: theme.colors.textSecondary }]}>
+              45 days solidifies new behaviors into <Text style={[styles.whyBold, { color: theme.colors.textPrimary }]}>lasting change</Text>
+            </Text>
+          </View>
+          <View style={styles.whyItem}>
+            <Ionicons name="checkmark-circle-outline" size={20} color={tokens.colors.accent} />
+            <Text style={[styles.whyText, { color: theme.colors.textSecondary }]}>
+              Consistent daily action <Text style={[styles.whyBold, { color: theme.colors.textPrimary }]}>rewires your brain</Text>
+            </Text>
+          </View>
+          <View style={styles.whyItem}>
+            <Ionicons name="checkmark-circle-outline" size={20} color={tokens.colors.accent} />
+            <Text style={[styles.whyText, { color: theme.colors.textSecondary }]}>
+              Builds <Text style={[styles.whyBold, { color: theme.colors.textPrimary }]}>discipline and momentum</Text> for life transformation
+            </Text>
+          </View>
+        </View>
+      </GlassCard>
+
+      {/* Rules */}
+      <GlassCard style={styles.rulesCard}>
+        <Text style={[styles.rulesTitle, { color: theme.colors.textPrimary }]}>The Rules</Text>
+        <View style={styles.rulesList}>
+          <View style={styles.ruleItem}>
+            <Text style={[styles.ruleNumber, { color: theme.colors.accent }]}>1.</Text>
+            <Text style={[styles.ruleText, { color: theme.colors.textPrimary }]}>Complete all 5 tasks every single day</Text>
+          </View>
+          <View style={styles.ruleItem}>
+            <Text style={[styles.ruleNumber, { color: theme.colors.accent }]}>2.</Text>
+            <Text style={[styles.ruleText, { color: theme.colors.textPrimary }]}>If you miss a day, restart from Day 1</Text>
+          </View>
+          <View style={styles.ruleItem}>
+            <Text style={[styles.ruleNumber, { color: theme.colors.accent }]}>3.</Text>
+            <Text style={[styles.ruleText, { color: theme.colors.textPrimary }]}>No excuses, no skipping, total commitment</Text>
+          </View>
+          <View style={styles.ruleItem}>
+            <Text style={[styles.ruleNumber, { color: theme.colors.accent }]}>4.</Text>
+            <Text style={[styles.ruleText, { color: theme.colors.textPrimary }]}>Trust the process and stay consistent</Text>
+          </View>
+        </View>
+      </GlassCard>
+
+      {/* Extra bottom padding */}
+      <View style={{ height: 110 }} />
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  scrollView: {
+  // Hero Card
+  heroCard: {
+    marginBottom: tokens.spacing.md,
+    padding: tokens.spacing.xl,
+    backgroundColor: `${tokens.colors.primary}10`,
+  },
+  heroContent: {
+    alignItems: 'center',
+    gap: tokens.spacing.md,
+  },
+  heroIcon: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: `${tokens.colors.warning}20`,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: tokens.spacing.xs,
+  },
+  heroTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    textAlign: 'center',
+    letterSpacing: -0.5,
+  },
+  heroDescription: {
+    fontSize: 15,
+    fontWeight: '400',
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+
+  // Progress Card
+  progressCard: {
+    marginBottom: tokens.spacing.md,
+    padding: tokens.spacing.xl,
+  },
+  progressHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: tokens.spacing.lg,
+  },
+  progressLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  todayCompleteBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: tokens.spacing.xs,
+    backgroundColor: `${tokens.colors.success}15`,
+    paddingHorizontal: tokens.spacing.md,
+    paddingVertical: tokens.spacing.xs,
+    borderRadius: tokens.radii.full,
+  },
+  todayCompleteText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: tokens.colors.success,
+  },
+  dayCounterContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: tokens.spacing.lg,
+    gap: tokens.spacing.md,
+  },
+  dayCounter: {
+    alignItems: 'center',
+  },
+  dayNumberLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+    marginBottom: 4,
+  },
+  dayNumber: {
+    fontSize: 56,
+    fontWeight: '700',
+    letterSpacing: -2,
+    lineHeight: 56,
+  },
+  dayDivider: {
+    fontSize: 24,
+    fontWeight: '300',
+    marginTop: 20,
+  },
+  dayTotal: {
+    alignItems: 'center',
+    marginTop: 20,
+  },
+  dayTotalNumber: {
+    fontSize: 32,
+    fontWeight: '300',
+    letterSpacing: -1,
+  },
+  daysRemainingText: {
+    fontSize: 15,
+    fontWeight: '500',
+    textAlign: 'center',
+    marginTop: tokens.spacing.md,
+  },
+
+  // Requirements Card
+  requirementsCard: {
+    marginBottom: tokens.spacing.md,
+    padding: tokens.spacing.lg,
+  },
+  requirementsTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    marginBottom: 4,
+    letterSpacing: -0.3,
+  },
+  requirementsSubtitle: {
+    fontSize: 13,
+    fontWeight: '400',
+    marginBottom: tokens.spacing.lg,
+  },
+  requirementsList: {
+    marginBottom: tokens.spacing.lg,
+  },
+  requirementRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: tokens.spacing.md,
+    gap: tokens.spacing.md,
+  },
+  requirementIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  requirementText: {
     flex: 1,
+    fontSize: 15,
+    fontWeight: '500',
   },
-  scrollContent: {
-    paddingBottom: Theme.spacing.lg,
+  requirementSeparator: {
+    height: 1,
+    backgroundColor: 'rgba(31, 18, 53, 0.05)',
+    marginLeft: 52,
   },
-  sectionTitle: {
-    ...Theme.typography.h3,
-    color: Theme.colors.textPrimary,
-    marginBottom: Theme.spacing.xs,
-  },
-  sectionSubtitle: {
-    ...Theme.typography.caption,
-    color: Theme.colors.textSecondary,
-    marginBottom: Theme.spacing.lg,
-  },
-  mustDoTaskContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Theme.colors.accentSoft,
-    borderRadius: Theme.radius.md,
-    padding: Theme.spacing.md,
-    marginBottom: Theme.spacing.md,
-    borderWidth: 1,
-    borderColor: Theme.colors.gold,
-  },
-  checkbox: {
-    marginRight: Theme.spacing.md,
-    minWidth: TOUCH_TARGET_MIN,
-    minHeight: TOUCH_TARGET_MIN,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  mustDoInput: {
-    flex: 1,
-    color: Theme.colors.textPrimary,
-    ...Theme.typography.body,
-  },
-  affirmationContainer: {
-    gap: Theme.spacing.md,
-  },
-  progressText: {
-    ...Theme.typography.bodyBold,
-    color: Theme.colors.gold,
-    marginBottom: Theme.spacing.sm,
-  },
-  completedSession: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Theme.colors.surfaceSecondary,
-    borderRadius: Theme.radius.sm,
-    padding: Theme.spacing.md,
-    gap: Theme.spacing.sm,
-  },
-  completedSessionText: {
-    ...Theme.typography.caption,
-    color: Theme.colors.success,
-  },
-  meditationButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Theme.colors.accent,
-    borderRadius: Theme.radius.md,
-    padding: Theme.spacing.lg,
-    marginTop: Theme.spacing.md,
-    gap: Theme.spacing.md,
-    minHeight: TOUCH_TARGET_MIN + Theme.spacing.md,
-  },
-  meditationCompleted: {
-    backgroundColor: Theme.colors.success,
-  },
-  meditationButtonText: {
-    ...Theme.typography.h3,
-    color: Theme.colors.textInverse,
-  },
-  addTaskContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: Theme.spacing.lg,
-    gap: Theme.spacing.sm,
-  },
-  addTaskInput: {
-    flex: 1,
-    backgroundColor: Theme.colors.surfaceSecondary,
-    borderRadius: Theme.radius.sm,
-    padding: Theme.spacing.md,
-    color: Theme.colors.textPrimary,
-    ...Theme.typography.body,
-    borderWidth: 1,
-    borderColor: Theme.colors.border,
-  },
-  addButton: {
-    padding: Theme.spacing.xs,
-    minWidth: TOUCH_TARGET_MIN,
-    minHeight: TOUCH_TARGET_MIN,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  completeBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255, 215, 0, 0.15)',
-    borderRadius: Theme.radius.md,
-    padding: Theme.spacing.lg,
-    borderWidth: 2,
-    borderColor: 'rgba(255, 215, 0, 0.4)',
-    gap: Theme.spacing.md,
-  },
-  completeBannerIcon: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: 'rgba(255, 215, 0, 0.25)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  completeBannerText: {
-    flex: 1,
-  },
-  completeBannerTitle: {
-    ...Theme.typography.h3,
-    color: Theme.colors.gold,
-    marginBottom: Theme.spacing.xs,
-  },
-  completeBannerSubtitle: {
-    ...Theme.typography.caption,
-    color: Theme.colors.textSecondary,
-  },
-  swipeableRow: {
-    backgroundColor: Theme.colors.surface,
-  },
-  deleteAction: {
-    backgroundColor: Theme.colors.danger,
-    justifyContent: 'center',
-    alignItems: 'flex-end',
-    marginVertical: Theme.spacing.xs,
-    borderRadius: Theme.radius.md,
-    marginLeft: Theme.spacing.md,
+  goToTodayButton: {
+    borderRadius: tokens.radii.md,
     overflow: 'hidden',
+    ...tokens.shadows.card,
   },
-  deleteActionButton: {
+  goToTodayGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: tokens.spacing.lg,
+    gap: tokens.spacing.sm,
+  },
+  goToTodayText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+
+  // Streak Card
+  streakCard: {
+    marginBottom: tokens.spacing.md,
+    padding: tokens.spacing.lg,
+  },
+  streakTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    marginBottom: tokens.spacing.lg,
+    letterSpacing: -0.3,
+  },
+  streakDisplay: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: tokens.spacing.xl,
+    marginBottom: tokens.spacing.lg,
+  },
+  streakBadge: {
+    alignItems: 'center',
+    backgroundColor: `${tokens.colors.warning}10`,
+    padding: tokens.spacing.lg,
+    borderRadius: tokens.radii.lg,
+    minWidth: 120,
+  },
+  streakNumber: {
+    fontSize: 36,
+    fontWeight: '700',
+    color: tokens.colors.warning,
+    marginTop: 4,
+    letterSpacing: -1,
+  },
+  streakLabel: {
+    fontSize: 13,
+    fontWeight: '500',
+    marginTop: 4,
+  },
+  streakStats: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: Theme.spacing.lg,
-    minWidth: 100,
+    gap: tokens.spacing.md,
   },
-  deleteActionContent: {
-    alignItems: 'center',
-    justifyContent: 'center',
+  streakStat: {
+    backgroundColor: tokens.colors.surface,
+    padding: tokens.spacing.md,
+    borderRadius: tokens.radii.md,
+    borderWidth: 1,
+    borderColor: tokens.colors.borderSubtle,
   },
-  deleteActionText: {
-    ...Theme.typography.captionBold,
-    color: Theme.colors.textInverse,
-    marginTop: Theme.spacing.xs,
+  streakStatNumber: {
+    fontSize: 24,
+    fontWeight: '700',
+    letterSpacing: -0.5,
+  },
+  streakStatLabel: {
     fontSize: 12,
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  motivationBox: {
+    backgroundColor: `${tokens.colors.accent}10`,
+    padding: tokens.spacing.lg,
+    borderRadius: tokens.radii.md,
+    borderLeftWidth: 4,
+    borderLeftColor: tokens.colors.accent,
+  },
+  motivationQuote: {
+    fontSize: 16,
+    fontWeight: '500',
+    fontStyle: 'italic',
+    lineHeight: 24,
+    marginBottom: tokens.spacing.xs,
+  },
+  motivationAuthor: {
+    fontSize: 13,
+    fontWeight: '400',
+    textAlign: 'right',
+  },
+
+  // Why Card
+  whyCard: {
+    marginBottom: tokens.spacing.md,
+    padding: tokens.spacing.lg,
+  },
+  whyTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: tokens.spacing.md,
+  },
+  whyList: {
+    gap: tokens.spacing.md,
+  },
+  whyItem: {
+    flexDirection: 'row',
+    gap: tokens.spacing.md,
+    alignItems: 'flex-start',
+  },
+  whyText: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '400',
+    lineHeight: 20,
+  },
+  whyBold: {
+    fontWeight: '600',
+  },
+
+  // Rules Card
+  rulesCard: {
+    marginBottom: tokens.spacing.md,
+    padding: tokens.spacing.lg,
+  },
+  rulesTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: tokens.spacing.md,
+  },
+  rulesList: {
+    gap: tokens.spacing.md,
+  },
+  ruleItem: {
+    flexDirection: 'row',
+    gap: tokens.spacing.md,
+  },
+  ruleNumber: {
+    fontSize: 16,
+    fontWeight: '700',
+    width: 24,
+  },
+  ruleText: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '400',
+    lineHeight: 20,
   },
 });

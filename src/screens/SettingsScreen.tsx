@@ -29,47 +29,6 @@ export default function SettingsScreen({ navigation }: any) {
 
   const settingsSections = [
     {
-      title: 'Appearance',
-      items: [
-        {
-          icon: 'color-palette',
-          label: 'Theme',
-          type: 'custom' as const,
-          renderRight: () => (
-            <View style={[styles.themeSelector, { backgroundColor: colors.surfaceSecondary }]}>
-              {themeOptions.map((option) => (
-                <TouchableOpacity
-                  key={option.value}
-                  style={[
-                    styles.themeOption,
-                    themeMode === option.value && [
-                      styles.themeOptionActive,
-                      { backgroundColor: colors.accent + '20', borderColor: colors.accent },
-                    ],
-                  ]}
-                  onPress={() => setThemeMode(option.value)}
-                >
-                  <Ionicons
-                    name={option.icon as any}
-                    size={20}
-                    color={themeMode === option.value ? colors.accent : colors.textSecondary}
-                  />
-                  <Text
-                    style={[
-                      styles.themeOptionText,
-                      { color: themeMode === option.value ? colors.accent : colors.textSecondary },
-                    ]}
-                  >
-                    {option.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          ),
-        },
-      ],
-    },
-    {
       title: 'Notifications',
       items: [
         {
@@ -254,7 +213,7 @@ export default function SettingsScreen({ navigation }: any) {
 
         {/* Settings Sections */}
         {settingsSections.map((section, sectionIndex) => (
-          <View key={sectionIndex} style={styles.section}>
+          <View key={sectionIndex} style={sectionIndex === 0 ? styles.firstSection : styles.section}>
             <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>
               {section.title}
             </Text>
@@ -340,12 +299,16 @@ const styles = StyleSheet.create({
   section: {
     marginTop: Theme.spacing.xl,
   },
+  firstSection: {
+    marginTop: Theme.spacing.lg,
+  },
   sectionTitle: {
     ...Theme.typography.caption,
     textTransform: 'uppercase',
     letterSpacing: 1,
     paddingHorizontal: Theme.spacing.lg,
     marginBottom: Theme.spacing.md,
+    fontWeight: '700',
   },
   card: {
     marginHorizontal: Theme.spacing.lg,

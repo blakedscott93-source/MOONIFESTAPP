@@ -34,6 +34,10 @@ interface ToastProviderProps {
 }
 
 export const ToastProvider: React.FC<ToastProviderProps> = ({ children }) => {
+  if (__DEV__) {
+    console.log('✅ ToastProvider rendering...');
+  }
+  
   const [toast, setToast] = useState<(ToastConfig & { visible: boolean }) | null>(null);
 
   const showToast = (config: ToastConfig) => {

@@ -1,264 +1,776 @@
-import React, { useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
-import { useApp } from '../context/AppContext';
+/**
+ * Tasks Screen - Premium Purple Glass Design with Autosave
+ * Apple-quality task manager with glassmorphism
+ *
+ * Features:
+ * - 3 Must-Do tasks for daily challenge (priority section at top)
+ * - Additional tasks below (rollover, not daily-specific)
+ * - Autosave: debounced for text (400ms), immediate for checkboxes/deletes
+ * - Premium glass design matching floating tab bar
+ * - Smooth animations, haptic feedback, keyboard handling
+ */
+
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  TextInput,
+  ScrollView,
+  Animated,
+  Platform,
+  KeyboardAvoidingView,
+} from 'react-native';
+import { BlurView } from 'expo-blur';
+import { Screen } from '../components/layout/Screen';
 import { Ionicons } from '@expo/vector-icons';
+import { tokens } from '../theme/tokens';
+import { useApp } from '../context/AppContext';
+import { Task } from '../types';
+import { successHaptic, lightHaptic } from '../utils/haptics';
+import { useTabBarInset } from '../hooks/useTabBarInset';
+import { useTheme } from '../theme/ThemeProvider';
+import { REQUIRED_DAILY_MUST_DO_TASKS } from '../utils/constants';
+
+interface ExtendedTask extends Task {
+  isEditing?: boolean;
+}
+
+// Glass styling constants (matching footer)
+const GLASS_BLUR_INTENSITY = 25; // Lighter than footer (50)
+const GLASS_BG_LIGHT = 'rgba(255, 255, 255, 0.55)';
+const GLASS_BG_DARK = 'rgba(20, 20, 24, 0.55)';
+const GLASS_BORDER_LIGHT = 'rgba(124, 58, 237, 0.18)'; // Purple tint
+const GLASS_BORDER_DARK = 'rgba(124, 58, 237, 0.25)';
+const GLASS_OVERLAY_LIGHT = 'rgba(255, 255, 255, 0.6)';
+const GLASS_OVERLAY_DARK = 'rgba(255, 255, 255, 0.15)';
+
+// Autosave debounce delay (ms)
+const AUTOSAVE_DEBOUNCE = 400;
 
 export default function TasksScreen({ navigation }: any) {
-  const { getTodayProgress } = useApp();
+  const { getTodayProgress, updateTasks } = useApp();
+  const tabBarInset = useTabBarInset();
+  const { isDark } = useTheme();
   const todayProgress = useMemo(() => getTodayProgress(), [getTodayProgress]);
 
-  const mustDoTasks = todayProgress.tasks.filter((t) => t.isMustDo);
-  const completedMustDos = mustDoTasks.filter((t) => t.completed).length;
-  // TODO: Implement affirmations tracking when DayProgress is updated
-  const affirmationsComplete = false; // Placeholder
+  // Separate must-do and additional tasks
+  const mustDoTasks = useMemo(
+    () => todayProgress.tasks?.filter(t => t.isMustDo) || [],
+    [todayProgress.tasks]
+  );
+  const additionalTasks = useMemo(
+    () => todayProgress.tasks?.filter(t => !t.isMustDo) || [],
+    [todayProgress.tasks]
+  );
 
-  const getCurrentPeriod = () => {
-    const hour = new Date().getHours();
-    if (hour >= 6 && hour < 12) return 'morning';
-    if (hour >= 12 && hour < 18) return 'afternoon';
-    if (hour >= 18) return 'evening';
-    return 'morning';
+  // Initialize with 3 must-do slots (required for daily challenge)
+  const [editableMustDo, setEditableMustDo] = useState<ExtendedTask[]>(() => {
+    const tasks = [...mustDoTasks];
+    while (tasks.length < REQUIRED_DAILY_MUST_DO_TASKS) {
+      tasks.push({
+        id: `temp_${Date.now()}_${tasks.length}`,
+        text: '',
+        completed: false,
+        isMustDo: true,
+        createdAt: new Date().toISOString(),
+      });
+    }
+    return tasks;
+  });
+
+  const [editableAdditional, setEditableAdditional] = useState<ExtendedTask[]>(additionalTasks);
+
+  // Sync local state when todayProgress changes (e.g., from another screen)
+  useEffect(() => {
+    const currentMustDo = todayProgress.tasks?.filter(t => t.isMustDo) || [];
+    const currentAdditional = todayProgress.tasks?.filter(t => !t.isMustDo) || [];
+    
+    // Only update if different (avoid unnecessary re-renders)
+    if (JSON.stringify(currentMustDo) !== JSON.stringify(mustDoTasks)) {
+      const tasks = [...currentMustDo];
+      while (tasks.length < REQUIRED_DAILY_MUST_DO_TASKS) {
+        tasks.push({
+          id: `temp_${Date.now()}_${tasks.length}`,
+          text: '',
+          completed: false,
+          isMustDo: true,
+          createdAt: new Date().toISOString(),
+        });
+      }
+      setEditableMustDo(tasks);
+    }
+    
+    if (JSON.stringify(currentAdditional) !== JSON.stringify(additionalTasks)) {
+      setEditableAdditional(currentAdditional);
+    }
+  }, [todayProgress.tasks]);
+
+  // Refs for focusing new task inputs and debounce timers
+  const additionalInputRefs = useRef<{ [key: string]: TextInput | null }>({});
+  const scrollViewRef = useRef<ScrollView>(null);
+  const autosaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Refs to track latest state for autosave (avoids stale closures)
+  const editableMustDoRef = useRef(editableMustDo);
+  const editableAdditionalRef = useRef(editableAdditional);
+  
+  useEffect(() => {
+    editableMustDoRef.current = editableMustDo;
+  }, [editableMustDo]);
+  
+  useEffect(() => {
+    editableAdditionalRef.current = editableAdditional;
+  }, [editableAdditional]);
+
+  // Autosave function - normalizes task IDs and saves to AppContext
+  const autosave = useCallback(() => {
+    // Read from refs to get latest state (avoids stale closures)
+    const mustDo = editableMustDoRef.current;
+    const additional = editableAdditionalRef.current;
+    
+    // Normalize task IDs (replace temp IDs with permanent ones)
+    const validMustDo = mustDo.map(t => ({
+      ...t,
+      id: t.id.startsWith('temp_') ? `task_${Date.now()}_${Math.random()}` : t.id,
+    }));
+
+    const validAdditional = additional
+      .filter(t => t.text.trim() !== '' || t.completed) // Keep completed tasks even if empty
+      .map(t => ({
+        ...t,
+        id: t.id.startsWith('temp_') ? `task_${Date.now()}_${Math.random()}` : t.id,
+      }));
+
+    // Save to AppContext (which triggers AsyncStorage save via debounced effect)
+    updateTasks([...validMustDo, ...validAdditional]);
+  }, [updateTasks]);
+
+  // Debounced autosave for text changes
+  const scheduleAutosave = useCallback(() => {
+    if (autosaveTimeoutRef.current) {
+      clearTimeout(autosaveTimeoutRef.current);
+    }
+    autosaveTimeoutRef.current = setTimeout(() => {
+      autosave();
+    }, AUTOSAVE_DEBOUNCE);
+  }, [autosave]);
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (autosaveTimeoutRef.current) {
+        clearTimeout(autosaveTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Handle task text change with debounced autosave
+  const handleTaskTextChange = useCallback((index: number, text: string, isMustDo: boolean) => {
+    if (isMustDo) {
+      const updated = [...editableMustDo];
+      updated[index] = { ...updated[index], text };
+      setEditableMustDo(updated);
+    } else {
+      const updated = [...editableAdditional];
+      updated[index] = { ...updated[index], text };
+      setEditableAdditional(updated);
+    }
+    // Schedule debounced autosave
+    scheduleAutosave();
+  }, [editableMustDo, editableAdditional, scheduleAutosave]);
+
+  // Toggle task completion with immediate autosave
+  const handleToggle = useCallback((index: number, isMustDo: boolean) => {
+    lightHaptic();
+    if (isMustDo) {
+      const updated = [...editableMustDo];
+      updated[index] = { ...updated[index], completed: !updated[index].completed };
+      setEditableMustDo(updated);
+      // Immediate autosave for checkbox
+      setTimeout(() => autosave(), 50);
+    } else {
+      const updated = [...editableAdditional];
+      updated[index] = { ...updated[index], completed: !updated[index].completed };
+      setEditableAdditional(updated);
+      // Immediate autosave for checkbox
+      setTimeout(() => autosave(), 50);
+    }
+  }, [editableMustDo, editableAdditional, autosave]);
+
+  // Add new additional task - Inserts immediately, focuses, and autosaves
+  const handleAddTask = useCallback(() => {
+    const newTask: ExtendedTask = {
+      id: `task_${Date.now()}_${Math.random()}`,
+      text: '',
+      completed: false,
+      isMustDo: false,
+      createdAt: new Date().toISOString(),
+      isEditing: true,
+    };
+
+    setEditableAdditional(prev => [...prev, newTask]);
+    lightHaptic();
+
+    setTimeout(() => {
+      const inputRef = additionalInputRefs.current[newTask.id];
+      if (inputRef) {
+        inputRef.focus();
+      }
+      scrollViewRef.current?.scrollToEnd({ animated: true });
+    }, 100);
+  }, []);
+
+  // Handle blur - remove empty tasks and autosave
+  const handleTaskBlur = useCallback((taskId: string, index: number) => {
+    const task = editableAdditional[index];
+    if (task && task.text.trim() === '' && task.id === taskId && !task.completed) {
+      const updated = editableAdditional.filter((_, i) => i !== index);
+      setEditableAdditional(updated);
+      // Autosave after removing empty task
+      setTimeout(() => autosave(), 100);
+    } else {
+      // Autosave even if task wasn't removed (text might have changed)
+      scheduleAutosave();
+    }
+  }, [editableAdditional, autosave, scheduleAutosave]);
+
+  // Delete task with immediate autosave
+  const handleDelete = useCallback((index: number, isMustDo: boolean) => {
+    lightHaptic();
+    if (isMustDo) {
+      const updated = [...editableMustDo];
+      updated[index] = { ...updated[index], text: '', completed: false };
+      setEditableMustDo(updated);
+    } else {
+      const updated = editableAdditional.filter((_, i) => i !== index);
+      setEditableAdditional(updated);
+    }
+    // Immediate autosave for delete
+    setTimeout(() => autosave(), 50);
+  }, [editableMustDo, editableAdditional, autosave]);
+
+  const mustDoCompleted = editableMustDo.filter(t => t.completed && t.text.trim() !== '').length;
+  const additionalCompleted = editableAdditional.filter(t => t.completed).length;
+
+  // Animated values for checkbox press
+  const checkboxScale = useRef(new Animated.Value(1)).current;
+
+  const animateCheckbox = () => {
+    Animated.sequence([
+      Animated.timing(checkboxScale, {
+        toValue: 0.95,
+        duration: 100,
+        useNativeDriver: true,
+      }),
+      Animated.timing(checkboxScale, {
+        toValue: 1,
+        duration: 100,
+        useNativeDriver: true,
+      }),
+    ]).start();
   };
 
-  const currentPeriod = getCurrentPeriod();
-  const nextAffirmation = 'morning'; // Placeholder - will be determined by actual affirmation state
+  const handleCheckboxPress = (index: number, isMustDo: boolean) => {
+    animateCheckbox();
+    handleToggle(index, isMustDo);
+  };
+
+  // ScrollView padding: ensure content doesn't hide behind footer
+  const scrollPaddingBottom = tabBarInset + tokens.spacing.lg;
 
   return (
-    <ScrollView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.greeting}>What's your focus today?</Text>
-        <Text style={styles.title}>Your Tasks</Text>
+    <Screen
+      title="Tasks"
+      subtitle="Daily priorities & ongoing work"
+      rightAction={{
+        icon: 'home-outline',
+        onPress: () => {
+          const parent = navigation.getParent();
+          if (parent) {
+            parent.navigate('MainTabs', { screen: 'Today' });
+          } else {
+            navigation.navigate('MainTabs', { screen: 'Today' });
+          }
+        },
+        label: 'Back to Today',
+      }}
+      scroll={false}
+    >
+      {/* Root container with flex:1 - ensures proper layout */}
+      <View style={styles.rootContainer}>
+        <KeyboardAvoidingView
+          style={styles.keyboardView}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+          enabled={true}
+        >
+          {/* Scrollable Content */}
+          <ScrollView
+            ref={scrollViewRef}
+            style={styles.scrollView}
+            contentContainerStyle={[
+              styles.scrollContent,
+              { paddingBottom: scrollPaddingBottom },
+            ]}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="interactive"
+          >
+            {/* Must-Do Today Section - Premium Glass Card */}
+            <View style={styles.mustDoSection}>
+              <GlassCard isDark={isDark} style={styles.mustDoCard}>
+                <View style={styles.sectionHeader}>
+                  <View style={styles.sectionTitleRow}>
+                    <View style={styles.mustDoIconBadge}>
+                      <Ionicons name="star" size={14} color="#FFD700" />
+                    </View>
+                    <Text style={styles.mustDoTitle}>Must-Do Today</Text>
+                  </View>
+                  <View style={styles.progressContainer}>
+                    <Text style={styles.sectionCounter}>
+                      {mustDoCompleted} / {REQUIRED_DAILY_MUST_DO_TASKS}
+                    </Text>
+                  </View>
+                </View>
+                <Text style={styles.mustDoSubtitle}>
+                  Complete all 3 tasks to finish your daily challenge
+                </Text>
+
+                {/* 3 Must-Do Task Rows */}
+                <View style={styles.taskList}>
+                  {editableMustDo.map((task, index) => (
+                    <TaskRow
+                      key={task.id}
+                      task={task}
+                      index={index}
+                      isMustDo={true}
+                      onToggle={() => handleCheckboxPress(index, true)}
+                      onTextChange={(text) => handleTaskTextChange(index, text, true)}
+                      onDelete={() => handleDelete(index, true)}
+                      checkboxScale={checkboxScale}
+                      isDark={isDark}
+                    />
+                  ))}
+                </View>
+              </GlassCard>
+            </View>
+
+            {/* Divider */}
+            <View style={styles.divider} />
+
+            {/* Additional Tasks Section */}
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>Additional Tasks</Text>
+                {editableAdditional.length > 0 && (
+                  <Text style={styles.sectionCounter}>
+                    {additionalCompleted} / {editableAdditional.length}
+                  </Text>
+                )}
+              </View>
+              <Text style={styles.sectionSubtitle}>
+                Tasks that roll over until completed
+              </Text>
+
+              {/* Additional Task Rows */}
+              <View style={styles.taskList}>
+                {editableAdditional.map((task, index) => (
+                  <TaskRow
+                    key={task.id}
+                    task={task}
+                    index={index}
+                    isMustDo={false}
+                    onToggle={() => handleCheckboxPress(index, false)}
+                    onTextChange={(text) => handleTaskTextChange(index, text, false)}
+                    onDelete={() => handleDelete(index, false)}
+                    onBlur={() => handleTaskBlur(task.id, index)}
+                    inputRef={(ref) => {
+                      additionalInputRefs.current[task.id] = ref;
+                    }}
+                    autoFocus={task.isEditing}
+                    checkboxScale={checkboxScale}
+                    isDark={isDark}
+                  />
+                ))}
+
+                {/* Add New Task Button - Glass Style */}
+                <TouchableOpacity
+                  style={styles.addTaskButton}
+                  onPress={handleAddTask}
+                  activeOpacity={0.7}
+                  accessibilityLabel="Add new task"
+                  accessibilityRole="button"
+                >
+                  <View style={styles.addTaskIconContainer}>
+                    <Ionicons name="add-circle" size={24} color={tokens.colors.primary} />
+                  </View>
+                  <Text style={styles.addTaskText}>Add new task</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Pro Tips - Light Glass Card */}
+            <GlassCard isDark={isDark} style={styles.tipsCard} intensity={18}>
+              <View style={styles.tipsHeader}>
+                <Ionicons name="information-circle" size={18} color={tokens.colors.accent} />
+                <Text style={styles.tipsTitle}>Pro Tips</Text>
+              </View>
+              <View style={styles.tipsList}>
+                <View style={styles.tipRow}>
+                  <View style={styles.tipDot} />
+                  <Text style={styles.tipText}>
+                    Must-do tasks reset daily - focus on today's priorities
+                  </Text>
+                </View>
+                <View style={styles.tipRow}>
+                  <View style={styles.tipDot} />
+                  <Text style={styles.tipText}>
+                    Additional tasks roll over until you complete them
+                  </Text>
+                </View>
+                <View style={styles.tipRow}>
+                  <View style={styles.tipDot} />
+                  <Text style={styles.tipText}>
+                    Be specific: "Walk 30 minutes" instead of "Exercise"
+                  </Text>
+                </View>
+                <View style={styles.tipRow}>
+                  <View style={styles.tipDot} />
+                  <Text style={styles.tipText}>
+                    Changes save automatically - no need to tap save
+                  </Text>
+                </View>
+              </View>
+            </GlassCard>
+          </ScrollView>
+        </KeyboardAvoidingView>
       </View>
-
-      {/* Quick Start Section */}
-      <View style={styles.quickStartSection}>
-        <Text style={styles.sectionTitle}>⚡ Start Here</Text>
-
-        {/* Must-Do Tasks Card */}
-        <TouchableOpacity
-          style={styles.actionCard}
-          onPress={() => navigation.navigate('45 NOW')}
-        >
-          <View style={styles.actionHeader}>
-            <View style={styles.actionIcon}>
-              <Ionicons name="star" size={28} color="#FFD700" />
-            </View>
-            <View style={styles.actionContent}>
-              <Text style={styles.actionTitle}>3 Must-Do Tasks</Text>
-              <Text style={styles.actionSubtitle}>
-                {completedMustDos === 3 ? '✓ All complete!' : `${completedMustDos}/3 completed`}
-              </Text>
-            </View>
-            <Ionicons name="chevron-forward" size={24} color="#666" />
-          </View>
-          {completedMustDos < 3 && (
-            <View style={styles.actionDescription}>
-              <Text style={styles.descriptionText}>
-                Complete your 3 most important tasks of the day
-              </Text>
-            </View>
-          )}
-        </TouchableOpacity>
-
-        {/* 369 Affirmations Card */}
-        <TouchableOpacity
-          style={styles.actionCard}
-          onPress={() => {
-            if (nextAffirmation) {
-              navigation.navigate('45 NOW');
-            }
-          }}
-        >
-          <View style={styles.actionHeader}>
-            <View style={[styles.actionIcon, { backgroundColor: '#8B7DD820' }]}>
-              <Ionicons name="repeat" size={28} color="#8B7DD8" />
-            </View>
-            <View style={styles.actionContent}>
-              <Text style={styles.actionTitle}>369 Affirmations</Text>
-              <Text style={styles.actionSubtitle}>
-                {affirmationsComplete
-                  ? '✓ All 3 sessions complete!'
-                  : nextAffirmation
-                  ? `Next: ${nextAffirmation.charAt(0).toUpperCase() + nextAffirmation.slice(1)}`
-                  : 'All done!'}
-              </Text>
-            </View>
-            <Ionicons name="chevron-forward" size={24} color="#666" />
-          </View>
-          {!affirmationsComplete && (
-            <View style={styles.actionDescription}>
-              <Text style={styles.descriptionText}>
-                Write and speak your affirmations 3, 6, and 9 times
-              </Text>
-            </View>
-          )}
-        </TouchableOpacity>
-
-        {/* Meditation Card */}
-        <TouchableOpacity
-          style={styles.actionCard}
-          onPress={() => navigation.navigate('45 NOW')}
-        >
-          <View style={styles.actionHeader}>
-            <View style={[styles.actionIcon, { backgroundColor: '#FF6B9D20' }]}>
-              <Ionicons name="flower" size={28} color="#FF6B9D" />
-            </View>
-            <View style={styles.actionContent}>
-              <Text style={styles.actionTitle}>Guided Meditation</Text>
-              <Text style={styles.actionSubtitle}>
-                {todayProgress.meditationCompleted ? '✓ Complete!' : '5-10 minutes'}
-              </Text>
-            </View>
-            <Ionicons name="chevron-forward" size={24} color="#666" />
-          </View>
-          {!todayProgress.meditationCompleted && (
-            <View style={styles.actionDescription}>
-              <Text style={styles.descriptionText}>
-                Ground yourself with a peaceful meditation
-              </Text>
-            </View>
-          )}
-        </TouchableOpacity>
-
-        {/* Journal Card */}
-        <TouchableOpacity
-          style={styles.actionCard}
-          onPress={() => navigation.navigate('Journal')}
-        >
-          <View style={styles.actionHeader}>
-            <View style={[styles.actionIcon, { backgroundColor: '#4ECDC420' }]}>
-              <Ionicons name="book" size={28} color="#4ECDC4" />
-            </View>
-            <View style={styles.actionContent}>
-              <Text style={styles.actionTitle}>Gratitude Journal</Text>
-              <Text style={styles.actionSubtitle}>
-                {todayProgress.gratitudeEntry.trim() ? '✓ Entry saved!' : 'Write your blessings'}
-              </Text>
-            </View>
-            <Ionicons name="chevron-forward" size={24} color="#666" />
-          </View>
-          {!todayProgress.gratitudeEntry.trim() && (
-            <View style={styles.actionDescription}>
-              <Text style={styles.descriptionText}>
-                Express gratitude to attract more abundance
-              </Text>
-            </View>
-          )}
-        </TouchableOpacity>
-      </View>
-
-      {/* Daily Intention */}
-      <View style={styles.intentionSection}>
-        <View style={styles.intentionHeader}>
-          <Ionicons name="bulb" size={24} color="#FFD700" />
-          <Text style={styles.intentionTitle}>Today's Focus</Text>
-        </View>
-        <Text style={styles.intentionText}>
-          What you focus on expands. Choose to see abundance, joy, and possibility in everything today.
-        </Text>
-      </View>
-    </ScrollView>
+    </Screen>
   );
 }
 
+// Glass Card Component - Premium Purple Glass
+interface GlassCardProps {
+  children: React.ReactNode;
+  style?: any;
+  isDark: boolean;
+  intensity?: number;
+}
+
+const GlassCard: React.FC<GlassCardProps> = ({
+  children,
+  style,
+  isDark,
+  intensity = GLASS_BLUR_INTENSITY,
+}) => {
+  const glassBg = isDark ? GLASS_BG_DARK : GLASS_BG_LIGHT;
+  const glassBorder = isDark ? GLASS_BORDER_DARK : GLASS_BORDER_LIGHT;
+  const glassOverlay = isDark ? GLASS_OVERLAY_DARK : GLASS_OVERLAY_LIGHT;
+
+  return (
+    <View style={[styles.glassCard, { borderColor: glassBorder }, style]}>
+      {Platform.OS === 'ios' ? (
+        <BlurView
+          intensity={intensity}
+          tint={isDark ? 'dark' : 'light'}
+          style={StyleSheet.absoluteFill}
+        >
+          <View style={[styles.glassOverlay, { backgroundColor: glassOverlay }]} />
+        </BlurView>
+      ) : (
+        <View style={[styles.glassOverlay, { backgroundColor: glassBg }]} />
+      )}
+      <View style={styles.glassContent}>{children}</View>
+    </View>
+  );
+};
+
+// Task Row Component - Reusable with animations
+interface TaskRowProps {
+  task: ExtendedTask;
+  index: number;
+  isMustDo: boolean;
+  onToggle: () => void;
+  onTextChange: (text: string) => void;
+  onDelete: () => void;
+  onBlur?: () => void;
+  inputRef?: (ref: TextInput | null) => void;
+  autoFocus?: boolean;
+  checkboxScale: Animated.Value;
+  isDark: boolean;
+}
+
+const TaskRow: React.FC<TaskRowProps> = ({
+  task,
+  index,
+  isMustDo,
+  onToggle,
+  onTextChange,
+  onDelete,
+  onBlur,
+  inputRef,
+  autoFocus = false,
+  checkboxScale,
+  isDark,
+}) => {
+  const isDisabled = isMustDo && task.text.trim() === '';
+  const checkboxColor = isDisabled
+    ? tokens.colors.textTertiary
+    : task.completed
+    ? tokens.colors.success
+    : tokens.colors.primary;
+
+  return (
+    <View style={styles.taskRow}>
+      {/* Animated Checkbox */}
+      <TouchableOpacity
+        onPress={onToggle}
+        disabled={isDisabled}
+        hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+        style={styles.checkboxContainer}
+        accessibilityLabel={task.completed ? 'Mark as incomplete' : 'Mark as complete'}
+        accessibilityRole="checkbox"
+        accessibilityState={{ checked: task.completed }}
+      >
+        <Animated.View style={{ transform: [{ scale: checkboxScale }] }}>
+          <Ionicons
+            name={task.completed ? 'checkmark-circle' : 'ellipse-outline'}
+            size={26}
+            color={checkboxColor}
+          />
+        </Animated.View>
+      </TouchableOpacity>
+
+      {/* Task Input - Seamless styling */}
+      <TextInput
+        ref={inputRef}
+        style={[
+          styles.taskInput,
+          task.completed && styles.taskInputCompleted,
+        ]}
+        placeholder={isMustDo ? `Must-do task ${index + 1}` : 'Task name'}
+        placeholderTextColor={tokens.colors.textTertiary}
+        value={task.text}
+        onChangeText={onTextChange}
+        onBlur={onBlur}
+        maxLength={100}
+        returnKeyType="done"
+        autoCorrect={false}
+        autoFocus={autoFocus}
+        editable={true}
+        keyboardAppearance={Platform.OS === 'ios' ? (isDark ? 'dark' : 'light') : 'default'}
+        selectionColor={tokens.colors.primary}
+        underlineColorAndroid="transparent"
+        accessibilityLabel={isMustDo ? `Must-do task ${index + 1}` : 'Task name'}
+      />
+
+      {/* Delete button */}
+      {task.text.trim() !== '' && (
+        <TouchableOpacity
+          onPress={onDelete}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          style={styles.deleteButton}
+          accessibilityLabel="Delete task"
+          accessibilityRole="button"
+        >
+          <Ionicons name="close-circle" size={20} color={tokens.colors.textSecondary} />
+        </TouchableOpacity>
+      )}
+    </View>
+  );
+};
+
 const styles = StyleSheet.create({
-  container: {
+  rootContainer: {
     flex: 1,
-    backgroundColor: '#0F0B1F',
   },
-  header: {
-    padding: 20,
-    paddingTop: 60,
-    paddingBottom: 30,
+  keyboardView: {
+    flex: 1,
   },
-  greeting: {
-    fontSize: 14,
-    color: '#8B7DD8',
-    marginBottom: 8,
+  scrollView: {
+    flex: 1,
   },
-  title: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: '#FFD700',
+  scrollContent: {
+    padding: tokens.spacing.lg,
   },
-  quickStartSection: {
-    padding: 20,
-    paddingTop: 0,
+  // Must-Do Section
+  mustDoSection: {
+    marginBottom: tokens.spacing.xl,
   },
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#FFF',
-    marginBottom: 20,
+  mustDoCard: {
+    // Glass card styling handled by GlassCard component
   },
-  actionCard: {
-    backgroundColor: '#1F1B2F',
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 15,
-    borderWidth: 1,
-    borderColor: '#333',
+  section: {
+    marginBottom: tokens.spacing.xl,
   },
-  actionHeader: {
+  sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
   },
-  actionIcon: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#FFD70020',
+  sectionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  mustDoIconBadge: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: `${tokens.colors.warning}15`,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 15,
   },
-  actionContent: {
-    flex: 1,
+  mustDoTitle: {
+    ...tokens.typography.h2,
+    color: tokens.colors.textPrimary,
   },
-  actionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#FFF',
-    marginBottom: 4,
+  sectionTitle: {
+    ...tokens.typography.h2,
+    color: tokens.colors.textPrimary,
   },
-  actionSubtitle: {
-    fontSize: 14,
-    color: '#8B7DD8',
-  },
-  actionDescription: {
-    marginTop: 12,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#333',
-  },
-  descriptionText: {
-    fontSize: 13,
-    color: '#AAA',
-    lineHeight: 18,
-  },
-  intentionSection: {
-    margin: 20,
-    marginTop: 10,
-    padding: 20,
-    backgroundColor: '#1F1B2F',
-    borderRadius: 16,
-    borderLeftWidth: 4,
-    borderLeftColor: '#FFD700',
-  },
-  intentionHeader: {
+  progressContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    marginBottom: 12,
+    gap: 4,
   },
-  intentionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#FFF',
-  },
-  intentionText: {
+  sectionCounter: {
     fontSize: 15,
-    color: '#FFF',
-    lineHeight: 22,
+    fontWeight: '600',
+    color: tokens.colors.accent,
+  },
+  mustDoSubtitle: {
+    ...tokens.typography.caption,
+    color: tokens.colors.textSecondary,
+    marginBottom: tokens.spacing.md,
+  },
+  sectionSubtitle: {
+    ...tokens.typography.caption,
+    color: tokens.colors.textSecondary,
+    marginBottom: tokens.spacing.md,
+  },
+  taskList: {
+    gap: 10,
+  },
+  taskRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'transparent',
+    borderRadius: tokens.radii.md,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    minHeight: 56,
+    overflow: 'hidden',
+  },
+  checkboxContainer: {
+    marginRight: 12,
+    width: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 44,
+  },
+  taskInput: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '500',
+    color: tokens.colors.textPrimary,
+    padding: 0,
+    margin: 0,
+    minHeight: 44,
+    backgroundColor: 'transparent',
+    borderWidth: 0,
+    outlineStyle: 'none',
+  },
+  taskInputCompleted: {
+    textDecorationLine: 'line-through',
+    color: tokens.colors.textSecondary,
+    opacity: 0.7,
+  },
+  deleteButton: {
+    marginLeft: 8,
+    width: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 44,
+  },
+  addTaskButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'transparent',
+    borderRadius: tokens.radii.md,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: `${tokens.colors.primary}30`,
+    borderStyle: 'dashed',
+    minHeight: 56,
+  },
+  addTaskIconContainer: {
+    marginRight: 12,
+    width: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  addTaskText: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '500',
+    color: tokens.colors.primary,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: tokens.colors.borderSubtle,
+    marginVertical: tokens.spacing.lg,
+    opacity: 0.5,
+  },
+  tipsCard: {
+    marginTop: tokens.spacing.md,
+  },
+  tipsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: tokens.spacing.sm,
+  },
+  tipsTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: tokens.colors.textPrimary,
+  },
+  tipsList: {
+    gap: 8,
+  },
+  tipRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+  tipDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: tokens.colors.accent,
+    marginTop: 6,
+  },
+  tipText: {
+    flex: 1,
+    ...tokens.typography.caption,
+    color: tokens.colors.textSecondary,
+  },
+  // Glass Card Styles
+  glassCard: {
+    borderRadius: tokens.radii.lg,
+    borderWidth: 1,
+    overflow: 'hidden',
+    ...tokens.shadows.floating,
+  },
+  glassOverlay: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  glassContent: {
+    padding: tokens.spacing.lg,
   },
 });

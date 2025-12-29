@@ -5,29 +5,17 @@ import { Theme, TOUCH_TARGET_MIN } from '../utils/theme';
 
 interface JournalHeaderProps {
   entryCount: number;
-  onProfilePress?: () => void;
   onHistoryPress?: () => void;
 }
 
 export const JournalHeader: React.FC<JournalHeaderProps> = ({
   entryCount,
-  onProfilePress,
   onHistoryPress,
 }) => {
   return (
     <View style={styles.container}>
-      <TouchableOpacity
-        style={styles.iconButton}
-        onPress={onProfilePress}
-        activeOpacity={0.7}
-        accessibilityLabel="Profile"
-        accessibilityRole="button"
-        accessibilityHint="Open your profile"
-      >
-        <View style={styles.iconButtonCircle}>
-          <Ionicons name="person-circle-outline" size={24} color={Theme.colors.accentDark} />
-        </View>
-      </TouchableOpacity>
+      {/* Left spacer - no profile button */}
+      <View style={styles.iconButton} />
 
       <View style={styles.titleContainer}>
         <Text style={styles.title} accessibilityRole="header">

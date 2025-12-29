@@ -1,7 +1,9 @@
 import React from 'react';
 import { View, StyleSheet, ViewStyle } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Theme } from '../utils/theme';
+import { useTheme } from '../context/ThemeContext';
+import { getColors } from '../utils/themeColors';
+import { StarfieldBackground } from './StarfieldBackground';
 
 interface ScreenProps {
   children: React.ReactNode;
@@ -18,11 +20,15 @@ export const Screen: React.FC<ScreenProps> = ({
   style,
   edges = ['top', 'bottom'],
 }) => {
+  const { isDark } = useTheme();
+  const colors = getColors(isDark);
+  
   return (
     <SafeAreaView
-      style={[styles.container, style]}
+      style={[styles.container, { backgroundColor: colors.bg }, style]}
       edges={edges}
     >
+      <StarfieldBackground />
       {children}
     </SafeAreaView>
   );
@@ -31,7 +37,6 @@ export const Screen: React.FC<ScreenProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Theme.colors.bg,
   },
 });
 

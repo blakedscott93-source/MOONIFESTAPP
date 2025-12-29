@@ -3,7 +3,8 @@ import { Platform } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { FloatingTabBar } from '../components/navigation/FloatingTabBar';
+import { tokens } from '../theme/tokens';
 
 import HomeScreen from '../screens/HomeScreen';
 import AffirmationsScreen from '../screens/AffirmationsScreen';
@@ -21,6 +22,7 @@ import AchievementsScreen from '../screens/AchievementsScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import MeditationScreen from '../screens/MeditationScreen';
 import VisionBoardScreen from '../screens/VisionBoardScreen';
+import TasksScreen from '../screens/TasksScreen';
 import ProgressScreen from '../screens/ProgressScreen';
 import ToolsScreen from '../screens/ToolsScreen';
 import CommunityScreen from '../screens/CommunityScreen';
@@ -64,15 +66,72 @@ function JournalStack() {
     <Stack.Navigator
       screenOptions={{
         headerStyle: {
-          backgroundColor: '#FAF8FF',
+          backgroundColor: tokens.colors.bg,
           borderBottomWidth: 0,
           elevation: 0,
           shadowOpacity: 0,
         },
-        headerTintColor: '#C77DFF',
+        headerTintColor: tokens.colors.primary,
         headerTitleStyle: {
+          ...tokens.typography.h3,
           fontWeight: '600',
-          fontSize: 18,
+        },
+        // Smooth transitions - fade + translate for premium feel
+        transitionSpec: {
+          open: {
+            animation: 'spring',
+            config: {
+              stiffness: 1000,
+              damping: 500,
+              mass: 3,
+              overshootClamping: true,
+              restDisplacementThreshold: 0.01,
+              restSpeedThreshold: 0.01,
+            },
+          },
+          close: {
+            animation: 'spring',
+            config: {
+              stiffness: 1000,
+              damping: 500,
+              mass: 3,
+              overshootClamping: true,
+              restDisplacementThreshold: 0.01,
+              restSpeedThreshold: 0.01,
+            },
+          },
+        },
+        cardStyleInterpolator: ({ current, next, layouts }) => {
+          return {
+            cardStyle: {
+              transform: [
+                {
+                  translateY: current.progress.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [layouts.screen.height * 0.1, 0],
+                  }),
+                },
+                {
+                  scale: next
+                    ? next.progress.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [1, 0.95],
+                      })
+                    : 1,
+                },
+              ],
+              opacity: current.progress.interpolate({
+                inputRange: [0, 0.5, 0.9, 1],
+                outputRange: [0, 0.25, 0.7, 1],
+              }),
+            },
+            overlayStyle: {
+              opacity: current.progress.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0, 0.5],
+              }),
+            },
+          };
         },
       }}
     >
@@ -92,7 +151,10 @@ function JournalStack() {
       <Stack.Screen
         name="VoiceJournal"
         component={VoiceJournalScreen}
-        options={{ headerShown: false }}
+        options={{ 
+          headerShown: false,
+          presentation: 'modal', // Modal presentation for voice entry
+        }}
       />
       <Stack.Screen
         name="JournalHistory"
@@ -145,61 +207,40 @@ function FortyFiveHardStack() {
 
 // Main Tab Navigator
 function MainTabs() {
-  const insets = useSafeAreaInsets();
-
   return (
     <Tab.Navigator
+      tabBar={(props) => <FloatingTabBar {...props} />}
       screenOptions={{
-        tabBarStyle: {
-          backgroundColor: 'rgba(255, 255, 255, 0.95)',
-          borderTopWidth: 0,
-          paddingBottom: Platform.OS === 'web' ? 10 : Math.max(insets.bottom, 8),
-          paddingTop: Platform.OS === 'web' ? 10 : 8,
-          height: Platform.OS === 'ios' 
-            ? 88 
-            : Platform.OS === 'web' 
-            ? 70 
-            : 60 + Math.max(insets.bottom, 8),
-          position: 'absolute',
-          bottom: 0,
-          left: 0,
-          right: 0,
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: -1 },
-          shadowOpacity: 0.05,
-          shadowRadius: 8,
-          elevation: 8,
-          // iOS blur effect simulation
-          ...(Platform.OS === 'ios' && {
-            backgroundColor: 'rgba(255, 255, 255, 0.8)',
-          }),
-          ...(Platform.OS === 'web' && {
-            borderTopWidth: 1,
-            borderTopColor: 'rgba(0, 0, 0, 0.05)',
-          }),
-        },
-        tabBarActiveTintColor: '#C77DFF',
-        tabBarInactiveTintColor: '#999',
         headerStyle: {
-          backgroundColor: '#FAF8FF',
+          backgroundColor: tokens.colors.bg,
           borderBottomWidth: 0,
           elevation: 0,
           shadowOpacity: 0,
         },
-        tabBarLabelStyle: {
-          fontSize: 10,
-          fontWeight: '600',
-          marginTop: Platform.OS === 'web' ? 0 : 2,
-          marginBottom: Platform.OS === 'web' ? 0 : 0,
-          letterSpacing: 0.2,
-        },
-        tabBarIconStyle: {
-          marginTop: Platform.OS === 'web' ? 0 : 4,
-          marginBottom: 0,
-        },
-        headerTintColor: '#3D1F5C',
+        headerTintColor: tokens.colors.textPrimary,
         headerTitleStyle: {
-          fontWeight: 'bold',
+          ...tokens.typography.headline,
+        },
+        // Remove square background from tab bar - completely transparent
+        tabBarStyle: {
+          backgroundColor: 'transparent',
+          borderTopWidth: 0,
+          borderTopColor: 'transparent',
+          elevation: 0,
+          shadowOpacity: 0,
+          shadowColor: 'transparent',
+          shadowOffset: { width: 0, height: 0 },
+          shadowRadius: 0,
+          position: 'absolute',
+          height: 0,
+          paddingTop: 0,
+          paddingBottom: 0,
+          // Ensure no visible container
+          opacity: 1, // Keep visible for custom tab bar to render
+        },
+        tabBarBackground: () => null, // No background component
+        tabBarItemStyle: {
+          backgroundColor: 'transparent',
         },
       }}
     >
@@ -210,10 +251,11 @@ function MainTabs() {
           tabBarIcon: ({ color, size, focused }) => (
             <Ionicons 
               name={focused ? "home" : "home-outline"} 
-              size={focused ? size + 2 : size} 
+              size={size} 
               color={color} 
             />
           ),
+          tabBarLabel: 'Today',
           headerShown: false,
         }}
       />
@@ -224,24 +266,12 @@ function MainTabs() {
           tabBarIcon: ({ color, size, focused }) => (
             <Ionicons 
               name={focused ? "sparkles" : "sparkles-outline"} 
-              size={focused ? size + 2 : size} 
+              size={size} 
               color={color} 
             />
           ),
-          headerShown: false,
-        }}
-      />
-      <Tab.Screen
-        name="Journal"
-        component={JournalStack}
-        options={{
-          tabBarIcon: ({ color, size, focused }) => (
-            <Ionicons 
-              name={focused ? "book" : "book-outline"} 
-              size={focused ? size + 2 : size} 
-              color={color} 
-            />
-          ),
+          tabBarLabel: 'Affirm', // Shorter label for better spacing
+          tabBarAccessibilityLabel: 'Affirmations', // Full label for screen readers
           headerShown: false,
         }}
       />
@@ -252,10 +282,26 @@ function MainTabs() {
           tabBarIcon: ({ color, size, focused }) => (
             <Ionicons
               name={focused ? "checkmark-done-circle" : "checkmark-done-circle-outline"}
-              size={focused ? size + 2 : size}
+              size={size}
               color={color}
             />
           ),
+          tabBarLabel: '45 NOW',
+          headerShown: false,
+        }}
+      />
+      <Tab.Screen
+        name="Journal"
+        component={JournalStack}
+        options={{
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons 
+              name={focused ? "book" : "book-outline"} 
+              size={size} 
+              color={color} 
+            />
+          ),
+          tabBarLabel: 'Journal',
           headerShown: false,
         }}
       />
@@ -266,10 +312,11 @@ function MainTabs() {
           tabBarIcon: ({ color, size, focused }) => (
             <Ionicons
               name={focused ? "images" : "images-outline"}
-              size={focused ? size + 2 : size}
+              size={size}
               color={color}
             />
           ),
+          tabBarLabel: 'Vision',
           headerShown: false,
         }}
       />
@@ -313,6 +360,14 @@ export default function AppNavigator() {
       <Stack.Screen
         name="MeditationScreen"
         component={MeditationScreen}
+        options={{
+          presentation: 'modal',
+          headerShown: false,
+        }}
+      />
+      <Stack.Screen
+        name="TasksScreen"
+        component={TasksScreen}
         options={{
           presentation: 'modal',
           headerShown: false,

@@ -65,6 +65,9 @@ interface AppContextType {
   goalCategories: GoalCategory[];
   refreshGoals: () => Promise<void>;
   trackGoalActivity: (goalId: string, activityType: 'affirmation' | 'journal' | 'task' | 'meditation') => Promise<void>;
+  // Vision Board
+  markVisionImageAdded: () => Promise<void>;
+  hasVisionImageAddedToday: () => boolean;
 }
 
 const defaultAppState: AppState = {
@@ -78,6 +81,10 @@ const defaultAppState: AppState = {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  if (__DEV__) {
+    console.log('✅ AppProvider rendering...');
+  }
+  
   const [appState, setAppState] = useState<AppState>(defaultAppState);
   const [glowPoints, setGlowPoints] = useState<number>(0);
   const [userGoals, setUserGoals] = useState<ManifestationGoal[]>([]);
@@ -245,6 +252,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         guidedSessions: [],
         meditationCompleted: false,
         gratitudeEntry: '',
+        visionImageAddedToday: false,
         isComplete: false,
       };
     }
@@ -300,8 +308,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const gratitudeEntryComplete = progress.gratitudeEntry === 'COMPLETE' || 
       (progress.gratitudeEntry?.trim().length || 0) > 0;
     
+    // Check vision image (always required for now - can be gated by challengeActive later)
+    const visionImageComplete = progress.visionImageAddedToday === true;
+    
     return allTasksComplete && affirmationsComplete && meditationComplete && 
-           (gratitudeComplete || gratitudeEntryComplete);
+           (gratitudeComplete || gratitudeEntryComplete) && visionImageComplete;
   };
 
   // Synchronous version for use in updateTodayProgress (without async gratitude check)
@@ -321,7 +332,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const gratitudeEntryComplete = progress.gratitudeEntry === 'COMPLETE' || 
       (progress.gratitudeEntry?.trim().length || 0) > 0;
     
-    return allTasksComplete && affirmationsComplete && meditationComplete && gratitudeEntryComplete;
+    // Check vision image (always required for now - can be gated by challengeActive later)
+    const visionImageComplete = progress.visionImageAddedToday === true;
+    
+    return allTasksComplete && affirmationsComplete && meditationComplete && gratitudeEntryComplete && visionImageComplete;
   };
 
   // Calculate streaks and total days from daily progress
@@ -636,6 +650,22 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
+  // Vision Board - Mark vision image as added today
+  const markVisionImageAdded = async (): Promise<void> => {
+    updateTodayProgress((progress) => ({
+      ...progress,
+      visionImageAddedToday: true,
+    }));
+    // Award glow points for adding vision image
+    await addGlowPoints(POINTS.VISION_IMAGE || 10, 'Added vision image');
+  };
+
+  // Vision Board - Check if vision image was added today
+  const hasVisionImageAddedToday = (): boolean => {
+    const todayProgress = getTodayProgress();
+    return todayProgress.visionImageAddedToday === true;
+  };
+
   return (
     <AppContext.Provider
       value={{
@@ -664,6 +694,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         goalCategories,
         refreshGoals,
         trackGoalActivity,
+        markVisionImageAdded,
+        hasVisionImageAddedToday,
       }}
     >
       {children}

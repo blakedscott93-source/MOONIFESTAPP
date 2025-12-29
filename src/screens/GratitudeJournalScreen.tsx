@@ -8,21 +8,31 @@ import {
   TextInput,
   Animated,
   ActivityIndicator,
+  Alert,
+  Animated as RNAnimated,
+  KeyboardAvoidingView,
+  Platform,
+  Keyboard,
 } from 'react-native';
 import { useApp } from '../context/AppContext';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Screen } from '../components/Screen';
+import { Screen } from '../components/layout/Screen';
 import { JournalHeader } from '../components/JournalHeader';
+import { GlassCard, SectionCard, PrimaryButton } from '../components/ui';
 import { UnifiedCard } from '../components/UnifiedCard';
 import { JournalEmptyState } from '../components/JournalEmptyState';
 import { JournalEntriesList } from '../components/JournalEntriesList';
 import { JournalFAB } from '../components/JournalFAB';
 import { IncompleteDayModal } from '../components/IncompleteDayModal';
-import { Theme, TOUCH_TARGET_MIN } from '../utils/theme';
+import { tokens } from '../theme/tokens';
+import { useTheme } from '../context/ThemeContext';
+import { useTabBarInset, TAB_BAR_SPACE } from '../hooks/useTabBarInset';
 import { GratitudeCheckIn } from '../utils/dayRollover';
 import { IncompleteDayInfo } from '../utils/dayRolloverManager';
-import { successHaptic, celebrationHaptic } from '../utils/haptics';
+import { successHaptic, celebrationHaptic, lightHaptic } from '../utils/haptics';
+
+const TOUCH_TARGET_MIN = 44; // Minimum touch target size for accessibility
 
 const DAILY_PROMPTS = [
   { text: "Write about one thing you like about your appearance today.", emoji: "✨" },
@@ -35,8 +45,9 @@ const DAILY_PROMPTS = [
 ];
 
 export default function GratitudeJournalScreen({ navigation }: any) {
-  const { 
-    appState, 
+  const { theme, isDark } = useTheme();
+  const {
+    appState,
     getTodayProgress,
     getTodayCheckIns,
     getTodayCheckInCount,
@@ -45,11 +56,15 @@ export default function GratitudeJournalScreen({ navigation }: any) {
     markYesterdayComplete,
     handleMissedDay,
     resetChallenge,
+    addGratitudeCheckIn,
   } = useApp();
+  const tabBarInset = useTabBarInset();
   // Memoize todayProgress
   const todayProgress = useMemo(() => getTodayProgress(), [getTodayProgress]);
 
-  const todayPrompt = DAILY_PROMPTS[new Date().getDay()];
+  const todayPromptIndex = new Date().getDay();
+  const [currentPromptIndex, setCurrentPromptIndex] = useState(todayPromptIndex);
+  const todayPrompt = DAILY_PROMPTS[currentPromptIndex];
   const [searchText, setSearchText] = useState('');
   const [showFAB, setShowFAB] = useState(true);
   const [checkInCount, setCheckInCount] = useState(0);
@@ -201,14 +216,14 @@ export default function GratitudeJournalScreen({ navigation }: any) {
           setShowFAB(false);
           Animated.timing(fabOpacity, {
             toValue: 0,
-            duration: Theme.animation.fast,
+            duration: 200,
             useNativeDriver: true,
           }).start();
         } else if (offsetY <= 50 && !showFAB) {
           setShowFAB(true);
           Animated.timing(fabOpacity, {
             toValue: 1,
-            duration: Theme.animation.fast,
+            duration: 200,
             useNativeDriver: true,
           }).start();
         }
@@ -236,18 +251,221 @@ export default function GratitudeJournalScreen({ navigation }: any) {
     }));
   }, [isTodayComplete]);
 
-  const handleWrite = () => {
-    navigation.navigate('VoiceJournal');
+  const [isRecording, setIsRecording] = useState(false);
+  const [showTextInput, setShowTextInput] = useState(false);
+  const [textEntry, setTextEntry] = useState('');
+  const [recordingUri, setRecordingUri] = useState<string | null>(null);
+  const [recordingDuration, setRecordingDuration] = useState(0);
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+  const textInputRef = useRef<TextInput>(null);
+  const keyboardHeight = useRef(new Animated.Value(0)).current;
+  const recordButtonScale = useRef(new RNAnimated.Value(1)).current;
+  const pulseAnim = useRef(new RNAnimated.Value(1)).current;
+  const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const recordingStartTime = useRef<number>(0);
+  const MIN_RECORDING_DURATION = 30000; // 30 seconds minimum
+
+  const handleStartRecording = async () => {
+    try {
+      console.log('[GratitudeJournal] Starting recording process...');
+      const { startRecording: startRec, requestMicrophonePermission } = await import('../utils/voiceRecording');
+
+      console.log('[GratitudeJournal] Requesting microphone permission...');
+      const hasPermission = await requestMicrophonePermission();
+      console.log('[GratitudeJournal] Permission result:', hasPermission);
+
+      if (!hasPermission) {
+        Alert.alert('Microphone Access', 'Please enable microphone access to record voice journal entries.');
+        return;
+      }
+
+      console.log('[GratitudeJournal] Calling startRecording...');
+      await startRec();
+      console.log('[GratitudeJournal] startRecording completed successfully');
+
+      setIsRecording(true);
+      console.log('[GratitudeJournal] Recording started, isRecording should be true');
+      recordingStartTime.current = Date.now();
+      setRecordingDuration(0);
+
+      // Start pulsing animation for REC indicator
+      RNAnimated.loop(
+        RNAnimated.sequence([
+          RNAnimated.timing(pulseAnim, {
+            toValue: 0.3,
+            duration: 800,
+            useNativeDriver: true,
+          }),
+          RNAnimated.timing(pulseAnim, {
+            toValue: 1,
+            duration: 800,
+            useNativeDriver: true,
+          }),
+        ])
+      ).start();
+
+      // Update duration every 100ms
+      recordingTimerRef.current = setInterval(() => {
+        const elapsed = Date.now() - recordingStartTime.current;
+        setRecordingDuration(elapsed);
+      }, 100);
+
+      RNAnimated.loop(
+        RNAnimated.sequence([
+          RNAnimated.timing(recordButtonScale, {
+            toValue: 1.1,
+            duration: 800,
+            useNativeDriver: true,
+          }),
+          RNAnimated.timing(recordButtonScale, {
+            toValue: 1,
+            duration: 800,
+            useNativeDriver: true,
+          }),
+        ])
+      ).start();
+    } catch (error) {
+      console.error('Error starting recording:', error);
+      Alert.alert('Error', 'Failed to start recording. Please try again.');
+    }
   };
 
+  const handleStopRecording = async () => {
+    try {
+      // Clear the timer
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+        recordingTimerRef.current = null;
+      }
+
+      // Check minimum duration
+      const elapsed = Date.now() - recordingStartTime.current;
+      if (elapsed < MIN_RECORDING_DURATION) {
+        const remaining = Math.ceil((MIN_RECORDING_DURATION - elapsed) / 1000);
+        Alert.alert(
+          'Recording Too Short',
+          `Please record for at least 30 seconds. ${remaining} more seconds needed.`
+        );
+        return;
+      }
+
+      const { stopRecording } = await import('../utils/voiceRecording');
+      const uri = await stopRecording();
+      setIsRecording(false);
+      setRecordingDuration(0);
+      recordButtonScale.stopAnimation();
+      recordButtonScale.setValue(1);
+      pulseAnim.stopAnimation();
+      pulseAnim.setValue(1);
+
+      if (uri) {
+        await handleSaveRecording(uri);
+      }
+    } catch (error) {
+      console.error('Error stopping recording:', error);
+      setIsRecording(false);
+      setRecordingDuration(0);
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+        recordingTimerRef.current = null;
+      }
+    }
+  };
+
+  const handleSaveRecording = async (uri: string) => {
+    try {
+      const duration = Math.floor(recordingDuration / 1000);
+      const text = `🎤 Voice journal (${duration}s): ${todayPrompt.emoji} ${todayPrompt.text}`;
+
+      // Save the journal entry
+      await addGratitudeCheckIn(text);
+
+      // Reload data to show the new entry
+      await loadTodayData();
+      setRecordingUri(null);
+
+      // Show success feedback
+      successHaptic();
+      Alert.alert('Saved!', 'Your voice journal has been saved successfully.');
+    } catch (error) {
+      console.error('Error saving recording:', error);
+      Alert.alert('Error', 'Failed to save your journal entry. Please try again.');
+    }
+  };
+
+  const handleTextSubmit = async () => {
+    if (!textEntry.trim()) return;
+
+    try {
+      // Save the journal entry
+      await addGratitudeCheckIn(textEntry.trim());
+
+      // Reload data to show the new entry
+      await loadTodayData();
+      setTextEntry('');
+      setShowTextInput(false);
+
+      // Show success feedback
+      successHaptic();
+    } catch (error) {
+      console.error('Error saving entry:', error);
+      Alert.alert('Error', 'Failed to save your journal entry. Please try again.');
+    }
+  };
+
+  const handleWrite = () => {
+    setShowTextInput(true);
+    // Focus input after a short delay to ensure it's rendered
+    setTimeout(() => {
+      textInputRef.current?.focus();
+    }, 100);
+  };
+
+  // Keyboard listeners for better UX
+  useEffect(() => {
+    const keyboardWillShow = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      (e) => {
+        setIsKeyboardVisible(true);
+        Animated.timing(keyboardHeight, {
+          toValue: e.endCoordinates.height,
+          duration: e.duration || 250,
+          useNativeDriver: false,
+        }).start();
+      }
+    );
+
+    const keyboardWillHide = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => {
+        setIsKeyboardVisible(false);
+        Animated.timing(keyboardHeight, {
+          toValue: 0,
+          duration: 250,
+          useNativeDriver: false,
+        }).start();
+      }
+    );
+
+    return () => {
+      keyboardWillShow.remove();
+      keyboardWillHide.remove();
+    };
+  }, []);
+
   const handlePromptSelect = (promptType: string) => {
-    // Navigate to write screen with prompt type
-    navigation.navigate('VoiceJournal');
+    setShowTextInput(true);
+  };
+
+  const handleChangePrompt = () => {
+    lightHaptic();
+    // Cycle through all prompts
+    const nextIndex = (currentPromptIndex + 1) % DAILY_PROMPTS.length;
+    setCurrentPromptIndex(nextIndex);
   };
 
   const handleEntryPress = (date: string) => {
-    // Navigate to view/edit entry
-    navigation.navigate('VoiceJournal');
+    // Could open a modal to view/edit entry
   };
 
   const handleMarkYesterdayComplete = async () => {
@@ -276,7 +494,13 @@ export default function GratitudeJournalScreen({ navigation }: any) {
   });
 
   return (
-    <Screen>
+    <Screen
+      rightAction={{
+        icon: 'home-outline',
+        onPress: () => navigation.navigate('Today'),
+        label: 'Back to Today',
+      }}
+    >
       {/* Subtle Background Pattern */}
       <View style={styles.backgroundPattern}>
         {[...Array(30)].map((_, i) => (
@@ -304,179 +528,301 @@ export default function GratitudeJournalScreen({ navigation }: any) {
         ref={scrollViewRef}
         style={styles.scrollView}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: tabBarInset }]}
         onScroll={handleScroll}
         scrollEventThrottle={16}
       >
-        {/* Search Bar - Only show if entries exist */}
-        {hasEntries && (
-          <View style={styles.searchContainer}>
-            <Ionicons name="search" size={20} color={Theme.colors.accentDark} />
-            <TextInput
-              style={styles.searchInput}
-              placeholder={`Search in ${entryCount} ${entryCount === 1 ? 'entry' : 'entries'}`}
-              placeholderTextColor={Theme.colors.textTertiary}
-              value={searchText}
-              onChangeText={setSearchText}
-              accessibilityLabel="Search journal entries"
-            />
-            {searchText.length > 0 && (
-              <TouchableOpacity
-                onPress={() => setSearchText('')}
-                accessibilityLabel="Clear search"
-                accessibilityRole="button"
-              >
-                <Ionicons name="close-circle" size={20} color={Theme.colors.textTertiary} />
-              </TouchableOpacity>
-            )}
-          </View>
-        )}
-
         {/* Loading State */}
         {isLoading && (
           <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={Theme.colors.accent} />
-            <Text style={styles.loadingText}>Loading...</Text>
+            <ActivityIndicator size="large" color={tokens.colors.accent} />
+            <Text style={[styles.loadingText, { color: tokens.colors.textSecondary }]}>Loading...</Text>
           </View>
         )}
 
-        {/* Streak Tracker */}
         {!isLoading && (
-          <UnifiedCard delay={0}>
-            <View style={styles.streakHeader}>
-              <Animated.View style={{ transform: [{ scale: streakScale }] }}>
-                <View style={styles.streakNumberContainer}>
-                  <Text style={styles.streakNumber}>{appState.currentStreak}</Text>
+          <>
+            {/* PRIMARY CTA - Modern, Focused Journal Interface */}
+            <GlassCard style={styles.primaryCTACard}>
+              {/* Header with prompt */}
+              <View style={styles.promptHeaderRow}>
+                <View style={styles.promptEmojiContainer}>
+                  <Text style={styles.promptEmoji}>{todayPrompt.emoji}</Text>
                 </View>
-              </Animated.View>
-              <View style={styles.streakInfo}>
-                <Text style={styles.streakLabel}>DAY STREAK</Text>
-                <Text style={styles.streakSubtext}>Keep it going! 🔥</Text>
+                <View style={styles.promptTextContainer}>
+                  <Text style={[styles.primaryCTAPrompt, { color: tokens.colors.textPrimary }]}>
+                    {todayPrompt.text}
+                  </Text>
+                  {isTodayComplete && (
+                    <View style={styles.completeCheckBadge}>
+                      <Ionicons name="checkmark-circle" size={16} color={tokens.colors.success} />
+                      <Text style={[styles.completeCheckText, { color: tokens.colors.success }]}>
+                        Done for today
+                      </Text>
+                    </View>
+                  )}
+                </View>
+                <TouchableOpacity
+                  onPress={handleChangePrompt}
+                  style={styles.changePromptButton}
+                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                  accessibilityLabel="Change prompt"
+                  accessibilityRole="button"
+                >
+                  <Ionicons name="sync" size={20} color={tokens.colors.accent} />
+                </TouchableOpacity>
               </View>
-            </View>
 
-            <View style={styles.daysContainer}>
-              {getDaysOfWeek.map((day, index) => (
-                <View key={index} style={styles.dayItem}>
-                  <View
-                    style={[
-                      styles.dayCircle,
-                      day.isToday && styles.dayCircleToday,
-                      day.completed && styles.dayCircleCompleted,
-                    ]}
+              {/* Voice Recording Interface - Simplified, Bigger Hit Target */}
+              {!showTextInput && (
+                <View style={styles.recordingInterface}>
+                  {/* Recording Indicator */}
+                  {isRecording && (
+                    <RNAnimated.View style={[styles.recIndicator, { opacity: pulseAnim }]}>
+                      <View style={styles.recDot} />
+                      <Text style={styles.recText}>REC</Text>
+                    </RNAnimated.View>
+                  )}
+                  {/* Debug indicator - Always visible for testing */}
+                  {__DEV__ && (
+                    <Text style={{ fontSize: 12, color: '#FF3B30', marginBottom: 8 }}>
+                      Recording: {isRecording ? 'YES' : 'NO'}
+                    </Text>
+                  )}
+
+                  <TouchableOpacity
+                    onPress={isRecording ? handleStopRecording : handleStartRecording}
+                    onPressIn={() => {
+                      RNAnimated.spring(recordButtonScale, {
+                        toValue: 0.95,
+                        useNativeDriver: true,
+                      }).start();
+                    }}
+                    onPressOut={() => {
+                      if (!isRecording) {
+                        RNAnimated.spring(recordButtonScale, {
+                          toValue: 1,
+                          useNativeDriver: true,
+                        }).start();
+                      }
+                    }}
+                    style={styles.recordButton}
+                    activeOpacity={0.9}
                   >
-                    {day.completed && (
-                      <Ionicons name="checkmark" size={14} color={Theme.colors.textInverse} />
-                    )}
+                    <RNAnimated.View
+                      style={[
+                        styles.recordButtonInner,
+                        {
+                          backgroundColor: isRecording ? tokens.colors.error : tokens.colors.accent,
+                          transform: [{ scale: recordButtonScale }],
+                        },
+                      ]}
+                    >
+                      <Ionicons
+                        name={isRecording ? 'stop' : 'mic'}
+                        size={36}
+                        color="#FFFFFF"
+                      />
+                    </RNAnimated.View>
+                  </TouchableOpacity>
+                  <Text style={[styles.recordButtonLabel, { color: tokens.colors.textPrimary }]}>
+                    {isRecording
+                      ? `Recording: ${Math.floor(recordingDuration / 1000)}s`
+                      : 'Tap to record'}
+                  </Text>
+                  <Text style={[styles.recordButtonHint, { color: tokens.colors.textSecondary }]}>
+                    {isRecording
+                      ? 'Minimum 30 seconds'
+                      : '30s minimum • Speak your thoughts freely'}
+                  </Text>
+
+                  {/* Divider */}
+                  <View style={styles.modeDivider}>
+                    <View style={[styles.modeDividerLine, { backgroundColor: tokens.colors.border }]} />
+                    <Text style={[styles.modeDividerText, { color: tokens.colors.textSecondary }]}>or</Text>
+                    <View style={[styles.modeDividerLine, { backgroundColor: tokens.colors.border }]} />
                   </View>
-                  <Text
-                    style={[
-                      styles.dayLabel,
-                      day.isToday && styles.dayLabelToday,
-                      day.completed && styles.dayLabelCompleted,
-                    ]}
+
+                  {/* Type Instead Button - More Prominent */}
+                  <TouchableOpacity
+                    onPress={() => setShowTextInput(true)}
+                    style={[styles.textModeButton, { borderColor: tokens.colors.border }]}
+                    activeOpacity={0.7}
                   >
-                    {day.label}
+                    <Ionicons name="create-outline" size={20} color={tokens.colors.accent} />
+                    <Text style={[styles.textModeButtonText, { color: tokens.colors.textPrimary }]}>
+                      Type instead
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              {/* Text Input Interface - Premium, Elevated Design */}
+              {showTextInput && (
+                <KeyboardAvoidingView
+                  behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                  keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+                >
+                  <View style={styles.textInputInterface}>
+                    {/* Enhanced Text Input Container */}
+                    <View style={[
+                      styles.textInputContainer,
+                      {
+                        backgroundColor: tokens.colors.surface,
+                        borderColor: isKeyboardVisible 
+                          ? tokens.colors.accent 
+                          : tokens.colors.border,
+                      },
+                    ]}>
+                      <TextInput
+                        ref={textInputRef}
+                        style={[
+                          styles.textInput,
+                          {
+                            color: tokens.colors.textPrimary,
+                          },
+                        ]}
+                        placeholder="Write your thoughts here..."
+                        placeholderTextColor={tokens.colors.textTertiary}
+                        value={textEntry}
+                        onChangeText={setTextEntry}
+                        multiline
+                        autoFocus
+                        textAlignVertical="top"
+                        onFocus={() => setIsKeyboardVisible(true)}
+                        onBlur={() => setIsKeyboardVisible(false)}
+                        returnKeyType="default"
+                        blurOnSubmit={false}
+                      />
+                      {/* Character count badge */}
+                      {textEntry.length > 0 && (
+                        <View style={[
+                          styles.characterCountBadge,
+                          { backgroundColor: `${tokens.colors.accent}15` },
+                        ]}>
+                          <Text style={[styles.characterCountText, { color: tokens.colors.accent }]}>
+                            {textEntry.length}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+
+                    {/* Action Buttons - Premium Layout */}
+                    <View style={styles.textInputActions}>
+                      <TouchableOpacity
+                        onPress={() => {
+                          setShowTextInput(false);
+                          setTextEntry('');
+                          Keyboard.dismiss();
+                        }}
+                        style={[
+                          styles.textInputCancelButton,
+                          { borderColor: tokens.colors.border },
+                        ]}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={[styles.textInputCancelText, { color: tokens.colors.textSecondary }]}>
+                          Cancel
+                        </Text>
+                      </TouchableOpacity>
+                      <PrimaryButton
+                        title={isTodayComplete ? "Add Another" : "Save Entry"}
+                        onPress={() => {
+                          handleTextSubmit();
+                          Keyboard.dismiss();
+                        }}
+                        style={styles.textInputSaveButton}
+                        disabled={!textEntry.trim()}
+                      />
+                    </View>
+                  </View>
+                </KeyboardAvoidingView>
+              )}
+            </GlassCard>
+
+            {/* Streak / Calendar (SECONDARY - Reduced height ~25%) */}
+            <SectionCard style={styles.streakCard}>
+              <View style={styles.streakHeaderCompact}>
+                <Animated.View style={{ transform: [{ scale: streakScale }] }}>
+                  <View style={styles.streakNumberContainerCompact}>
+                    <Text style={[styles.streakNumberCompact, { color: tokens.colors.accent }]}>
+                      {appState.currentStreak}
+                    </Text>
+                  </View>
+                </Animated.View>
+                <View style={styles.streakInfoCompact}>
+                  <Text style={[styles.streakLabelCompact, { color: tokens.colors.textSecondary }]}>
+                    Day streak
                   </Text>
                 </View>
-              ))}
-            </View>
-          </UnifiedCard>
-        )}
-
-        {/* Daily Prompt Card - Tappable with clear CTA */}
-        <UnifiedCard
-          onPress={handleWrite}
-          delay={100}
-          testID="prompt-card"
-        >
-          <View style={styles.promptHeader}>
-            <View style={styles.promptBadge}>
-              <Text style={styles.promptBadgeText}>TODAY</Text>
-            </View>
-            {hasTodayEntry ? (
-              <View style={styles.completedBadge}>
-                <Ionicons name="checkmark-circle" size={18} color={Theme.colors.success} />
               </View>
-            ) : (
-              <View style={styles.incompleteBadge}>
-                <Ionicons name="ellipse-outline" size={18} color={Theme.colors.gold} />
+              <View style={styles.daysContainerCompact}>
+                {getDaysOfWeek.map((day, index) => (
+                  <View key={index} style={styles.dayItemCompact}>
+                    <View
+                      style={[
+                        styles.dayCircleCompact,
+                        day.isToday && { backgroundColor: `${tokens.colors.primary}20` },
+                        day.completed && { backgroundColor: tokens.colors.primary },
+                      ]}
+                    >
+                      {day.completed && (
+                        <Ionicons name="checkmark" size={10} color="#FFFFFF" />
+                      )}
+                    </View>
+                    <Text
+                      style={[
+                        styles.dayLabelCompact,
+                        { color: tokens.colors.textSecondary },
+                        day.isToday && { color: tokens.colors.primary, fontWeight: '600' },
+                      ]}
+                    >
+                      {day.label}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            </SectionCard>
+
+            {/* Search Bar - Only show if entries exist */}
+            {hasEntries && (
+              <View style={styles.searchContainer}>
+                <Ionicons name="search" size={18} color={tokens.colors.textSecondary} />
+                <TextInput
+                  style={[styles.searchInput, { color: tokens.colors.textPrimary }]}
+                  placeholder={`Search in ${entryCount} ${entryCount === 1 ? 'entry' : 'entries'}`}
+                  placeholderTextColor={tokens.colors.textSecondary}
+                  value={searchText}
+                  onChangeText={setSearchText}
+                  accessibilityLabel="Search journal entries"
+                />
+                {searchText.length > 0 && (
+                  <TouchableOpacity
+                    onPress={() => setSearchText('')}
+                    accessibilityLabel="Clear search"
+                    accessibilityRole="button"
+                  >
+                    <Ionicons name="close-circle" size={18} color={tokens.colors.textSecondary} />
+                  </TouchableOpacity>
+                )}
               </View>
             )}
-          </View>
 
-          <Text style={styles.promptTitle}>
-            {todayPrompt.emoji} {todayPrompt.text}
-          </Text>
-
-          {hasTodayEntry ? (
-            <View style={styles.entryPreview}>
-              <Text style={styles.entryPreviewLabel}>Your entry:</Text>
-              <Text style={styles.promptEntry} numberOfLines={3}>
-                {todayProgress.gratitudeEntry.split('|||')[0]}
-              </Text>
-              <TouchableOpacity
-                style={styles.viewEntryButton}
-                onPress={() => navigation.navigate('VoiceJournal')}
-                accessibilityLabel="View full entry"
-                accessibilityRole="button"
-              >
-                <Text style={styles.viewEntryText}>View full entry →</Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <View style={styles.promptCTA}>
-              <Text style={styles.promptCTAText}>Start entry</Text>
-              <Ionicons name="chevron-forward" size={18} color={Theme.colors.accent} />
-            </View>
-          )}
-        </UnifiedCard>
-
-        {/* Challenge Card - Secondary View button */}
-        <UnifiedCard delay={200} style={styles.challengeCard}>
-          <LinearGradient
-            colors={['#8B7DD8', '#6B5DD8', '#5A4BC8']}
-            style={styles.challengeGradient}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-          >
-            <View style={styles.challengeContent}>
-              <View style={styles.challengeTextContainer}>
-                <View style={styles.challengeTitleRow}>
-                  <Text style={styles.challengeTitle}>LIVE FOR YOU NOW!</Text>
-                  <Text style={styles.challengeEmoji}>👑</Text>
-                </View>
-                <Text style={styles.challengeSubtitle}>December Reflection Challenge</Text>
-              </View>
-              <TouchableOpacity
-                style={styles.challengeViewButton}
-                activeOpacity={0.7}
-                accessibilityLabel="View challenge"
-                accessibilityRole="button"
-              >
-                <Text style={styles.challengeViewButtonText}>View</Text>
-                <Ionicons name="chevron-forward" size={16} color={Theme.colors.textInverse} />
-              </TouchableOpacity>
-            </View>
-          </LinearGradient>
-        </UnifiedCard>
-
-        {/* Entries List or Empty State */}
-        {hasEntries ? (
-          <JournalEntriesList
-            entries={recentEntries}
-            onEntryPress={handleEntryPress}
-            searchText={searchText}
-          />
-        ) : (
-          <JournalEmptyState
-            onStartWriting={handleWrite}
-            onPromptSelect={handlePromptSelect}
-          />
+            {/* Entries List or Empty State */}
+            {hasEntries ? (
+              <JournalEntriesList
+                entries={recentEntries}
+                onEntryPress={handleEntryPress}
+                searchText={searchText}
+              />
+            ) : (
+              <JournalEmptyState
+                onStartWriting={handleWrite}
+                onPromptSelect={handlePromptSelect}
+              />
+            )}
+          </>
         )}
-
-        {/* Extra padding to prevent content from being hidden behind FAB */}
-        <View style={{ height: 120 }} />
       </Animated.ScrollView>
 
       {/* Floating Action Button - Primary CTA */}
@@ -510,68 +856,68 @@ const styles = StyleSheet.create({
     position: 'absolute',
     width: 3,
     height: 3,
-    backgroundColor: Theme.colors.accent,
+    backgroundColor: tokens.colors.accent,
     borderRadius: 1.5,
   },
   scrollView: {
     flex: 1,
   },
   scrollContent: {
-    paddingBottom: Theme.spacing.lg,
+    paddingBottom: tokens.spacing.lg,
   },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Theme.colors.surface,
-    marginHorizontal: Theme.spacing.lg,
-    paddingHorizontal: Theme.spacing.lg,
-    paddingVertical: Theme.spacing.md,
-    borderRadius: Theme.radius.md,
-    marginBottom: Theme.spacing.lg,
+    backgroundColor: tokens.colors.surface,
+    marginHorizontal: tokens.spacing.lg,
+    paddingHorizontal: tokens.spacing.lg,
+    paddingVertical: tokens.spacing.md,
+    borderRadius: tokens.radii.md,
+    marginBottom: tokens.spacing.md,
     borderWidth: 1,
-    borderColor: Theme.colors.border,
-    ...Theme.shadow.subtle,
+    borderColor: tokens.colors.borderSubtle,
+    ...tokens.shadows.subtle,
   },
   searchInput: {
     flex: 1,
-    marginLeft: Theme.spacing.md,
-    color: Theme.colors.textPrimary,
-    ...Theme.typography.body,
+    marginLeft: tokens.spacing.md,
+    color: tokens.colors.textPrimary,
+    ...tokens.typography.body,
   },
   streakHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: Theme.spacing.xl,
-    gap: Theme.spacing.lg,
+    marginBottom: tokens.spacing.xl,
+    gap: tokens.spacing.lg,
   },
   streakNumberContainer: {
     width: 72,
     height: 72,
     borderRadius: 36,
-    backgroundColor: Theme.colors.accentSoft,
+    backgroundColor: tokens.colors.accentSoft,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 3,
-    borderColor: Theme.colors.accent,
+    borderColor: tokens.colors.accent,
   },
   streakNumber: {
     fontSize: 36,
     fontWeight: 'bold',
-    color: Theme.colors.accent,
+    color: tokens.colors.accent,
   },
   streakInfo: {
     flex: 1,
   },
   streakLabel: {
-    ...Theme.typography.small,
-    color: Theme.colors.textSecondary,
-    marginBottom: Theme.spacing.xs,
+    ...tokens.typography.small,
+    color: tokens.colors.textSecondary,
+    marginBottom: tokens.spacing.xs,
     textTransform: 'uppercase',
     letterSpacing: 1.5,
   },
   streakSubtext: {
-    ...Theme.typography.caption,
-    color: Theme.colors.textTertiary,
+    ...tokens.typography.caption,
+    color: tokens.colors.textTertiary,
   },
   daysContainer: {
     flexDirection: 'row',
@@ -579,66 +925,66 @@ const styles = StyleSheet.create({
   },
   dayItem: {
     alignItems: 'center',
-    gap: Theme.spacing.sm,
+    gap: tokens.spacing.sm,
   },
   dayCircle: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: Theme.colors.accentSoft,
+    backgroundColor: tokens.colors.accentSoft,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,
     borderColor: 'transparent',
   },
   dayCircleToday: {
-    backgroundColor: Theme.colors.accentSoft,
-    borderColor: Theme.colors.accent,
+    backgroundColor: tokens.colors.accentSoft,
+    borderColor: tokens.colors.accent,
   },
   dayCircleCompleted: {
-    backgroundColor: Theme.colors.accent,
-    borderColor: Theme.colors.accent,
+    backgroundColor: tokens.colors.accent,
+    borderColor: tokens.colors.accent,
   },
   dayLabel: {
-    ...Theme.typography.small,
-    color: Theme.colors.textTertiary,
-    marginTop: Theme.spacing.xs,
+    ...tokens.typography.small,
+    color: tokens.colors.textTertiary,
+    marginTop: tokens.spacing.xs,
   },
   dayLabelToday: {
-    color: Theme.colors.accent,
+    color: tokens.colors.accent,
     fontWeight: '700',
   },
   dayLabelCompleted: {
-    color: Theme.colors.textSecondary,
+    color: tokens.colors.textSecondary,
   },
   promptHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: Theme.spacing.lg,
+    marginBottom: tokens.spacing.lg,
   },
   promptBadge: {
-    backgroundColor: Theme.colors.accentSoft,
-    paddingHorizontal: Theme.spacing.md,
-    paddingVertical: Theme.spacing.xs,
-    borderRadius: Theme.radius.sm,
+    backgroundColor: tokens.colors.accentSoft,
+    paddingHorizontal: tokens.spacing.md,
+    paddingVertical: tokens.spacing.xs,
+    borderRadius: tokens.radii.sm,
   },
   promptBadgeText: {
-    ...Theme.typography.small,
-    color: Theme.colors.accent,
+    ...tokens.typography.small,
+    color: tokens.colors.accent,
     textTransform: 'uppercase',
     letterSpacing: 1.2,
   },
   progressBadge: {
-    backgroundColor: Theme.colors.surfaceSecondary,
-    paddingHorizontal: Theme.spacing.sm,
-    paddingVertical: Theme.spacing.xs / 2,
-    borderRadius: Theme.radius.sm,
-    marginLeft: Theme.spacing.sm,
+    backgroundColor: tokens.colors.surfaceSecondary,
+    paddingHorizontal: tokens.spacing.sm,
+    paddingVertical: tokens.spacing.xs / 2,
+    borderRadius: tokens.radii.sm,
+    marginLeft: tokens.spacing.sm,
   },
   progressBadgeText: {
-    ...Theme.typography.small,
-    color: Theme.colors.textSecondary,
+    ...tokens.typography.small,
+    color: tokens.colors.textSecondary,
     fontWeight: '700',
   },
   completedBadge: {
@@ -656,82 +1002,83 @@ const styles = StyleSheet.create({
   completeMessage: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Theme.colors.success + '15',
-    padding: Theme.spacing.md,
-    borderRadius: Theme.radius.md,
-    marginTop: Theme.spacing.md,
-    gap: Theme.spacing.sm,
+    backgroundColor: tokens.colors.success + '15',
+    padding: tokens.spacing.md,
+    borderRadius: tokens.radii.md,
+    marginTop: tokens.spacing.md,
+    gap: tokens.spacing.sm,
   },
   completeMessageText: {
-    ...Theme.typography.bodyBold,
-    color: Theme.colors.success,
+    ...tokens.typography.bodyBold,
+    color: tokens.colors.success,
     flex: 1,
   },
   progressMessage: {
-    backgroundColor: Theme.colors.accentSoft,
-    padding: Theme.spacing.md,
-    borderRadius: Theme.radius.md,
-    marginTop: Theme.spacing.md,
+    backgroundColor: tokens.colors.accentSoft,
+    padding: tokens.spacing.md,
+    borderRadius: tokens.radii.md,
+    marginTop: tokens.spacing.md,
   },
   progressMessageText: {
-    ...Theme.typography.body,
-    color: Theme.colors.textSecondary,
+    ...tokens.typography.body,
+    color: tokens.colors.textSecondary,
     textAlign: 'center',
   },
   promptTitle: {
-    ...Theme.typography.subtitle,
-    color: Theme.colors.textPrimary,
+    ...tokens.typography.h3,
+    color: tokens.colors.textPrimary,
     lineHeight: 28,
-    marginBottom: Theme.spacing.lg,
+    marginBottom: tokens.spacing.lg,
   },
   entryPreview: {
-    marginTop: Theme.spacing.sm,
+    marginTop: tokens.spacing.sm,
   },
   entryPreviewLabel: {
-    ...Theme.typography.small,
-    color: Theme.colors.textSecondary,
-    marginBottom: Theme.spacing.sm,
+    ...tokens.typography.small,
+    color: tokens.colors.textSecondary,
+    marginBottom: tokens.spacing.sm,
     textTransform: 'uppercase',
   },
   promptEntry: {
-    ...Theme.typography.body,
-    color: Theme.colors.textTertiary,
+    ...tokens.typography.body,
+    color: tokens.colors.textTertiary,
     lineHeight: 24,
-    marginBottom: Theme.spacing.md,
+    marginBottom: tokens.spacing.md,
   },
   viewEntryButton: {
     alignSelf: 'flex-start',
-    paddingVertical: Theme.spacing.sm,
+    paddingVertical: tokens.spacing.sm,
     minHeight: TOUCH_TARGET_MIN,
     justifyContent: 'center',
   },
   viewEntryText: {
-    ...Theme.typography.bodyBold,
-    color: Theme.colors.accent,
+    ...tokens.typography.bodyBold,
+    color: tokens.colors.accent,
   },
   promptCTA: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: Theme.spacing.sm,
-    paddingTop: Theme.spacing.md,
+    marginTop: tokens.spacing.sm,
+    paddingTop: tokens.spacing.md,
     borderTopWidth: 1,
-    borderTopColor: Theme.colors.border,
+    borderTopColor: tokens.colors.border,
   },
   promptCTAText: {
-    ...Theme.typography.bodyBold,
-    color: Theme.colors.accent,
+    ...tokens.typography.bodyBold,
+    color: tokens.colors.accent,
   },
+  // Legacy styles (kept for compatibility)
   challengeCard: {
     padding: 0,
     overflow: 'hidden',
     borderWidth: 0,
     backgroundColor: 'transparent',
-    ...Theme.shadow.large,
+    ...tokens.shadows.card,
   },
   challengeGradient: {
-    borderRadius: Theme.radius.lg,
-    padding: Theme.spacing.xl,
+    borderRadius: tokens.radii.lg,
+    padding: tokens.spacing.xl,
   },
   challengeContent: {
     flexDirection: 'row',
@@ -740,17 +1087,17 @@ const styles = StyleSheet.create({
   },
   challengeTextContainer: {
     flex: 1,
-    marginRight: Theme.spacing.lg,
+    marginRight: tokens.spacing.lg,
   },
   challengeTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Theme.spacing.sm,
-    marginBottom: Theme.spacing.xs,
+    gap: tokens.spacing.sm,
+    marginBottom: tokens.spacing.xs,
   },
   challengeTitle: {
-    ...Theme.typography.bodyBold,
-    color: Theme.colors.textInverse,
+    ...tokens.typography.bodyBold,
+    color: tokens.colors.textInverse,
     letterSpacing: 0.5,
     fontWeight: '800',
   },
@@ -758,35 +1105,280 @@ const styles = StyleSheet.create({
     fontSize: 18,
   },
   challengeSubtitle: {
-    ...Theme.typography.bodyBold,
-    color: Theme.colors.textInverse,
+    ...tokens.typography.bodyBold,
+    color: tokens.colors.textInverse,
     opacity: 0.95,
   },
   challengeViewButton: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    paddingHorizontal: Theme.spacing.lg,
-    paddingVertical: Theme.spacing.md,
-    borderRadius: Theme.radius.md,
-    gap: Theme.spacing.xs,
+    paddingHorizontal: tokens.spacing.lg,
+    paddingVertical: tokens.spacing.md,
+    borderRadius: tokens.radii.md,
+    gap: tokens.spacing.xs,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.3)',
     minHeight: TOUCH_TARGET_MIN,
   },
   challengeViewButtonText: {
-    ...Theme.typography.bodyBold,
-    color: Theme.colors.textInverse,
+    ...tokens.typography.bodyBold,
+    color: tokens.colors.textInverse,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: Theme.spacing.xl,
+    padding: tokens.spacing.xl,
   },
   loadingText: {
-    ...Theme.typography.body,
-    color: Theme.colors.textSecondary,
-    marginTop: Theme.spacing.md,
+    ...tokens.typography.body,
+    color: tokens.colors.textSecondary,
+    marginTop: tokens.spacing.md,
+  },
+  // New styles for refactored flow - Modern, Clean UI
+  primaryCTACard: {
+    marginBottom: tokens.spacing.md,
+    padding: tokens.spacing.xl,
+  },
+  promptHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: tokens.spacing.md,
+    marginBottom: tokens.spacing.xl,
+  },
+  promptEmojiContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: `${tokens.colors.accent}15`,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  promptEmoji: {
+    fontSize: 24,
+  },
+  promptTextContainer: {
+    flex: 1,
+    gap: tokens.spacing.xs,
+  },
+  primaryCTAPrompt: {
+    fontSize: 17,
+    fontWeight: '600',
+    lineHeight: 24,
+    letterSpacing: -0.2,
+  },
+  completeCheckBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    alignSelf: 'flex-start',
+  },
+  completeCheckText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  changePromptButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: `${tokens.colors.accent}10`,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  // Recording Interface Styles - Improved
+  recordingInterface: {
+    alignItems: 'center',
+    gap: tokens.spacing.sm,
+  },
+  recIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: tokens.spacing.lg,
+    paddingVertical: tokens.spacing.sm,
+  },
+  recDot: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: '#FF3B30', // iOS red - always visible
+  },
+  recText: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: '#FF3B30', // iOS red - always visible
+    letterSpacing: 4,
+  },
+  recordButton: {
+    marginVertical: tokens.spacing.md,
+  },
+  recordButtonInner: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...tokens.shadows.card,
+  },
+  recordButtonLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  recordButtonHint: {
+    fontSize: 13,
+    fontWeight: '400',
+    textAlign: 'center',
+  },
+  modeDivider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: tokens.spacing.md,
+    marginVertical: tokens.spacing.lg,
+    width: '100%',
+  },
+  modeDividerLine: {
+    flex: 1,
+    height: 1,
+  },
+  modeDividerText: {
+    fontSize: 13,
+    fontWeight: '500',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  textModeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: tokens.spacing.sm,
+    paddingVertical: tokens.spacing.md,
+    paddingHorizontal: tokens.spacing.xl,
+    borderRadius: tokens.radii.md,
+    borderWidth: 1.5,
+    backgroundColor: 'transparent',
+    width: '100%',
+    justifyContent: 'center',
+  },
+  textModeButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  // Text Input Interface Styles - Premium, Elevated
+  textInputInterface: {
+    gap: tokens.spacing.md,
+    marginTop: tokens.spacing.sm,
+  },
+  textInputContainer: {
+    borderRadius: tokens.radii.lg,
+    borderWidth: 2,
+    overflow: 'hidden',
+    ...tokens.shadows.card,
+    position: 'relative',
+  },
+  textInput: {
+    padding: tokens.spacing.xl,
+    fontSize: 17,
+    lineHeight: 26,
+    minHeight: 180,
+    maxHeight: 300,
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+    letterSpacing: 0.2,
+  },
+  characterCountBadge: {
+    position: 'absolute',
+    bottom: tokens.spacing.md,
+    right: tokens.spacing.md,
+    paddingHorizontal: tokens.spacing.sm,
+    paddingVertical: 4,
+    borderRadius: tokens.radii.sm,
+    ...tokens.shadows.subtle,
+  },
+  characterCountText: {
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  textInputActions: {
+    flexDirection: 'row',
+    gap: tokens.spacing.md,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    marginTop: tokens.spacing.xs,
+    paddingTop: tokens.spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: tokens.colors.borderSubtle,
+  },
+  textInputCancelButton: {
+    paddingVertical: tokens.spacing.md,
+    paddingHorizontal: tokens.spacing.xl,
+    borderRadius: tokens.radii.md,
+    borderWidth: 1.5,
+    backgroundColor: 'transparent',
+    minHeight: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  textInputCancelText: {
+    fontSize: 16,
+    fontWeight: '600',
+    letterSpacing: 0.3,
+  },
+  textInputSaveButton: {
+    flex: 0,
+    minWidth: 140,
+  },
+  streakCard: {
+    marginBottom: tokens.spacing.md,
+  },
+  streakHeaderCompact: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: tokens.spacing.md,
+    gap: tokens.spacing.md,
+  },
+  streakNumberContainerCompact: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    backgroundColor: `${tokens.colors.primary}15`,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  streakNumberCompact: {
+    ...tokens.typography.h2,
+    fontWeight: '700',
+  },
+  streakInfoCompact: {
+    flex: 1,
+  },
+  streakLabelCompact: {
+    ...tokens.typography.caption,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  daysContainerCompact: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  dayItemCompact: {
+    alignItems: 'center',
+    gap: tokens.spacing.xs,
+  },
+  dayCircleCompact: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: tokens.colors.bg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: tokens.colors.borderSubtle,
+  },
+  dayLabelCompact: {
+    ...tokens.typography.small,
+    fontSize: 10,
   },
 });
