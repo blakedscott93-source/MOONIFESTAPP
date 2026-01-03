@@ -6,6 +6,10 @@
 
 import { getColors, ThemeColors } from './themeColors';
 
+const headingFontBold = 'Sora_700Bold';
+const headingFont = 'Sora_600SemiBold';
+const headingFontRegular = 'Sora_400Regular';
+
 export const createTheme = (isDark: boolean = false) => ({
   // Spacing Scale (Premium 4pt grid)
   spacing: {
@@ -64,24 +68,28 @@ export const createTheme = (isDark: boolean = false) => ({
     title: {
       fontSize: 28,
       fontWeight: '700' as const,
+      fontFamily: headingFontBold,
       letterSpacing: -0.3,
       lineHeight: 36,
     },
     section: {
       fontSize: 18,
       fontWeight: '700' as const,
+      fontFamily: headingFont,
       letterSpacing: -0.2,
       lineHeight: 24,
     },
     h2: {
       fontSize: 22,
       fontWeight: '700' as const,
+      fontFamily: headingFont,
       letterSpacing: -0.3,
       lineHeight: 30,
     },
     h3: {
       fontSize: 18,
       fontWeight: '600' as const,
+      fontFamily: headingFont,
       letterSpacing: 0,
       lineHeight: 26,
     },

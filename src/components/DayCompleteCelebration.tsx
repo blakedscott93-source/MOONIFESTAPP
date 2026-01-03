@@ -177,6 +177,8 @@ export const DayCompleteCelebration: React.FC<DayCompleteCelebrationProps> = ({
   glowPointsEarned = 50,
 }) => {
   const [showConfetti, setShowConfetti] = useState(false);
+  const timeoutsRef = useRef<NodeJS.Timeout[]>([]);
+  const wiggleRef = useRef<Animated.CompositeAnimation | null>(null);
   
   // Animation values
   const containerScale = useRef(new Animated.Value(0)).current;
@@ -194,13 +196,27 @@ export const DayCompleteCelebration: React.FC<DayCompleteCelebrationProps> = ({
     if (visible) {
       startCelebration();
     } else {
+      clearCelebrationTimers();
       resetAnimations();
     }
+    return () => {
+      clearCelebrationTimers();
+    };
   }, [visible]);
+
+  const clearCelebrationTimers = () => {
+    timeoutsRef.current.forEach(timeoutId => clearTimeout(timeoutId));
+    timeoutsRef.current = [];
+    if (wiggleRef.current) {
+      wiggleRef.current.stop();
+      wiggleRef.current = null;
+    }
+  };
 
   const startCelebration = async () => {
     // Haptic feedback
     celebrationHaptic();
+    clearCelebrationTimers();
     
     // Reset all values
     containerScale.setValue(0);
@@ -229,7 +245,7 @@ export const DayCompleteCelebration: React.FC<DayCompleteCelebrationProps> = ({
     ]).start();
 
     // Trophy animation (delayed slightly)
-    setTimeout(() => {
+    const trophyTimeout = setTimeout(() => {
       Animated.parallel([
         Animated.spring(trophyScale, {
           toValue: 1,
@@ -253,9 +269,10 @@ export const DayCompleteCelebration: React.FC<DayCompleteCelebrationProps> = ({
       // Start continuous trophy wiggle
       startTrophyWiggle();
     }, 200);
+    timeoutsRef.current.push(trophyTimeout);
 
     // Text animation
-    setTimeout(() => {
+    const textTimeout = setTimeout(() => {
       Animated.parallel([
         Animated.timing(textOpacity, {
           toValue: 1,
@@ -270,9 +287,10 @@ export const DayCompleteCelebration: React.FC<DayCompleteCelebrationProps> = ({
         }),
       ]).start();
     }, 400);
+    timeoutsRef.current.push(textTimeout);
 
     // Stats animation
-    setTimeout(() => {
+    const statsTimeout = setTimeout(() => {
       Animated.parallel([
         Animated.timing(statsOpacity, {
           toValue: 1,
@@ -287,9 +305,10 @@ export const DayCompleteCelebration: React.FC<DayCompleteCelebrationProps> = ({
         }),
       ]).start();
     }, 600);
+    timeoutsRef.current.push(statsTimeout);
 
     // Button animation
-    setTimeout(() => {
+    const buttonTimeout = setTimeout(() => {
       Animated.parallel([
         Animated.timing(buttonOpacity, {
           toValue: 1,
@@ -304,9 +323,13 @@ export const DayCompleteCelebration: React.FC<DayCompleteCelebrationProps> = ({
         }),
       ]).start();
     }, 800);
+    timeoutsRef.current.push(buttonTimeout);
   };
 
   const startTrophyWiggle = () => {
+    if (wiggleRef.current) {
+      wiggleRef.current.stop();
+    }
     const wiggle = Animated.loop(
       Animated.sequence([
         Animated.timing(trophyRotate, {
@@ -331,6 +354,7 @@ export const DayCompleteCelebration: React.FC<DayCompleteCelebrationProps> = ({
       ])
     );
     wiggle.start();
+    wiggleRef.current = wiggle;
   };
 
   const resetAnimations = () => {
@@ -669,7 +693,6 @@ const styles = StyleSheet.create({
 });
 
 export default DayCompleteCelebration;
-
 
 
 

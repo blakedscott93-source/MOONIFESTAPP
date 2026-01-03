@@ -50,7 +50,6 @@ export async function queueOfflineOperation(operation: Omit<OfflineOperation, 'i
     };
     queue.push(newOperation);
     await AsyncStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(queue));
-    console.log('📥 Operation queued for offline sync:', operation.type);
   } catch (error) {
     console.error('Error queuing offline operation:', error);
   }
@@ -122,13 +121,11 @@ export async function processOfflineQueue(
     return { processed, failed };
   }
 
-  console.log(`📤 Processing ${queue.length} offline operations...`);
 
   for (const operation of queue) {
     try {
       // Skip if too many retries (max 3)
       if (operation.retries >= 3) {
-        console.log(`❌ Max retries reached for operation: ${operation.type}`);
         await removeFromQueue(operation.id);
         failed++;
         continue;
@@ -140,11 +137,9 @@ export async function processOfflineQueue(
       if (success) {
         await removeFromQueue(operation.id);
         processed++;
-        console.log(`✅ Processed offline operation: ${operation.type}`);
       } else {
         await incrementRetries(operation.id);
         failed++;
-        console.log(`❌ Failed to process operation: ${operation.type}`);
       }
     } catch (error) {
       console.error(`Error processing operation ${operation.type}:`, error);

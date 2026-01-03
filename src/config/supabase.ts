@@ -45,9 +45,9 @@ export const isSupabaseConfigured = !!(
 export function createSupabaseClient(): any {
   if (!isSupabaseConfigured || !createClient) {
     if (!createClient) {
-      console.warn('⚠️ @supabase/supabase-js package not installed. Install it with: npm install @supabase/supabase-js');
+      console.warn('@supabase/supabase-js package not installed. Install it with: npm install @supabase/supabase-js');
     } else {
-      console.warn('⚠️ Supabase not configured. Add EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY to your .env file');
+      console.warn('Supabase not configured. Add EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY to your .env file');
     }
     return null;
   }
@@ -62,10 +62,9 @@ export function createSupabaseClient(): any {
       },
     });
 
-    console.log('✅ Supabase client created successfully');
     return client;
   } catch (error) {
-    console.error('❌ Failed to create Supabase client:', error);
+    console.error('Failed to create Supabase client:', error);
     return null;
   }
 }

@@ -3,14 +3,15 @@ import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
+  FlatList,
 } from 'react-native';
 import { Screen } from '../components/Screen';
 import { AppHeader } from '../components/AppHeader';
 import { UnifiedCard } from '../components/UnifiedCard';
 import { Theme } from '../utils/theme';
+import { PrivacyPolicyScreenProps } from '../types/navigation';
 
-export default function PrivacyPolicyScreen({ navigation }: any) {
+export default function PrivacyPolicyScreen({ navigation }: PrivacyPolicyScreenProps) {
   return (
     <Screen>
       <AppHeader
@@ -21,12 +22,14 @@ export default function PrivacyPolicyScreen({ navigation }: any) {
           onPress: () => navigation.goBack(),
         }}
       />
-
-      <ScrollView
+      <FlatList
         style={styles.container}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.content}
-      >
+        data={[]}
+        renderItem={() => null}
+        ListHeaderComponent={
+          <>
         <UnifiedCard>
           <Text style={styles.lastUpdated}>Last Updated: December 2024</Text>
 
@@ -39,11 +42,11 @@ export default function PrivacyPolicyScreen({ navigation }: any) {
           <Text style={styles.sectionText}>
             We collect information that you provide directly to us, including:
           </Text>
-          <Text style={styles.bulletPoint}>• Journal entries and gratitude check-ins</Text>
-          <Text style={styles.bulletPoint}>• Mood tracking data</Text>
-          <Text style={styles.bulletPoint}>• Affirmations and goals</Text>
-          <Text style={styles.bulletPoint}>• Progress and achievement data</Text>
-          <Text style={styles.bulletPoint}>• Vision board images</Text>
+          <Text style={styles.bulletPoint}>- Journal entries and gratitude check-ins</Text>
+          <Text style={styles.bulletPoint}>- Mood tracking data</Text>
+          <Text style={styles.bulletPoint}>- Affirmations and goals</Text>
+          <Text style={styles.bulletPoint}>- Progress and achievement data</Text>
+          <Text style={styles.bulletPoint}>- Vision board images</Text>
           <Text style={styles.sectionText}>
             All data is stored locally on your device using secure storage methods.
           </Text>
@@ -52,11 +55,11 @@ export default function PrivacyPolicyScreen({ navigation }: any) {
           <Text style={styles.sectionText}>
             We use the information we collect to:
           </Text>
-          <Text style={styles.bulletPoint}>• Provide and maintain our services</Text>
-          <Text style={styles.bulletPoint}>• Track your progress and streaks</Text>
-          <Text style={styles.bulletPoint}>• Personalize your experience</Text>
-          <Text style={styles.bulletPoint}>• Send you notifications (with your permission)</Text>
-          <Text style={styles.bulletPoint}>• Improve our app and develop new features</Text>
+          <Text style={styles.bulletPoint}>- Provide and maintain our services</Text>
+          <Text style={styles.bulletPoint}>- Track your progress and streaks</Text>
+          <Text style={styles.bulletPoint}>- Personalize your experience</Text>
+          <Text style={styles.bulletPoint}>- Send you notifications (with your permission)</Text>
+          <Text style={styles.bulletPoint}>- Improve our app and develop new features</Text>
 
           <Text style={styles.sectionTitle}>4. Data Storage and Security</Text>
           <Text style={styles.sectionText}>
@@ -75,10 +78,10 @@ export default function PrivacyPolicyScreen({ navigation }: any) {
           <Text style={styles.sectionText}>
             You have the right to:
           </Text>
-          <Text style={styles.bulletPoint}>• Access your data at any time</Text>
-          <Text style={styles.bulletPoint}>• Export your data (available in Settings)</Text>
-          <Text style={styles.bulletPoint}>• Delete your data by uninstalling the app</Text>
-          <Text style={styles.bulletPoint}>• Opt out of notifications</Text>
+          <Text style={styles.bulletPoint}>- Access your data at any time</Text>
+          <Text style={styles.bulletPoint}>- Export your data (available in Settings)</Text>
+          <Text style={styles.bulletPoint}>- Delete your data by uninstalling the app</Text>
+          <Text style={styles.bulletPoint}>- Opt out of notifications</Text>
 
           <Text style={styles.sectionTitle}>7. Children's Privacy</Text>
           <Text style={styles.sectionText}>
@@ -104,7 +107,9 @@ export default function PrivacyPolicyScreen({ navigation }: any) {
         </UnifiedCard>
 
         <View style={{ height: Theme.spacing.xxxl }} />
-      </ScrollView>
+          </>
+        }
+      />
     </Screen>
   );
 }
@@ -159,4 +164,5 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
 });
+
 

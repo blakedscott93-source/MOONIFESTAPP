@@ -29,8 +29,11 @@ import { canSpinToday, DailySpinReward, getNextStreakMilestone, getDaysUntilMile
 import { mediumHaptic, successHaptic } from '../utils/haptics';
 import { Confetti } from '../components/Confetti';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { REQUIRED_DAILY_AFFIRMATION_SESSIONS, REQUIRED_DAILY_MUST_DO_TASKS } from '../utils/constants';
+import { REQUIRED_DAILY_AFFIRMATION_SESSIONS, REQUIRED_DAILY_MUST_DO_TASKS, REQUIRED_DAILY_GRATITUDE_CHECKINS } from '../utils/constants';
 import { getGoalCategory } from '../data/goalCategories';
+import { useScreenTracking } from '../hooks/useScreenTracking';
+import { trackEvent } from '../utils/analytics';
+import { TodayScreenProps } from '../types/navigation';
 
 const GOAL_MESSAGES: Record<string, string> = {
   wealth: "Let's manifest abundance",
@@ -44,7 +47,8 @@ const GOAL_MESSAGES: Record<string, string> = {
 // Screen padding constant
 const SCREEN_PAD = 16;
 
-export default function HomeScreen({ navigation, route }: any) {
+export default function HomeScreen({ navigation, route }: TodayScreenProps) {
+  useScreenTracking('Today');
   const insets = useSafeAreaInsets();
   const tabBarInset = useTabBarInset();
   const { theme, isDark } = useTheme();
@@ -62,6 +66,7 @@ export default function HomeScreen({ navigation, route }: any) {
   const [showConfetti, setShowConfetti] = useState(false);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [shouldPromptVisionImage, setShouldPromptVisionImage] = useState(false);
+  const gratitudeLabel = REQUIRED_DAILY_GRATITUDE_CHECKINS === 1 ? 'gratitude' : 'gratitudes';
   
   // Animation for streak icon pulse
   const streakPulseAnim = useRef(new Animated.Value(1)).current;
@@ -157,12 +162,14 @@ export default function HomeScreen({ navigation, route }: any) {
   }, [appState.currentStreak, streakPulseAnim]);
 
   const handleMoodSubmit = useCallback(async (mood: MoodType, energy: EnergyLevel, note?: string) => {
+    trackEvent('mood_check_in', { mood, energy, has_note: !!note });
     await saveMoodEntry(mood, energy, note);
     await loadTodayMood();
     successHaptic();
   }, [saveMoodEntry]);
 
   const handleSpinReward = useCallback(async (reward: DailySpinReward) => {
+    trackEvent('daily_spin_completed', { reward_type: reward.type, reward_value: reward.value });
     // Add points based on reward type
     if (reward.type === 'points' && addGlowPoints) {
       await addGlowPoints(reward.value, `Daily spin reward: ${reward.label}`);
@@ -218,6 +225,7 @@ export default function HomeScreen({ navigation, route }: any) {
 
   // Track previous streak to detect milestone changes
   const previousStreak = useRef(appState.currentStreak);
+  const ratingPromptTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Check for rating prompt on streak milestones
   useEffect(() => {
@@ -230,7 +238,10 @@ export default function HomeScreen({ navigation, route }: any) {
         previousStreak.current = appState.currentStreak;
         
         // Delay to avoid interrupting user flow
-        setTimeout(async () => {
+        if (ratingPromptTimeoutRef.current) {
+          clearTimeout(ratingPromptTimeoutRef.current);
+        }
+        ratingPromptTimeoutRef.current = setTimeout(async () => {
           const { promptForRating } = await import('../utils/appRating');
           await promptForRating({
             streak: appState.currentStreak,
@@ -240,6 +251,13 @@ export default function HomeScreen({ navigation, route }: any) {
       }
     };
     checkRatingPrompt();
+
+    return () => {
+      if (ratingPromptTimeoutRef.current) {
+        clearTimeout(ratingPromptTimeoutRef.current);
+        ratingPromptTimeoutRef.current = null;
+      }
+    };
   }, [appState.currentStreak, appState.totalDays]);
 
   // Memoize daily practices array to prevent recreation on every render
@@ -252,7 +270,7 @@ export default function HomeScreen({ navigation, route }: any) {
         icon: 'star',
         color: '#FFD700',
         completed: mustDoCompleted === REQUIRED_DAILY_MUST_DO_TASKS,
-        action: () => navigation.navigate('TasksScreen'),
+        action: () => navigation.getParent()?.navigate('TasksScreen' as never),
       },
       {
         id: 'guided-affirmations',
@@ -266,7 +284,7 @@ export default function HomeScreen({ navigation, route }: any) {
       {
         id: 'gratitude',
         title: 'Gratitude Journal',
-        subtitle: 'Write 3 gratitudes',
+        subtitle: `Write ${REQUIRED_DAILY_GRATITUDE_CHECKINS} ${gratitudeLabel}`,
         icon: 'heart',
         color: '#FF6B9D',
         completed: todayProgress.gratitudeEntry.trim().length > 0,
@@ -279,7 +297,7 @@ export default function HomeScreen({ navigation, route }: any) {
         icon: 'leaf',
         color: '#4ECDC4',
         completed: todayProgress.meditationCompleted,
-        action: () => navigation.navigate('MeditationScreen'),
+        action: () => navigation.getParent()?.navigate('MeditationScreen' as never),
       },
     ];
     
@@ -301,6 +319,7 @@ export default function HomeScreen({ navigation, route }: any) {
     todayProgress.guidedSessions?.length,
     todayProgress.gratitudeEntry,
     todayProgress.meditationCompleted,
+    gratitudeLabel,
     hasVisionImageAddedToday,
     navigation,
   ]);
@@ -327,7 +346,7 @@ export default function HomeScreen({ navigation, route }: any) {
       subtitle={dateString}
       rightAction={{
         icon: 'settings-outline',
-        onPress: () => navigation.navigate('SettingsScreen'),
+        onPress: () => navigation.getParent()?.navigate('SettingsScreen' as never),
         label: 'Open Settings',
       }}
       headerStyle="compact"
@@ -413,6 +432,46 @@ export default function HomeScreen({ navigation, route }: any) {
 
         {/* SECONDARY SECTIONS - Deemphasized */}
 
+        {/* Mood Check-In - Compact */}
+        <GlassCard style={{ marginBottom: tokens.spacing.md }}>
+          <TouchableOpacity
+            onPress={() => setShowMoodModal(true)}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel={todayMoodEntry ? 'Update mood' : 'Check in with your mood'}
+            style={styles.moodRowItemCompact}
+          >
+            <View
+              style={[
+                styles.moodIconCircleCompact,
+                {
+                  backgroundColor: todayMoodEntry
+                    ? `${getMoodOption(todayMoodEntry.mood)?.color}20`
+                    : `${tokens.colors.accent}20`,
+                },
+              ]}
+            >
+              {todayMoodEntry ? (
+                <Text style={styles.moodEmojiCompact}>{getMoodOption(todayMoodEntry.mood)?.emoji}</Text>
+              ) : (
+                <Ionicons name="happy-outline" size={18} color={tokens.colors.accent} />
+              )}
+            </View>
+
+            <View style={styles.moodTextContainerCompact}>
+              <Text style={[styles.moodTitleCompact, { color: theme.colors.textPrimary }]}>
+                {todayMoodEntry ? `Mood: ${getMoodOption(todayMoodEntry.mood)?.label}` : 'Check in with your mood'}
+              </Text>
+            </View>
+
+            <Ionicons
+              name={todayMoodEntry ? 'create-outline' : 'chevron-forward'}
+              size={18}
+              color={tokens.colors.textSecondary}
+            />
+          </TouchableOpacity>
+        </GlassCard>
+
         {/* Streak & Daily Spin - Compact */}
         <SectionCard style={styles.streakCardCompact}>
           <LinearGradient
@@ -456,46 +515,6 @@ export default function HomeScreen({ navigation, route }: any) {
             </View>
           </LinearGradient>
         </SectionCard>
-
-        {/* Mood Check-In - Compact */}
-        <GlassCard style={{ marginBottom: tokens.spacing.md }}>
-          <TouchableOpacity
-            onPress={() => setShowMoodModal(true)}
-            activeOpacity={0.7}
-            accessibilityRole="button"
-            accessibilityLabel={todayMoodEntry ? 'Update mood' : 'Check in with your mood'}
-            style={styles.moodRowItemCompact}
-          >
-            <View
-              style={[
-                styles.moodIconCircleCompact,
-                {
-                  backgroundColor: todayMoodEntry
-                    ? `${getMoodOption(todayMoodEntry.mood)?.color}20`
-                    : `${tokens.colors.accent}20`,
-                },
-              ]}
-            >
-              {todayMoodEntry ? (
-                <Text style={styles.moodEmojiCompact}>{getMoodOption(todayMoodEntry.mood)?.emoji}</Text>
-              ) : (
-                <Ionicons name="happy-outline" size={18} color={tokens.colors.accent} />
-              )}
-            </View>
-
-            <View style={styles.moodTextContainerCompact}>
-              <Text style={[styles.moodTitleCompact, { color: theme.colors.textPrimary }]}>
-                {todayMoodEntry ? `Mood: ${getMoodOption(todayMoodEntry.mood)?.label}` : 'Check in with your mood'}
-              </Text>
-            </View>
-
-            <Ionicons
-              name={todayMoodEntry ? 'create-outline' : 'chevron-forward'}
-              size={18}
-              color={tokens.colors.textSecondary}
-            />
-          </TouchableOpacity>
-        </GlassCard>
 
         {/* Daily Quote - Simple */}
         <GlassCard style={{ marginBottom: tokens.spacing.md }}>
@@ -541,23 +560,24 @@ const styles = StyleSheet.create({
   // TODAY = THE COCKPIT - New Styles
   progressOverviewCard: {
     marginBottom: tokens.spacing.md,
-    padding: tokens.spacing.lg,
+    paddingHorizontal: tokens.spacing.lg,
+    paddingVertical: tokens.spacing.lg * 0.56, // 44% total reduction (30% + 20%)
   },
   progressOverviewHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: tokens.spacing.sm,
+    marginBottom: tokens.spacing.sm * 0.56, // 44% total reduction
   },
   progressOverviewTitle: {
-    fontSize: 18,
+    fontSize: 16, // Further reduced
     fontWeight: '700',
     letterSpacing: -0.2,
   },
   completeBadge: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 24, // Further reduced
+    height: 24,
+    borderRadius: 12,
     backgroundColor: `${tokens.colors.success}20`,
     alignItems: 'center',
     justifyContent: 'center',
@@ -565,24 +585,24 @@ const styles = StyleSheet.create({
   progressCountDisplay: {
     flexDirection: 'row',
     alignItems: 'baseline',
-    marginBottom: tokens.spacing.md,
+    marginBottom: tokens.spacing.md * 0.56, // 44% total reduction
     gap: tokens.spacing.xs,
   },
   progressCountLarge: {
-    fontSize: 40,
+    fontSize: 32, // Further reduced (20% more)
     fontWeight: '700',
     letterSpacing: -1,
   },
   progressCountDivider: {
-    fontSize: 28,
+    fontSize: 22, // Further reduced
     fontWeight: '300',
   },
   progressCountTotal: {
-    fontSize: 28,
+    fontSize: 22, // Further reduced
     fontWeight: '300',
   },
   progressCountLabel: {
-    fontSize: 15,
+    fontSize: 13, // Further reduced
     fontWeight: '500',
     marginLeft: tokens.spacing.xs,
   },

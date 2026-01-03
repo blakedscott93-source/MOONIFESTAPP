@@ -4,7 +4,6 @@ import {
   Text,
   StyleSheet,
   TextInput,
-  ScrollView,
   TouchableOpacity,
   KeyboardAvoidingView,
   Platform,
@@ -16,15 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Screen } from '../components/layout/Screen';
 import { Card } from '../components/ui';
 import { useTheme } from '../theme/ThemeProvider';
-
-interface AffirmationEntryScreenProps {
-  route: {
-    params: {
-      period: 'morning' | 'afternoon' | 'evening';
-    };
-  };
-  navigation: any;
-}
+import { AffirmationEntryScreenProps } from '../types/navigation';
 
 export default function AffirmationEntryScreen({ route, navigation }: AffirmationEntryScreenProps) {
   const { period } = route.params;
@@ -114,13 +105,12 @@ export default function AffirmationEntryScreen({ route, navigation }: Affirmatio
 
     try {
       await AsyncStorage.setItem(storageKey, affirmationText);
-      console.log('Affirmations saved:', { period, count, storageKey });
     } catch (error) {
       console.error('Error saving affirmations:', error);
     }
 
     Alert.alert(
-      'Complete! ✨',
+      'Complete!',
       'Your affirmations have been saved. Remember to read them aloud!',
       [
         {
@@ -189,10 +179,10 @@ export default function AffirmationEntryScreen({ route, navigation }: Affirmatio
               />
             </Card>
           ))}
-        </View>
+      </View>
 
-        <View style={styles.templatesSection}>
-          <Text style={styles.templatesTitle}>💡 Quick Templates</Text>
+      <View style={styles.templatesSection}>
+        <Text style={styles.templatesTitle}>Quick Templates</Text>
           <View style={styles.templatesList}>
             {templates.map((template, index) => (
               <Card key={index} style={styles.templateChip}>

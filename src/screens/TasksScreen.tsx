@@ -17,7 +17,7 @@ import {
   StyleSheet,
   TouchableOpacity,
   TextInput,
-  ScrollView,
+  FlatList,
   Animated,
   Platform,
   KeyboardAvoidingView,
@@ -32,6 +32,9 @@ import { successHaptic, lightHaptic } from '../utils/haptics';
 import { useTabBarInset } from '../hooks/useTabBarInset';
 import { useTheme } from '../theme/ThemeProvider';
 import { REQUIRED_DAILY_MUST_DO_TASKS } from '../utils/constants';
+import { TasksScreenProps } from '../types/navigation';
+import { useScreenTracking } from '../hooks/useScreenTracking';
+import { trackEvent } from '../utils/analytics';
 
 interface ExtendedTask extends Task {
   isEditing?: boolean;
@@ -49,7 +52,8 @@ const GLASS_OVERLAY_DARK = 'rgba(255, 255, 255, 0.15)';
 // Autosave debounce delay (ms)
 const AUTOSAVE_DEBOUNCE = 400;
 
-export default function TasksScreen({ navigation }: any) {
+export default function TasksScreen({ navigation }: TasksScreenProps) {
+  useScreenTracking('Tasks');
   const { getTodayProgress, updateTasks } = useApp();
   const tabBarInset = useTabBarInset();
   const { isDark } = useTheme();
@@ -82,13 +86,52 @@ export default function TasksScreen({ navigation }: any) {
 
   const [editableAdditional, setEditableAdditional] = useState<ExtendedTask[]>(additionalTasks);
 
+  // Refs for focusing new task inputs and debounce timers
+  const additionalInputRefs = useRef<{ [key: string]: TextInput | null }>({});
+  const listRef = useRef<FlatList<ExtendedTask>>(null);
+  const autosaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const addTaskTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Refs to track latest state for autosave (avoids stale closures)
+  const editableMustDoRef = useRef(editableMustDo);
+  const editableAdditionalRef = useRef(editableAdditional);
+
+  const updateMustDo = useCallback((updater: (prev: ExtendedTask[]) => ExtendedTask[]) => {
+    setEditableMustDo(prev => {
+      const next = updater(prev);
+      editableMustDoRef.current = next;
+      return next;
+    });
+  }, []);
+
+  const updateAdditional = useCallback((updater: (prev: ExtendedTask[]) => ExtendedTask[]) => {
+    setEditableAdditional(prev => {
+      const next = updater(prev);
+      editableAdditionalRef.current = next;
+      return next;
+    });
+  }, []);
+
+  const areTasksEqual = (a: ExtendedTask[], b: ExtendedTask[]) => {
+    if (a.length !== b.length) return false;
+    return a.every((task, index) => {
+      const other = b[index];
+      return (
+        task.id === other.id &&
+        task.text === other.text &&
+        task.completed === other.completed &&
+        task.isMustDo === other.isMustDo
+      );
+    });
+  };
+
   // Sync local state when todayProgress changes (e.g., from another screen)
   useEffect(() => {
     const currentMustDo = todayProgress.tasks?.filter(t => t.isMustDo) || [];
     const currentAdditional = todayProgress.tasks?.filter(t => !t.isMustDo) || [];
-    
+
     // Only update if different (avoid unnecessary re-renders)
-    if (JSON.stringify(currentMustDo) !== JSON.stringify(mustDoTasks)) {
+    if (!areTasksEqual(currentMustDo, editableMustDoRef.current)) {
       const tasks = [...currentMustDo];
       while (tasks.length < REQUIRED_DAILY_MUST_DO_TASKS) {
         tasks.push({
@@ -99,23 +142,14 @@ export default function TasksScreen({ navigation }: any) {
           createdAt: new Date().toISOString(),
         });
       }
-      setEditableMustDo(tasks);
+      updateMustDo(() => tasks);
     }
-    
-    if (JSON.stringify(currentAdditional) !== JSON.stringify(additionalTasks)) {
-      setEditableAdditional(currentAdditional);
-    }
-  }, [todayProgress.tasks]);
 
-  // Refs for focusing new task inputs and debounce timers
-  const additionalInputRefs = useRef<{ [key: string]: TextInput | null }>({});
-  const scrollViewRef = useRef<ScrollView>(null);
-  const autosaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  
-  // Refs to track latest state for autosave (avoids stale closures)
-  const editableMustDoRef = useRef(editableMustDo);
-  const editableAdditionalRef = useRef(editableAdditional);
-  
+    if (!areTasksEqual(currentAdditional, editableAdditionalRef.current)) {
+      updateAdditional(() => currentAdditional);
+    }
+  }, [todayProgress.tasks, updateMustDo, updateAdditional]);
+
   useEffect(() => {
     editableMustDoRef.current = editableMustDo;
   }, [editableMustDo]);
@@ -125,7 +159,7 @@ export default function TasksScreen({ navigation }: any) {
   }, [editableAdditional]);
 
   // Autosave function - normalizes task IDs and saves to AppContext
-  const autosave = useCallback(() => {
+  const autosave = useCallback(async () => {
     // Read from refs to get latest state (avoids stale closures)
     const mustDo = editableMustDoRef.current;
     const additional = editableAdditionalRef.current;
@@ -144,7 +178,11 @@ export default function TasksScreen({ navigation }: any) {
       }));
 
     // Save to AppContext (which triggers AsyncStorage save via debounced effect)
-    updateTasks([...validMustDo, ...validAdditional]);
+    try {
+      await updateTasks([...validMustDo, ...validAdditional]);
+    } catch (error) {
+      // Ignore autosave failures to avoid blocking UI; user can retry by editing.
+    }
   }, [updateTasks]);
 
   // Debounced autosave for text changes
@@ -163,41 +201,63 @@ export default function TasksScreen({ navigation }: any) {
       if (autosaveTimeoutRef.current) {
         clearTimeout(autosaveTimeoutRef.current);
       }
+      if (addTaskTimeoutRef.current) {
+        clearTimeout(addTaskTimeoutRef.current);
+        addTaskTimeoutRef.current = null;
+      }
     };
   }, []);
 
   // Handle task text change with debounced autosave
   const handleTaskTextChange = useCallback((index: number, text: string, isMustDo: boolean) => {
     if (isMustDo) {
-      const updated = [...editableMustDo];
-      updated[index] = { ...updated[index], text };
-      setEditableMustDo(updated);
+      updateMustDo(prev => {
+        const updated = [...prev];
+        updated[index] = { ...updated[index], text };
+        return updated;
+      });
     } else {
-      const updated = [...editableAdditional];
-      updated[index] = { ...updated[index], text };
-      setEditableAdditional(updated);
+      updateAdditional(prev => {
+        const updated = [...prev];
+        updated[index] = { ...updated[index], text };
+        return updated;
+      });
     }
     // Schedule debounced autosave
     scheduleAutosave();
-  }, [editableMustDo, editableAdditional, scheduleAutosave]);
+  }, [scheduleAutosave, updateMustDo, updateAdditional]);
 
   // Toggle task completion with immediate autosave
   const handleToggle = useCallback((index: number, isMustDo: boolean) => {
     lightHaptic();
+    const task = isMustDo ? editableMustDo[index] : editableAdditional[index];
+    const wasCompleted = task?.completed || false;
+    
     if (isMustDo) {
-      const updated = [...editableMustDo];
-      updated[index] = { ...updated[index], completed: !updated[index].completed };
-      setEditableMustDo(updated);
-      // Immediate autosave for checkbox
-      setTimeout(() => autosave(), 50);
+      updateMustDo(prev => {
+        const updated = [...prev];
+        updated[index] = { ...updated[index], completed: !updated[index].completed };
+        return updated;
+      });
     } else {
-      const updated = [...editableAdditional];
-      updated[index] = { ...updated[index], completed: !updated[index].completed };
-      setEditableAdditional(updated);
-      // Immediate autosave for checkbox
-      setTimeout(() => autosave(), 50);
+      updateAdditional(prev => {
+        const updated = [...prev];
+        updated[index] = { ...updated[index], completed: !updated[index].completed };
+        return updated;
+      });
     }
-  }, [editableMustDo, editableAdditional, autosave]);
+    
+    // Track task completion
+    if (!wasCompleted) {
+      trackEvent('task_completed', { 
+        is_must_do: isMustDo,
+        task_index: index 
+      });
+    }
+    
+    // Immediate autosave for checkbox
+    autosave();
+  }, [autosave, updateMustDo, updateAdditional, editableMustDo, editableAdditional]);
 
   // Add new additional task - Inserts immediately, focuses, and autosaves
   const handleAddTask = useCallback(() => {
@@ -210,46 +270,49 @@ export default function TasksScreen({ navigation }: any) {
       isEditing: true,
     };
 
-    setEditableAdditional(prev => [...prev, newTask]);
+    updateAdditional(prev => [...prev, newTask]);
     lightHaptic();
+    trackEvent('task_added', { is_must_do: false });
 
-    setTimeout(() => {
+    if (addTaskTimeoutRef.current) {
+      clearTimeout(addTaskTimeoutRef.current);
+    }
+    addTaskTimeoutRef.current = setTimeout(() => {
       const inputRef = additionalInputRefs.current[newTask.id];
       if (inputRef) {
         inputRef.focus();
       }
-      scrollViewRef.current?.scrollToEnd({ animated: true });
+      listRef.current?.scrollToEnd({ animated: true });
     }, 100);
   }, []);
 
   // Handle blur - remove empty tasks and autosave
   const handleTaskBlur = useCallback((taskId: string, index: number) => {
-    const task = editableAdditional[index];
-    if (task && task.text.trim() === '' && task.id === taskId && !task.completed) {
-      const updated = editableAdditional.filter((_, i) => i !== index);
-      setEditableAdditional(updated);
-      // Autosave after removing empty task
-      setTimeout(() => autosave(), 100);
-    } else {
-      // Autosave even if task wasn't removed (text might have changed)
-      scheduleAutosave();
-    }
-  }, [editableAdditional, autosave, scheduleAutosave]);
+    updateAdditional(prev => {
+      const task = prev[index];
+      if (task && task.text.trim() === '' && task.id === taskId && !task.completed) {
+        return prev.filter((_, i) => i !== index);
+      }
+      return prev;
+    });
+    scheduleAutosave();
+  }, [scheduleAutosave, updateAdditional]);
 
   // Delete task with immediate autosave
   const handleDelete = useCallback((index: number, isMustDo: boolean) => {
     lightHaptic();
     if (isMustDo) {
-      const updated = [...editableMustDo];
-      updated[index] = { ...updated[index], text: '', completed: false };
-      setEditableMustDo(updated);
+      updateMustDo(prev => {
+        const updated = [...prev];
+        updated[index] = { ...updated[index], text: '', completed: false };
+        return updated;
+      });
     } else {
-      const updated = editableAdditional.filter((_, i) => i !== index);
-      setEditableAdditional(updated);
+      updateAdditional(prev => prev.filter((_, i) => i !== index));
     }
     // Immediate autosave for delete
-    setTimeout(() => autosave(), 50);
-  }, [editableMustDo, editableAdditional, autosave]);
+    autosave();
+  }, [autosave, updateMustDo, updateAdditional]);
 
   const mustDoCompleted = editableMustDo.filter(t => t.completed && t.text.trim() !== '').length;
   const additionalCompleted = editableAdditional.filter(t => t.completed).length;
@@ -277,7 +340,7 @@ export default function TasksScreen({ navigation }: any) {
     handleToggle(index, isMustDo);
   };
 
-  // ScrollView padding: ensure content doesn't hide behind footer
+  // List padding: ensure content doesn't hide behind footer
   const scrollPaddingBottom = tabBarInset + tokens.spacing.lg;
 
   return (
@@ -287,12 +350,7 @@ export default function TasksScreen({ navigation }: any) {
       rightAction={{
         icon: 'home-outline',
         onPress: () => {
-          const parent = navigation.getParent();
-          if (parent) {
-            parent.navigate('MainTabs', { screen: 'Today' });
-          } else {
-            navigation.navigate('MainTabs', { screen: 'Today' });
-          }
+          navigation.navigate('MainTabs', { screen: 'Today' });
         },
         label: 'Back to Today',
       }}
@@ -307,94 +365,98 @@ export default function TasksScreen({ navigation }: any) {
           enabled={true}
         >
           {/* Scrollable Content */}
-          <ScrollView
-            ref={scrollViewRef}
+          <FlatList
+            ref={listRef}
             style={styles.scrollView}
             contentContainerStyle={[
               styles.scrollContent,
               { paddingBottom: scrollPaddingBottom },
             ]}
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-            keyboardDismissMode="interactive"
-          >
-            {/* Must-Do Today Section - Premium Glass Card */}
-            <View style={styles.mustDoSection}>
-              <GlassCard isDark={isDark} style={styles.mustDoCard}>
-                <View style={styles.sectionHeader}>
-                  <View style={styles.sectionTitleRow}>
-                    <View style={styles.mustDoIconBadge}>
-                      <Ionicons name="star" size={14} color="#FFD700" />
+            data={editableAdditional}
+            keyExtractor={(item) => item.id}
+            renderItem={({ item, index }) => (
+              <TaskRow
+                task={item}
+                index={index}
+                isMustDo={false}
+                onToggle={() => handleCheckboxPress(index, false)}
+                onTextChange={(text) => handleTaskTextChange(index, text, false)}
+                onDelete={() => handleDelete(index, false)}
+                onBlur={() => handleTaskBlur(item.id, index)}
+                inputRef={(ref) => {
+                  additionalInputRefs.current[item.id] = ref;
+                }}
+                autoFocus={item.isEditing}
+                checkboxScale={checkboxScale}
+                isDark={isDark}
+              />
+            )}
+            ListHeaderComponent={
+              <>
+                {/* Must-Do Today Section - Premium Glass Card */}
+                <View style={styles.mustDoSection}>
+                  <GlassCard isDark={isDark} style={styles.mustDoCard}>
+                    <View style={styles.sectionHeader}>
+                      <View style={styles.sectionTitleRow}>
+                        <View style={styles.mustDoIconBadge}>
+                          <Ionicons name="star" size={14} color="#FFD700" />
+                        </View>
+                        <Text style={styles.mustDoTitle}>Must-Do Today</Text>
+                      </View>
+                      <View style={styles.progressContainer}>
+                        <View style={styles.counterPill}>
+                          <Text style={styles.sectionCounter}>
+                            {mustDoCompleted} / {REQUIRED_DAILY_MUST_DO_TASKS}
+                          </Text>
+                        </View>
+                      </View>
                     </View>
-                    <Text style={styles.mustDoTitle}>Must-Do Today</Text>
-                  </View>
-                  <View style={styles.progressContainer}>
-                    <Text style={styles.sectionCounter}>
-                      {mustDoCompleted} / {REQUIRED_DAILY_MUST_DO_TASKS}
+                    <Text style={styles.mustDoSubtitle}>
+                      Complete all 3 tasks to finish your daily challenge
                     </Text>
+
+                    {/* 3 Must-Do Task Rows */}
+                    <View style={styles.taskList}>
+                      {editableMustDo.map((task, index) => (
+                        <TaskRow
+                          key={task.id}
+                          task={task}
+                          index={index}
+                          isMustDo={true}
+                          onToggle={() => handleCheckboxPress(index, true)}
+                          onTextChange={(text) => handleTaskTextChange(index, text, true)}
+                          onDelete={() => handleDelete(index, true)}
+                          checkboxScale={checkboxScale}
+                          isDark={isDark}
+                        />
+                      ))}
+                    </View>
+                  </GlassCard>
+                </View>
+
+                {/* Divider */}
+                <View style={styles.divider} />
+
+                {/* Additional Tasks Section */}
+                <View style={styles.section}>
+                  <View style={styles.sectionHeader}>
+                    <Text style={styles.sectionTitle}>Additional Tasks</Text>
+                    {editableAdditional.length > 0 && (
+                      <View style={styles.counterPill}>
+                        <Text style={styles.sectionCounter}>
+                          {additionalCompleted} / {editableAdditional.length}
+                        </Text>
+                      </View>
+                    )}
                   </View>
-                </View>
-                <Text style={styles.mustDoSubtitle}>
-                  Complete all 3 tasks to finish your daily challenge
-                </Text>
-
-                {/* 3 Must-Do Task Rows */}
-                <View style={styles.taskList}>
-                  {editableMustDo.map((task, index) => (
-                    <TaskRow
-                      key={task.id}
-                      task={task}
-                      index={index}
-                      isMustDo={true}
-                      onToggle={() => handleCheckboxPress(index, true)}
-                      onTextChange={(text) => handleTaskTextChange(index, text, true)}
-                      onDelete={() => handleDelete(index, true)}
-                      checkboxScale={checkboxScale}
-                      isDark={isDark}
-                    />
-                  ))}
-                </View>
-              </GlassCard>
-            </View>
-
-            {/* Divider */}
-            <View style={styles.divider} />
-
-            {/* Additional Tasks Section */}
-            <View style={styles.section}>
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Additional Tasks</Text>
-                {editableAdditional.length > 0 && (
-                  <Text style={styles.sectionCounter}>
-                    {additionalCompleted} / {editableAdditional.length}
+                  <Text style={styles.sectionSubtitle}>
+                    Tasks that roll over until completed
                   </Text>
-                )}
-              </View>
-              <Text style={styles.sectionSubtitle}>
-                Tasks that roll over until completed
-              </Text>
-
-              {/* Additional Task Rows */}
-              <View style={styles.taskList}>
-                {editableAdditional.map((task, index) => (
-                  <TaskRow
-                    key={task.id}
-                    task={task}
-                    index={index}
-                    isMustDo={false}
-                    onToggle={() => handleCheckboxPress(index, false)}
-                    onTextChange={(text) => handleTaskTextChange(index, text, false)}
-                    onDelete={() => handleDelete(index, false)}
-                    onBlur={() => handleTaskBlur(task.id, index)}
-                    inputRef={(ref) => {
-                      additionalInputRefs.current[task.id] = ref;
-                    }}
-                    autoFocus={task.isEditing}
-                    checkboxScale={checkboxScale}
-                    isDark={isDark}
-                  />
-                ))}
-
+                </View>
+              </>
+            }
+            ListFooterComponent={
+              <>
                 {/* Add New Task Button - Glass Style */}
                 <TouchableOpacity
                   style={styles.addTaskButton}
@@ -404,47 +466,51 @@ export default function TasksScreen({ navigation }: any) {
                   accessibilityRole="button"
                 >
                   <View style={styles.addTaskIconContainer}>
-                    <Ionicons name="add-circle" size={24} color={tokens.colors.primary} />
+                    <Ionicons name="add" size={18} color={tokens.colors.primary} />
                   </View>
                   <Text style={styles.addTaskText}>Add new task</Text>
                 </TouchableOpacity>
-              </View>
-            </View>
 
-            {/* Pro Tips - Light Glass Card */}
-            <GlassCard isDark={isDark} style={styles.tipsCard} intensity={18}>
-              <View style={styles.tipsHeader}>
-                <Ionicons name="information-circle" size={18} color={tokens.colors.accent} />
-                <Text style={styles.tipsTitle}>Pro Tips</Text>
-              </View>
-              <View style={styles.tipsList}>
-                <View style={styles.tipRow}>
-                  <View style={styles.tipDot} />
-                  <Text style={styles.tipText}>
-                    Must-do tasks reset daily - focus on today's priorities
-                  </Text>
-                </View>
-                <View style={styles.tipRow}>
-                  <View style={styles.tipDot} />
-                  <Text style={styles.tipText}>
-                    Additional tasks roll over until you complete them
-                  </Text>
-                </View>
-                <View style={styles.tipRow}>
-                  <View style={styles.tipDot} />
-                  <Text style={styles.tipText}>
-                    Be specific: "Walk 30 minutes" instead of "Exercise"
-                  </Text>
-                </View>
-                <View style={styles.tipRow}>
-                  <View style={styles.tipDot} />
-                  <Text style={styles.tipText}>
-                    Changes save automatically - no need to tap save
-                  </Text>
-                </View>
-              </View>
-            </GlassCard>
-          </ScrollView>
+                {/* Pro Tips - Light Glass Card */}
+                <GlassCard isDark={isDark} style={styles.tipsCard} intensity={18}>
+                  <View style={styles.tipsHeader}>
+                    <Ionicons name="information-circle" size={18} color={tokens.colors.accent} />
+                    <Text style={styles.tipsTitle}>Pro Tips</Text>
+                  </View>
+                  <View style={styles.tipsList}>
+                    <View style={styles.tipRow}>
+                      <View style={styles.tipDot} />
+                      <Text style={styles.tipText}>
+                        Must-do tasks reset daily - focus on today's priorities
+                      </Text>
+                    </View>
+                    <View style={styles.tipRow}>
+                      <View style={styles.tipDot} />
+                      <Text style={styles.tipText}>
+                        Additional tasks roll over until you complete them
+                      </Text>
+                    </View>
+                    <View style={styles.tipRow}>
+                      <View style={styles.tipDot} />
+                      <Text style={styles.tipText}>
+                        Be specific: "Walk 30 minutes" instead of "Exercise"
+                      </Text>
+                    </View>
+                    <View style={styles.tipRow}>
+                      <View style={styles.tipDot} />
+                      <Text style={styles.tipText}>
+                        Changes save automatically - no need to tap save
+                      </Text>
+                    </View>
+                  </View>
+                </GlassCard>
+              </>
+            }
+            ItemSeparatorComponent={() => <View style={styles.taskSeparator} />}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="interactive"
+          />
         </KeyboardAvoidingView>
       </View>
     </Screen>
@@ -521,9 +587,14 @@ const TaskRow: React.FC<TaskRowProps> = ({
     : task.completed
     ? tokens.colors.success
     : tokens.colors.primary;
+  const rowBackground = isDark ? 'rgba(26, 24, 36, 0.65)' : 'rgba(255, 255, 255, 0.75)';
+  const rowBorder = isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(124, 58, 237, 0.12)';
+  const deleteBackground = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(28, 27, 34, 0.04)';
+  const deleteBorder = isDark ? 'rgba(255, 255, 255, 0.16)' : 'rgba(90, 84, 120, 0.2)';
+  const deleteIconColor = isDark ? 'rgba(255, 255, 255, 0.72)' : tokens.colors.textSecondary;
 
   return (
-    <View style={styles.taskRow}>
+    <View style={[styles.taskRow, { backgroundColor: rowBackground, borderColor: rowBorder }]}>
       {/* Animated Checkbox */}
       <TouchableOpacity
         onPress={onToggle}
@@ -571,11 +642,12 @@ const TaskRow: React.FC<TaskRowProps> = ({
         <TouchableOpacity
           onPress={onDelete}
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-          style={styles.deleteButton}
+          style={[styles.deleteButton, { backgroundColor: deleteBackground, borderColor: deleteBorder }]}
           accessibilityLabel="Delete task"
           accessibilityRole="button"
+          activeOpacity={0.6}
         >
-          <Ionicons name="close-circle" size={20} color={tokens.colors.textSecondary} />
+          <Ionicons name="close" size={16} color={deleteIconColor} />
         </TouchableOpacity>
       )}
     </View>
@@ -603,7 +675,7 @@ const styles = StyleSheet.create({
     // Glass card styling handled by GlassCard component
   },
   section: {
-    marginBottom: tokens.spacing.xl,
+    marginBottom: tokens.spacing.md,
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -638,9 +710,17 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   sectionCounter: {
-    fontSize: 15,
-    fontWeight: '600',
+    fontSize: 14,
+    fontWeight: '700',
     color: tokens.colors.accent,
+  },
+  counterPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: tokens.radii.full,
+    backgroundColor: `${tokens.colors.accent}12`,
+    borderWidth: 1,
+    borderColor: `${tokens.colors.accent}20`,
   },
   mustDoSubtitle: {
     ...tokens.typography.caption,
@@ -654,16 +734,18 @@ const styles = StyleSheet.create({
   },
   taskList: {
     gap: 10,
+    width: '100%',
   },
   taskRow: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: 'transparent',
+    borderWidth: 1,
     borderRadius: tokens.radii.md,
     paddingVertical: 12,
     paddingHorizontal: 12,
     minHeight: 56,
-    overflow: 'hidden',
+    width: '100%',
   },
   checkboxContainer: {
     marginRight: 12,
@@ -671,9 +753,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 44,
+    flexShrink: 0,
   },
   taskInput: {
     flex: 1,
+    flexShrink: 1,
     fontSize: 16,
     fontWeight: '500',
     color: tokens.colors.textPrimary,
@@ -682,7 +766,13 @@ const styles = StyleSheet.create({
     minHeight: 44,
     backgroundColor: 'transparent',
     borderWidth: 0,
-    outlineStyle: 'none',
+    ...(Platform.OS === 'web' && {
+      outlineStyle: 'none',
+      outlineWidth: 0,
+      outline: 'none',
+      border: 'none',
+      minWidth: 0,
+    }),
   },
   taskInputCompleted: {
     textDecorationLine: 'line-through',
@@ -691,26 +781,35 @@ const styles = StyleSheet.create({
   },
   deleteButton: {
     marginLeft: 8,
-    width: 32,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 44,
+    flexShrink: 0,
+    flexGrow: 0,
   },
   addTaskButton: {
+    marginTop: 10,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'transparent',
+    backgroundColor: `${tokens.colors.primary}0D`,
     borderRadius: tokens.radii.md,
     paddingVertical: 14,
     paddingHorizontal: 14,
     borderWidth: 1,
-    borderColor: `${tokens.colors.primary}30`,
-    borderStyle: 'dashed',
+    borderColor: `${tokens.colors.primary}25`,
     minHeight: 56,
   },
   addTaskIconContainer: {
     marginRight: 12,
-    width: 32,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: `${tokens.colors.primary}30`,
+    backgroundColor: `${tokens.colors.primary}12`,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -725,6 +824,9 @@ const styles = StyleSheet.create({
     backgroundColor: tokens.colors.borderSubtle,
     marginVertical: tokens.spacing.lg,
     opacity: 0.5,
+  },
+  taskSeparator: {
+    height: 10,
   },
   tipsCard: {
     marginTop: tokens.spacing.md,
@@ -772,5 +874,6 @@ const styles = StyleSheet.create({
   },
   glassContent: {
     padding: tokens.spacing.lg,
+    width: '100%',
   },
 });

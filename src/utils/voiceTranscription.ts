@@ -29,8 +29,8 @@ try {
  * 4. Azure Speech Services
  * 5. Deepgram (Fast, good for real-time)
  *
- * Current Status: Mock implementation
- * TODO: Integrate with your preferred service
+ * Current Status: Disabled (voice-only entries)
+ * Enable by wiring a paid transcription provider
  */
 
 export interface TranscriptionResult {
@@ -57,43 +57,10 @@ export async function transcribeAudio(
   audioUri: string,
   options: TranscriptionOptions = {}
 ): Promise<TranscriptionResult> {
-  try {
-    console.log('🎯 Transcribing audio:', audioUri);
-
-    // Check if file exists
-    const fileInfo = await FileSystem.getInfoAsync(audioUri);
-    if (!fileInfo.exists) {
-      return {
-        text: '',
-        error: 'Audio file not found',
-      };
-    }
-
-    // Check for API keys from environment
-    const hasApiKey = !!(OPENAI_API_KEY || GOOGLE_CLOUD_API_KEY || DEEPGRAM_API_KEY);
-
-    // Use real transcription if API key is available
-    if (hasApiKey) {
-      console.log('🎯 Using real transcription service');
-      if (OPENAI_API_KEY) {
-        return await transcribeWithWhisper(audioUri, options);
-      } else if (GOOGLE_CLOUD_API_KEY) {
-        return await transcribeWithGoogle(audioUri, options);
-      } else if (DEEPGRAM_API_KEY) {
-        return await transcribeWithDeepgram(audioUri, options);
-      }
-    }
-
-    // Fallback to mock transcription
-    console.log('🎯 Using mock transcription (no API key configured)');
-    return await mockTranscription(audioUri, options);
-  } catch (error) {
-    console.error('Transcription error:', error);
-    return {
-      text: '',
-      error: error instanceof Error ? error.message : 'Unknown transcription error',
-    };
-  }
+  return {
+    text: '',
+    error: 'Transcription is disabled in this build',
+  };
 }
 
 /**
@@ -150,8 +117,6 @@ async function transcribeWithWhisper(
   }
 
   try {
-    console.log('🎤 Transcribing with OpenAI Whisper...');
-
     // Create form data for multipart upload
     const formData = new FormData();
     formData.append('file', {
@@ -187,15 +152,13 @@ async function transcribeWithWhisper(
     }
 
     const result = await response.json();
-    console.log('✅ Whisper transcription successful:', result.text.substring(0, 50) + '...');
-
     return {
       text: result.text,
       confidence: 0.95, // Whisper doesn't provide confidence scores, but is very accurate
       language: options.language || 'en-US',
     };
   } catch (error) {
-    console.error('❌ Whisper transcription error:', error);
+    console.error('Whisper transcription error:', error);
     return {
       text: '',
       error: error instanceof Error ? error.message : 'Whisper API error',
@@ -340,22 +303,13 @@ async function transcribeWithDeepgram(
  * Check if transcription is available
  */
 export function isTranscriptionAvailable(): boolean {
-  // Check if API keys are configured
-  if (__DEV__) {
-    return true; // Mock transcription always available in dev
-  }
-
-  // Check for configured API keys
-  return !!(OPENAI_API_KEY || GOOGLE_CLOUD_API_KEY || DEEPGRAM_API_KEY);
+  return false;
 }
+
 
 /**
  * Get recommended service based on configuration
  */
 export function getTranscriptionService(): string {
-  if (OPENAI_API_KEY) return 'Whisper (OpenAI)';
-  if (GOOGLE_CLOUD_API_KEY) return 'Google Cloud Speech';
-  if (DEEPGRAM_API_KEY) return 'Deepgram';
-  if (__DEV__) return 'Mock (Development)';
-  return 'None';
+  return 'Disabled';
 }

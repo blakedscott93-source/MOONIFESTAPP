@@ -252,6 +252,7 @@ const styles = StyleSheet.create({
   },
   headerSubtitle: {
     ...Theme.typography.body,
+    fontFamily: 'Sora_400Regular',
     color: Theme.colors.textSecondary,
   },
   scrollContent: {

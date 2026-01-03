@@ -1,14 +1,13 @@
 /**
  * Vision Board Screen
- * Clean, focused interface for daily vision visualization
+ * Instagram-style grid layout with fullscreen photo viewer
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
   TouchableOpacity,
   Image,
   Alert,
@@ -17,22 +16,27 @@ import {
   TextInput,
   Modal,
   KeyboardAvoidingView,
+  Animated,
+  FlatList,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Screen } from '../components/layout/Screen';
-import { GlassCard, PrimaryButton, SectionCard } from '../components/ui';
 import { tokens } from '../theme/tokens';
 import { useTheme } from '../context/ThemeContext';
 import { useApp } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import { getLocalDayKey } from '../utils/dayRollover';
-import { useTabBarInset } from '../hooks/useTabBarInset';
-import { mediumHaptic } from '../utils/haptics';
+import { useTabBarInset, TAB_BAR_SPACE } from '../hooks/useTabBarInset';
+import { mediumHaptic, lightHaptic } from '../utils/haptics';
+import { VisionTabProps } from '../types/navigation';
+import { useScreenTracking } from '../hooks/useScreenTracking';
+import { trackEvent } from '../utils/analytics';
 
 const { width } = Dimensions.get('window');
+const GRID_COLUMNS = 3;
+const GRID_GAP = 2;
 
 // ============================================
 // TYPES
@@ -49,7 +53,8 @@ interface VisionBoardPhoto {
 
 const STORAGE_KEY_PHOTOS = '@vision_board_photos';
 
-export default function VisionBoardScreen({ navigation, route }: any) {
+export default function VisionBoardScreen({ navigation, route }: VisionTabProps) {
+  useScreenTracking('VisionBoard');
   const { theme, isDark } = useTheme();
   const { addGlowPoints, markVisionImageAdded, appState, hasVisionImageAddedToday } = useApp();
   const { showSuccess, showError, showPoints } = useToast();
@@ -59,44 +64,77 @@ export default function VisionBoardScreen({ navigation, route }: any) {
   const [photos, setPhotos] = useState<VisionBoardPhoto[]>([]);
   const [loading, setLoading] = useState(true);
   const [showPhotoModal, setShowPhotoModal] = useState(false);
-  const [showPreviewModal, setShowPreviewModal] = useState(false);
+  const [showFullscreenModal, setShowFullscreenModal] = useState(false);
   const [pendingImageUri, setPendingImageUri] = useState<string | null>(null);
   const [captionInput, setCaptionInput] = useState('');
-  const [previewPhoto, setPreviewPhoto] = useState<VisionBoardPhoto | null>(null);
+  const [selectedPhoto, setSelectedPhoto] = useState<VisionBoardPhoto | null>(null);
+  const [imageErrors, setImageErrors] = useState<Record<string, boolean>>({});
+  const [gridWidth, setGridWidth] = useState(0);
+  const timeoutsRef = useRef<NodeJS.Timeout[]>([]);
+  const photosRef = useRef<VisionBoardPhoto[]>([]);
+  
+  // Keep ref in sync with state
+  useEffect(() => {
+    photosRef.current = photos;
+  }, [photos]);
 
-  const todayKey = getLocalDayKey();
-  const todayPhoto = useMemo(
-    () => photos.find(p => p.boardId === 'today' && p.dayKey === todayKey),
-    [photos, todayKey]
-  );
+  // Animation refs for fullscreen
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const scaleAnim = useRef(new Animated.Value(0.8)).current;
 
-  const pastVisionImages = useMemo(() => {
-    return photos
-      .filter(p => p.boardId === 'today' && p.dayKey !== todayKey)
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-      .slice(0, 8);
-  }, [photos, todayKey]);
+  // Sort photos by date (newest first)
+  const sortedPhotos = useMemo(() => {
+    return [...photos].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }, [photos]);
 
-  const needsTodayImage = appState.challengeActive && !hasVisionImageAddedToday();
+  const gridItemSize = useMemo(() => {
+    const baseWidth = gridWidth || width;
+    const contentWidth = Math.max(0, baseWidth - GRID_GAP * 2);
+    return (contentWidth - GRID_GAP * (GRID_COLUMNS - 1)) / GRID_COLUMNS;
+  }, [gridWidth]);
 
   // ============================================
   // DATA LOADING
   // ============================================
-
   useEffect(() => {
     loadData();
     if (route?.params?.fromDailyVisionImage) {
-      setTimeout(() => {
+      const addTimeoutId = setTimeout(() => {
         addPhoto();
       }, 500);
+      timeoutsRef.current.push(addTimeoutId);
     }
   }, [route?.params?.fromDailyVisionImage]);
+
+  useEffect(() => {
+    return () => {
+      timeoutsRef.current.forEach(timeoutId => clearTimeout(timeoutId));
+      timeoutsRef.current = [];
+    };
+  }, []);
 
   const loadData = async () => {
     try {
       const photosData = await AsyncStorage.getItem(STORAGE_KEY_PHOTOS);
       const loadedPhotos: VisionBoardPhoto[] = photosData ? JSON.parse(photosData) : [];
-      setPhotos(loadedPhotos);
+      
+      // Validate and filter out invalid photos
+      const validPhotos = loadedPhotos.filter(photo => {
+        if (!photo.id || !photo.imageUri || !photo.caption) {
+          console.warn('Invalid photo found, skipping:', photo);
+          return false;
+        }
+        return true;
+      });
+      
+      if (validPhotos.length !== loadedPhotos.length) {
+        console.log(`Filtered ${loadedPhotos.length - validPhotos.length} invalid photos`);
+        // Save cleaned data
+        await AsyncStorage.setItem(STORAGE_KEY_PHOTOS, JSON.stringify(validPhotos));
+      }
+      
+      console.log(`Loaded ${validPhotos.length} vision board photos`);
+      setPhotos(validPhotos);
     } catch (error) {
       console.error('Error loading vision board data:', error);
       showError('Error', 'Failed to load your vision boards');
@@ -109,16 +147,17 @@ export default function VisionBoardScreen({ navigation, route }: any) {
     try {
       await AsyncStorage.setItem(STORAGE_KEY_PHOTOS, JSON.stringify(newPhotos));
       setPhotos(newPhotos);
+      return true;
     } catch (error) {
       console.error('Error saving photos:', error);
       showError('Error', 'Failed to save photo');
+      return false;
     }
   };
 
   // ============================================
   // IMAGE PICKING
   // ============================================
-
   const requestPermissions = async () => {
     if (Platform.OS !== 'web') {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -167,12 +206,17 @@ export default function VisionBoardScreen({ navigation, route }: any) {
       const result = await ImagePicker.launchCameraAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
-        aspect: [4, 5],
-        quality: 0.85,
+        aspect: [1, 1],
+        quality: 0.9,
+        base64: Platform.OS === 'web',
       });
 
       if (!result.canceled && result.assets?.[0]) {
-        setPendingImageUri(result.assets[0].uri);
+        const asset = result.assets[0];
+        const resolvedUri = Platform.OS === 'web' && asset.base64
+          ? `data:${asset.mimeType || 'image/jpeg'};base64,${asset.base64}`
+          : asset.uri;
+        setPendingImageUri(resolvedUri);
         setCaptionInput('');
         setShowPhotoModal(true);
       }
@@ -187,12 +231,17 @@ export default function VisionBoardScreen({ navigation, route }: any) {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
-        aspect: [4, 5],
-        quality: 0.85,
+        aspect: [1, 1],
+        quality: 0.9,
+        base64: Platform.OS === 'web',
       });
 
       if (!result.canceled && result.assets?.[0]) {
-        setPendingImageUri(result.assets[0].uri);
+        const asset = result.assets[0];
+        const resolvedUri = Platform.OS === 'web' && asset.base64
+          ? `data:${asset.mimeType || 'image/jpeg'};base64,${asset.base64}`
+          : asset.uri;
+        setPendingImageUri(resolvedUri);
         setCaptionInput('');
         setShowPhotoModal(true);
       }
@@ -205,7 +254,6 @@ export default function VisionBoardScreen({ navigation, route }: any) {
   // ============================================
   // PHOTO MANAGEMENT
   // ============================================
-
   const savePhoto = async () => {
     if (!pendingImageUri || !captionInput.trim()) {
       showError('Error', 'Please add a caption for your vision');
@@ -215,38 +263,44 @@ export default function VisionBoardScreen({ navigation, route }: any) {
     try {
       mediumHaptic();
 
-      if (todayPhoto) {
-        const updatedPhotos = photos.map(p =>
-          p.id === todayPhoto.id
-            ? {
-                ...p,
-                imageUri: pendingImageUri,
-                caption: captionInput.trim(),
-                createdAt: new Date().toISOString(),
-              }
-            : p
-        );
-        await savePhotos(updatedPhotos);
-      } else {
-        const newPhoto: VisionBoardPhoto = {
-          id: Date.now().toString(),
-          boardId: 'today',
-          imageUri: pendingImageUri,
-          caption: captionInput.trim(),
-          createdAt: new Date().toISOString(),
-          dayKey: todayKey,
-        };
-        await savePhotos([...photos, newPhoto]);
+      // Verify image URI is valid
+      if (!pendingImageUri || pendingImageUri.trim() === '') {
+        showError('Error', 'Invalid image. Please try again.');
+        return;
+      }
+
+      const newPhoto: VisionBoardPhoto = {
+        id: Date.now().toString(),
+        boardId: 'vision',
+        imageUri: pendingImageUri,
+        caption: captionInput.trim(),
+        createdAt: new Date().toISOString(),
+        dayKey: getLocalDayKey(),
+      };
+      
+      console.log('Saving photo:', newPhoto.id, newPhoto.imageUri.substring(0, 50) + '...');
+      const success = await savePhotos([...photos, newPhoto]);
+      
+      if (!success) {
+        showError('Error', 'Failed to save photo');
+        return;
       }
 
       if (!hasVisionImageAddedToday()) {
         await addGlowPoints(15, 'Added vision image');
         await markVisionImageAdded();
         showPoints(15, 'Vision image added');
+        trackEvent('vision_image_added', { 
+          is_today: true,
+          has_caption: !!captionInput.trim(),
+          caption_length: captionInput.trim().length
+        });
 
-        setTimeout(() => {
-          navigation.navigate('Today');
-        }, 1500);
+      } else {
+        trackEvent('vision_image_updated', { 
+          is_today: true,
+          has_caption: !!captionInput.trim()
+        });
       }
 
       showSuccess('Added!', 'Vision image added');
@@ -259,29 +313,173 @@ export default function VisionBoardScreen({ navigation, route }: any) {
     }
   };
 
-  const deletePhoto = (photoId: string) => {
-    Alert.alert('Delete Vision', 'Remove this vision image?', [
+  const deletePhoto = async (photoId: string) => {
+    try {
+      mediumHaptic();
+      
+      // Get current photos from ref to avoid stale closure
+      const currentPhotos = photosRef.current;
+      const updatedPhotos = currentPhotos.filter(p => p.id !== photoId);
+      
+      // Update state
+      setPhotos(updatedPhotos);
+      
+      // Save to storage
+      try {
+        await AsyncStorage.setItem(STORAGE_KEY_PHOTOS, JSON.stringify(updatedPhotos));
+      } catch (error) {
+        console.error('Error saving photos after delete:', error);
+        // Revert state on error
+        setPhotos(currentPhotos);
+        showError('Error', 'Failed to save changes');
+        return;
+      }
+      
+      // Close fullscreen if this photo was selected
+      if (selectedPhoto?.id === photoId) {
+        setShowFullscreenModal(false);
+        setSelectedPhoto(null);
+      }
+
+      setImageErrors(prev => {
+        if (!prev[photoId]) {
+          return prev;
+        }
+        const { [photoId]: _removed, ...rest } = prev;
+        return rest;
+      });
+      
+      trackEvent('vision_image_deleted', { photo_id: photoId });
+      showSuccess('Deleted', 'Vision image removed');
+    } catch (error) {
+      console.error('Error deleting photo:', error);
+      showError('Error', 'Failed to delete photo');
+    }
+  };
+
+  const openFullscreen = (photo: VisionBoardPhoto) => {
+    setSelectedPhoto(photo);
+    setShowFullscreenModal(true);
+    
+    // Animate in
+    fadeAnim.setValue(0);
+    scaleAnim.setValue(0.8);
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+      Animated.spring(scaleAnim, {
+        toValue: 1,
+        tension: 50,
+        friction: 7,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  };
+
+  const closeFullscreen = () => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 0,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+      Animated.timing(scaleAnim, {
+        toValue: 0.8,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+    ]).start(() => {
+      setShowFullscreenModal(false);
+      setSelectedPhoto(null);
+    });
+  };
+
+  const handleDeleteFromFullscreen = () => {
+    if (!selectedPhoto) return;
+
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      const confirmed = window.confirm('Are you sure you want to delete this vision image?');
+      if (confirmed) {
+        deletePhoto(selectedPhoto.id);
+      }
+      return;
+    }
+
+    Alert.alert('Delete Vision', 'Are you sure you want to delete this vision image?', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete',
         style: 'destructive',
-        onPress: async () => {
-          const updatedPhotos = photos.filter(p => p.id !== photoId);
-          await savePhotos(updatedPhotos);
-          showSuccess('Deleted', 'Vision image removed');
-        },
+        onPress: () => deletePhoto(selectedPhoto.id),
       },
     ]);
-  };
-
-  const openPreview = (photo: VisionBoardPhoto) => {
-    setPreviewPhoto(photo);
-    setShowPreviewModal(true);
   };
 
   // ============================================
   // RENDER
   // ============================================
+
+  const renderGridItem = ({ item, index }: { item: VisionBoardPhoto; index: number }) => {
+    const isWebBrokenUri = Platform.OS === 'web'
+      && (item.imageUri.startsWith('blob:') || item.imageUri.startsWith('file:') || item.imageUri.startsWith('content:'));
+    const imageError = imageErrors[item.id] || isWebBrokenUri;
+    return (
+      <TouchableOpacity
+        style={[styles.gridItem, { width: gridItemSize, height: gridItemSize }]}
+        onPress={() => {
+          lightHaptic();
+          openFullscreen(item);
+        }}
+        onLongPress={() => {
+          mediumHaptic();
+          if (Platform.OS === 'web' && typeof window !== 'undefined') {
+            const confirmed = window.confirm(`Delete "${item.caption || 'this vision'}"?`);
+            if (confirmed) {
+              deletePhoto(item.id);
+            }
+            return;
+          }
+          Alert.alert('Delete Vision', `Delete "${item.caption || 'this vision'}"?`, [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Delete',
+              style: 'destructive',
+              onPress: () => deletePhoto(item.id),
+            },
+          ]);
+        }}
+        activeOpacity={0.9}
+      >
+        {!imageError ? (
+          <Image
+            source={{ uri: item.imageUri }}
+            style={styles.gridImage}
+            resizeMode="cover"
+            onError={() => {
+              console.error('Error loading image:', item.imageUri);
+              setImageErrors(prev => ({
+                ...prev,
+                [item.id]: true,
+              }));
+            }}
+            onLoad={() => {
+              console.log('Image loaded successfully:', item.id);
+            }}
+          />
+        ) : (
+          <View style={styles.gridItemError}>
+            <Ionicons name="image-outline" size={32} color={theme.colors.textTertiary} />
+            <Text style={[styles.gridItemErrorText, { color: theme.colors.textTertiary }]}>
+              Image not found
+            </Text>
+          </View>
+        )}
+      </TouchableOpacity>
+    );
+  };
 
   if (loading) {
     return (
@@ -297,109 +495,60 @@ export default function VisionBoardScreen({ navigation, route }: any) {
     <>
       <Screen
         title="Vision Board"
-        subtitle="See it, believe it, achieve it"
+        subtitle={sortedPhotos.length > 0 ? `${sortedPhotos.length} vision${sortedPhotos.length !== 1 ? 's' : ''}` : 'Visualize your dreams'}
         rightAction={{
-          icon: 'home-outline',
-          onPress: () => navigation.navigate('Today'),
-          label: 'Back to Today',
+          icon: 'add-circle-outline',
+          onPress: () => {
+            mediumHaptic();
+            addPhoto();
+          },
+          label: 'Add Photo',
         }}
         scroll={false}
       >
-        <ScrollView
-          style={styles.scrollView}
-          contentContainerStyle={[styles.scrollContent, { paddingBottom: tabBarInset }]}
-          showsVerticalScrollIndicator={false}
-        >
-          {/* Today's Vision */}
-          {todayPhoto ? (
-            <SectionCard style={styles.todayCard}>
-              <TouchableOpacity
-                activeOpacity={0.95}
-                onPress={() => openPreview(todayPhoto)}
-                onLongPress={() => {
-                  Alert.alert('Options', todayPhoto.caption, [
-                    { text: 'Replace Photo', onPress: () => addPhoto() },
-                    { text: 'Delete', style: 'destructive', onPress: () => deletePhoto(todayPhoto.id) },
-                    { text: 'Cancel', style: 'cancel' },
-                  ]);
-                }}
-              >
-                <Image source={{ uri: todayPhoto.imageUri }} style={styles.todayImage} resizeMode="cover" />
-                <LinearGradient
-                  colors={['transparent', 'rgba(0, 0, 0, 0.85)']}
-                  style={styles.imageOverlay}
-                >
-                  <View style={styles.completeBadge}>
-                    <Ionicons name="checkmark-circle" size={18} color={tokens.colors.success} />
-                    <Text style={styles.completeBadgeText}>Today's Vision</Text>
-                  </View>
-                  <Text style={styles.imageCaption}>{todayPhoto.caption}</Text>
-                </LinearGradient>
-              </TouchableOpacity>
-            </SectionCard>
-          ) : (
-            <GlassCard style={styles.emptyCard}>
-              <View style={styles.emptyContent}>
-                <View style={[styles.emptyIcon, { backgroundColor: `${tokens.colors.accent}15` }]}>
-                  <Ionicons name="sparkles" size={52} color={tokens.colors.accent} />
-                </View>
-
-                <Text style={[styles.emptyTitle, { color: theme.colors.textPrimary }]}>
-                  Today's Vision Ritual
-                </Text>
-                <Text style={[styles.emptySubtitle, { color: theme.colors.textSecondary }]}>
-                  Choose one powerful image representing what you're manifesting today
-                </Text>
-
-                <PrimaryButton
-                  title="Add Your Vision"
-                  onPress={() => {
-                    mediumHaptic();
-                    addPhoto();
-                  }}
-                  style={styles.addButton}
-                  size="large"
-                />
-              </View>
-            </GlassCard>
-          )}
-
-          {/* Past Visions Gallery */}
-          {pastVisionImages.length > 0 && (
-            <View style={styles.pastSection}>
-              <View style={styles.pastHeader}>
-                <Text style={[styles.pastTitle, { color: theme.colors.textPrimary }]}>Past Visions</Text>
-                <Text style={[styles.pastCount, { color: theme.colors.textSecondary }]}>
-                  {pastVisionImages.length}
-                </Text>
-              </View>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.pastGallery}
-              >
-                {pastVisionImages.map(photo => (
-                  <TouchableOpacity
-                    key={photo.id}
-                    style={styles.pastItem}
-                    onPress={() => openPreview(photo)}
-                    activeOpacity={0.9}
-                  >
-                    <Image source={{ uri: photo.imageUri }} style={styles.pastImage} resizeMode="cover" />
-                    <LinearGradient
-                      colors={['transparent', 'rgba(0, 0, 0, 0.75)']}
-                      style={styles.pastOverlay}
-                    >
-                      <Text style={styles.pastCaption} numberOfLines={2}>
-                        {photo.caption}
-                      </Text>
-                    </LinearGradient>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
+        {sortedPhotos.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <View style={[styles.emptyIconCircle, { backgroundColor: `${theme.colors.accent}10` }]}>
+              <Ionicons name="images-outline" size={64} color={theme.colors.accent} />
             </View>
-          )}
-        </ScrollView>
+            <Text style={[styles.emptyTitle, { color: theme.colors.textPrimary }]}>
+              Start Your Vision Board
+            </Text>
+            <Text style={[styles.emptySubtitle, { color: theme.colors.textSecondary }]}>
+              Add photos that represent your goals and dreams
+            </Text>
+            <TouchableOpacity
+              style={[styles.emptyButton, { backgroundColor: theme.colors.accent }]}
+              onPress={() => {
+                mediumHaptic();
+                addPhoto();
+              }}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="add-circle" size={24} color="#FFFFFF" />
+              <Text style={styles.emptyButtonText}>Add Your First Photo</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <FlatList
+            data={sortedPhotos}
+            renderItem={renderGridItem}
+            numColumns={GRID_COLUMNS}
+            keyExtractor={item => item.id}
+            onLayout={(event) => {
+              const nextWidth = event.nativeEvent.layout.width;
+              if (nextWidth && nextWidth !== gridWidth) {
+                setGridWidth(nextWidth);
+              }
+            }}
+            contentContainerStyle={[
+              styles.gridContainer,
+              { paddingBottom: TAB_BAR_SPACE + 24 },
+            ]}
+            columnWrapperStyle={styles.gridRow}
+            showsVerticalScrollIndicator={false}
+          />
+        )}
       </Screen>
 
       {/* Add Photo Modal */}
@@ -435,7 +584,7 @@ export default function VisionBoardScreen({ navigation, route }: any) {
                 </View>
               )}
               <Text style={[styles.modalTitle, { color: theme.colors.textPrimary }]}>
-                Describe your vision
+                What does this represent?
               </Text>
               <TextInput
                 style={[
@@ -443,10 +592,10 @@ export default function VisionBoardScreen({ navigation, route }: any) {
                   {
                     backgroundColor: theme.colors.bg,
                     color: theme.colors.textPrimary,
-                    borderColor: theme.colors.border,
+                    borderColor: captionInput.trim() ? theme.colors.accent : theme.colors.border,
                   },
                 ]}
-                placeholder="What does this vision represent?"
+                placeholder="Describe your vision..."
                 placeholderTextColor={theme.colors.textTertiary}
                 value={captionInput}
                 onChangeText={setCaptionInput}
@@ -454,84 +603,124 @@ export default function VisionBoardScreen({ navigation, route }: any) {
                 returnKeyType="done"
                 onSubmitEditing={savePhoto}
                 multiline
-                maxLength={150}
+                maxLength={100}
               />
-              <Text style={[styles.charCount, { color: theme.colors.textTertiary }]}>
-                {captionInput.length}/150
-              </Text>
               <View style={styles.modalActions}>
                 <TouchableOpacity
                   style={[styles.modalCancelButton, { borderColor: theme.colors.border }]}
                   onPress={() => {
+                    mediumHaptic();
                     setShowPhotoModal(false);
                     setPendingImageUri(null);
                     setCaptionInput('');
                   }}
+                  activeOpacity={0.7}
                 >
                   <Text style={[styles.modalCancelText, { color: theme.colors.textSecondary }]}>
                     Cancel
                   </Text>
                 </TouchableOpacity>
-                <PrimaryButton
-                  title="Save Vision"
+                <TouchableOpacity
+                  style={[
+                    styles.modalSaveButton,
+                    {
+                      backgroundColor: captionInput.trim() ? theme.colors.accent : theme.colors.border,
+                      opacity: captionInput.trim() ? 1 : 0.5,
+                    },
+                  ]}
                   onPress={savePhoto}
                   disabled={!captionInput.trim()}
-                  style={styles.modalSaveButton}
-                />
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.modalSaveText}>Save</Text>
+                </TouchableOpacity>
               </View>
             </View>
           </KeyboardAvoidingView>
         </View>
       </Modal>
 
-      {/* Preview Modal */}
+      {/* Fullscreen Photo Modal */}
       <Modal
-        visible={showPreviewModal}
+        visible={showFullscreenModal}
         transparent
-        animationType="fade"
-        onRequestClose={() => {
-          setShowPreviewModal(false);
-          setPreviewPhoto(null);
-        }}
+        animationType="none"
+        onRequestClose={closeFullscreen}
+        presentationStyle="overFullScreen"
       >
-        <View style={styles.previewOverlay}>
-          {previewPhoto && (
+        <View style={styles.fullscreenOverlay}>
+          {selectedPhoto && (
             <>
+              {/* Close Button */}
               <TouchableOpacity
-                style={styles.previewClose}
-                onPress={() => {
-                  setShowPreviewModal(false);
-                  setPreviewPhoto(null);
-                }}
+                style={styles.fullscreenClose}
+                onPress={closeFullscreen}
+                activeOpacity={0.7}
               >
                 <Ionicons name="close" size={28} color="#FFFFFF" />
               </TouchableOpacity>
+
+              {/* Add More Button */}
               <TouchableOpacity
-                activeOpacity={1}
+                style={styles.fullscreenAdd}
                 onPress={() => {
-                  setShowPreviewModal(false);
-                  setPreviewPhoto(null);
+                  closeFullscreen();
+                  const addTimeoutId = setTimeout(() => addPhoto(), 300);
+                  timeoutsRef.current.push(addTimeoutId);
                 }}
+                activeOpacity={0.7}
               >
-                <Image
-                  source={{ uri: previewPhoto.imageUri }}
-                  style={styles.previewImage}
-                  resizeMode="contain"
-                />
+                <Ionicons name="add-circle" size={28} color="#FFFFFF" />
               </TouchableOpacity>
-              <View style={styles.previewContent}>
-                <Text style={styles.previewCaption}>{previewPhoto.caption}</Text>
+
+              {/* Photo */}
+              <Animated.View
+                style={[
+                  styles.fullscreenImageContainer,
+                  {
+                    opacity: fadeAnim,
+                    transform: [{ scale: scaleAnim }],
+                  },
+                ]}
+              >
                 <TouchableOpacity
-                  style={styles.previewDeleteButton}
-                  onPress={() => {
-                    setShowPreviewModal(false);
-                    deletePhoto(previewPhoto.id);
-                  }}
+                  activeOpacity={1}
+                  onPress={closeFullscreen}
+                  style={styles.fullscreenImageTouchable}
+                >
+                  <Image
+                    source={{ uri: selectedPhoto.imageUri }}
+                    style={styles.fullscreenImage}
+                    resizeMode="contain"
+                    onError={() => {
+                      setImageErrors(prev => ({
+                        ...prev,
+                        [selectedPhoto.id]: true,
+                      }));
+                    }}
+                  />
+                </TouchableOpacity>
+              </Animated.View>
+
+              {/* Bottom Content */}
+              <Animated.View
+                style={[
+                  styles.fullscreenContent,
+                  {
+                    opacity: fadeAnim,
+                  },
+                ]}
+              >
+                <Text style={styles.fullscreenCaption}>{selectedPhoto.caption}</Text>
+                <TouchableOpacity
+                  style={styles.fullscreenDeleteButton}
+                  onPress={handleDeleteFromFullscreen}
+                  activeOpacity={0.8}
                 >
                   <Ionicons name="trash-outline" size={20} color="#FFFFFF" />
-                  <Text style={styles.previewDeleteText}>Delete</Text>
+                  <Text style={styles.fullscreenDeleteText}>Delete</Text>
                 </TouchableOpacity>
-              </View>
+              </Animated.View>
             </>
           )}
         </View>
@@ -553,153 +742,85 @@ const styles = StyleSheet.create({
   loadingText: {
     ...tokens.typography.body,
   },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    padding: tokens.spacing.lg,
-    gap: tokens.spacing.xl,
-  },
-
-  // Today's Vision Card
-  todayCard: {
-    padding: 0,
-    overflow: 'hidden',
-  },
-  todayImage: {
-    width: '100%',
-    height: 400,
-    backgroundColor: tokens.colors.bg,
-  },
-  imageOverlay: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    padding: tokens.spacing.xl,
-    paddingTop: tokens.spacing.xxl * 2,
-  },
-  completeBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    alignSelf: 'flex-start',
-    marginBottom: tokens.spacing.md,
-    paddingHorizontal: tokens.spacing.md,
-    paddingVertical: tokens.spacing.xs,
-    borderRadius: tokens.radii.full,
-    backgroundColor: 'rgba(16, 185, 129, 0.25)',
-    borderWidth: 1,
-    borderColor: 'rgba(16, 185, 129, 0.4)',
-  },
-  completeBadgeText: {
-    ...tokens.typography.caption,
-    fontWeight: '700',
-    color: '#FFFFFF',
-    letterSpacing: 0.5,
-  },
-  imageCaption: {
-    ...tokens.typography.h3,
-    fontSize: 22,
-    color: '#FFFFFF',
-    fontWeight: '700',
-    lineHeight: 30,
-    letterSpacing: -0.4,
-  },
-
+  
   // Empty State
-  emptyCard: {
-    padding: tokens.spacing.xl * 2,
+  emptyContainer: {
+    flex: 1,
     alignItems: 'center',
+    justifyContent: 'center',
+    padding: tokens.spacing.xl,
+    paddingBottom: TAB_BAR_SPACE + 100,
   },
-  emptyContent: {
-    alignItems: 'center',
-    width: '100%',
-    maxWidth: 360,
-  },
-  emptyIcon: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
+  emptyIconCircle: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: tokens.spacing.xl,
-    borderWidth: 2,
-    borderColor: `${tokens.colors.accent}25`,
-    ...tokens.shadows.card,
   },
   emptyTitle: {
     ...tokens.typography.h2,
     fontSize: 24,
-    fontWeight: '800',
+    fontWeight: '700',
+    marginBottom: tokens.spacing.sm,
     textAlign: 'center',
-    marginBottom: tokens.spacing.md,
-    letterSpacing: -0.5,
   },
   emptySubtitle: {
     ...tokens.typography.body,
     fontSize: 16,
-    lineHeight: 24,
     textAlign: 'center',
-    marginBottom: tokens.spacing.xl * 1.5,
+    marginBottom: tokens.spacing.xl,
+    paddingHorizontal: tokens.spacing.xl,
   },
-  addButton: {
-    width: '100%',
-  },
-
-  // Past Visions Gallery
-  pastSection: {
-    gap: tokens.spacing.md,
-  },
-  pastHeader: {
+  emptyButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  pastTitle: {
-    ...tokens.typography.h3,
-    fontWeight: '800',
-    letterSpacing: -0.4,
-  },
-  pastCount: {
-    ...tokens.typography.caption,
-    fontWeight: '600',
-  },
-  pastGallery: {
-    gap: tokens.spacing.md,
-    paddingRight: tokens.spacing.lg,
-  },
-  pastItem: {
-    width: 140,
-    height: 200,
-    borderRadius: tokens.radii.md,
-    overflow: 'hidden',
-    backgroundColor: tokens.colors.surface,
+    gap: tokens.spacing.sm,
+    paddingHorizontal: tokens.spacing.xl,
+    paddingVertical: tokens.spacing.md,
+    borderRadius: tokens.radii.lg,
     ...tokens.shadows.card,
   },
-  pastImage: {
+  emptyButtonText: {
+    ...tokens.typography.bodyBold,
+    fontSize: 16,
+    color: '#FFFFFF',
+  },
+
+  // Grid
+  gridContainer: {
+    padding: GRID_GAP,
+  },
+  gridRow: {
+    gap: GRID_GAP,
+  },
+  gridItem: {
+    backgroundColor: tokens.colors.surface,
+    overflow: 'hidden',
+    borderRadius: 4,
+  },
+  gridImage: {
     width: '100%',
     height: '100%',
   },
-  pastOverlay: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    padding: tokens.spacing.md,
+  gridItemError: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: tokens.colors.bg,
+    gap: 8,
   },
-  pastCaption: {
+  gridItemErrorText: {
     ...tokens.typography.caption,
-    fontSize: 12,
-    color: '#FFFFFF',
-    fontWeight: '600',
-    lineHeight: 16,
+    fontSize: 10,
   },
 
   // Modals
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'flex-end',
   },
   modalKeyboardView: {
@@ -713,11 +834,11 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: tokens.radii.xl,
     borderTopRightRadius: tokens.radii.xl,
     padding: tokens.spacing.xl,
-    maxHeight: '85%',
+    maxHeight: '80%',
   },
   modalPreviewContainer: {
     width: '100%',
-    height: 220,
+    height: 200,
     marginBottom: tokens.spacing.lg,
     borderRadius: tokens.radii.md,
     overflow: 'hidden',
@@ -729,8 +850,10 @@ const styles = StyleSheet.create({
   },
   modalTitle: {
     ...tokens.typography.h3,
+    fontSize: 20,
     fontWeight: '700',
     marginBottom: tokens.spacing.md,
+    letterSpacing: -0.3,
   },
   modalInput: {
     ...tokens.typography.body,
@@ -739,11 +862,8 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     minHeight: 100,
     textAlignVertical: 'top',
-    marginBottom: tokens.spacing.xs,
-  },
-  charCount: {
-    ...tokens.typography.caption,
-    textAlign: 'right',
+    fontSize: 16,
+    lineHeight: 24,
     marginBottom: tokens.spacing.lg,
   },
   modalActions: {
@@ -760,21 +880,43 @@ const styles = StyleSheet.create({
     minHeight: 50,
   },
   modalCancelText: {
-    ...tokens.typography.bodyMedium,
+    ...tokens.typography.bodyBold,
     fontWeight: '600',
+    fontSize: 16,
   },
   modalSaveButton: {
     flex: 1,
+    paddingVertical: tokens.spacing.md,
+    borderRadius: tokens.radii.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 50,
+  },
+  modalSaveText: {
+    ...tokens.typography.bodyBold,
+    fontWeight: '600',
+    fontSize: 16,
+    color: '#FFFFFF',
   },
 
-  // Preview Modal
-  previewOverlay: {
+  // Fullscreen Modal
+  fullscreenOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.95)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.98)',
   },
-  previewClose: {
+  fullscreenClose: {
+    position: 'absolute',
+    top: 50,
+    left: tokens.spacing.lg,
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    borderRadius: 22,
+    zIndex: 10,
+  },
+  fullscreenAdd: {
     position: 'absolute',
     top: 50,
     right: tokens.spacing.lg,
@@ -782,41 +924,57 @@ const styles = StyleSheet.create({
     height: 44,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
     borderRadius: 22,
-    zIndex: 1,
+    zIndex: 10,
   },
-  previewImage: {
-    width: width - tokens.spacing.xl * 2,
+  fullscreenImageContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  fullscreenImageTouchable: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  fullscreenImage: {
+    width: width,
     height: '70%',
     maxHeight: 600,
   },
-  previewContent: {
+  fullscreenContent: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
     padding: tokens.spacing.xl,
-    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    paddingBottom: tokens.spacing.xl + tokens.spacing.md,
+    backgroundColor: 'rgba(0, 0, 0, 0.85)',
     gap: tokens.spacing.md,
   },
-  previewCaption: {
+  fullscreenCaption: {
     ...tokens.typography.h3,
     fontSize: 20,
     color: '#FFFFFF',
     fontWeight: '600',
     lineHeight: 28,
+    letterSpacing: -0.3,
+    marginBottom: tokens.spacing.sm,
   },
-  previewDeleteButton: {
+  fullscreenDeleteButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
     paddingVertical: tokens.spacing.md,
     borderRadius: tokens.radii.md,
-    backgroundColor: 'rgba(255, 59, 48, 0.3)',
+    backgroundColor: 'rgba(239, 68, 68, 0.3)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.5)',
   },
-  previewDeleteText: {
+  fullscreenDeleteText: {
     ...tokens.typography.bodyMedium,
     fontWeight: '600',
     color: '#FFFFFF',

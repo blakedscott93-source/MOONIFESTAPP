@@ -59,3 +59,4 @@ The Supabase configuration is complete and ready for integration. Users can:
 
 All data still works locally without Supabase - it's optional!
 
+

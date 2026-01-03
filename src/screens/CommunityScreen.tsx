@@ -4,7 +4,7 @@
  * Premium feature - users can share milestones, struggles, wins, and support each other
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -29,6 +29,7 @@ import { useApp } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import { mediumHaptic, successHaptic } from '../utils/haptics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { CommunityScreenProps } from '../types/navigation';
 
 const STORAGE_KEY = '@community_posts';
 
@@ -47,7 +48,7 @@ export interface CommunityPost {
 
 type PostFilter = 'all' | 'milestone' | 'struggle' | 'win' | 'support';
 
-export default function CommunityScreen({ navigation }: any) {
+export default function CommunityScreen({ navigation }: CommunityScreenProps) {
   const { appState } = useApp();
   const { showSuccess, showError } = useToast();
   const [isPremium, setIsPremium] = useState(false);
@@ -104,7 +105,7 @@ export default function CommunityScreen({ navigation }: any) {
         userName: 'Manifestor123',
         userStreak: 45,
         type: 'milestone',
-        content: 'Just hit 45 days! This challenge has transformed my life. Keep going everyone! 🔥',
+        content: 'Just hit 45 days! This challenge has transformed my life. Keep going everyone!',
         likes: 23,
         comments: 5,
         createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
@@ -115,7 +116,7 @@ export default function CommunityScreen({ navigation }: any) {
         userName: 'GratefulSoul',
         userStreak: 12,
         type: 'win',
-        content: 'Got the job I was manifesting! The daily affirmations really worked. Trust the process! ✨',
+        content: 'Got the job I was manifesting! The daily affirmations really worked. Trust the process!',
         likes: 45,
         comments: 12,
         createdAt: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(),
@@ -126,7 +127,7 @@ export default function CommunityScreen({ navigation }: any) {
         userName: 'DayByDay',
         userStreak: 7,
         type: 'struggle',
-        content: 'Having a tough day today but staying committed to my practice. We got this! 💪',
+        content: 'Having a tough day today but staying committed to my practice. We got this!',
         likes: 18,
         comments: 8,
         createdAt: new Date(Date.now() - 8 * 60 * 60 * 1000).toISOString(),
@@ -137,7 +138,7 @@ export default function CommunityScreen({ navigation }: any) {
         userName: 'AbundanceSeeker',
         userStreak: 30,
         type: 'support',
-        content: 'Remember: Every day you show up is a win. Progress over perfection! 🌟',
+        content: 'Remember: Every day you show up is a win. Progress over perfection!',
         likes: 32,
         comments: 3,
         createdAt: new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString(),
@@ -243,9 +244,10 @@ export default function CommunityScreen({ navigation }: any) {
     }
   };
 
-  const filteredPosts = filter === 'all' 
-    ? posts 
-    : posts.filter(post => post.type === filter);
+  const filteredPosts = useMemo(
+    () => (filter === 'all' ? posts : posts.filter(post => post.type === filter)),
+    [filter, posts]
+  );
 
   const getPostTypeIcon = (type: CommunityPost['type']): string => {
     switch (type) {
@@ -282,7 +284,7 @@ export default function CommunityScreen({ navigation }: any) {
     return date.toLocaleDateString();
   };
 
-  const renderPost = ({ item }: { item: CommunityPost }) => {
+  const renderPost = useCallback(({ item }: { item: CommunityPost }) => {
     const typeColor = getPostTypeColor(item.type);
     const typeIcon = getPostTypeIcon(item.type);
 
@@ -351,18 +353,20 @@ export default function CommunityScreen({ navigation }: any) {
         </View>
       </View>
     );
-  };
+  }, [handleLike, isPremium, likingPostId]);
 
-  const renderFilterChips = () => {
-    const filters: Array<{ id: PostFilter; label: string; icon: string }> = [
+  const filters = useMemo<Array<{ id: PostFilter; label: string; icon: string }>>(
+    () => [
       { id: 'all', label: 'All', icon: 'apps' },
       { id: 'milestone', label: 'Milestones', icon: 'trophy' },
       { id: 'win', label: 'Wins', icon: 'star' },
       { id: 'struggle', label: 'Struggles', icon: 'heart' },
       { id: 'support', label: 'Support', icon: 'hand-left' },
-    ];
+    ],
+    []
+  );
 
-    return (
+  const renderFilterChips = () => (
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -395,7 +399,6 @@ export default function CommunityScreen({ navigation }: any) {
         ))}
       </ScrollView>
     );
-  };
 
   return (
     <Screen style={styles.container}>
@@ -539,6 +542,11 @@ export default function CommunityScreen({ navigation }: any) {
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.postsList}
         showsVerticalScrollIndicator={false}
+        removeClippedSubviews
+        initialNumToRender={8}
+        windowSize={7}
+        maxToRenderPerBatch={8}
+        updateCellsBatchingPeriod={50}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -777,4 +785,3 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 });
-

@@ -4,31 +4,60 @@
  * NOT for task execution (that's the Today tab)
  */
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
   TouchableOpacity,
+  Alert,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { useApp } from '../context/AppContext';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import { Screen } from '../components/layout/Screen';
-import { GlassCard, SectionCard, ProgressBar, PrimaryButton } from '../components/ui';
+import { GlassCard, SectionCard, ProgressBar } from '../components/ui';
+import { PremiumGate } from '../components/PremiumGate';
 import { tokens } from '../theme/tokens';
 import { useTheme } from '../context/ThemeContext';
 import { useTabBarInset } from '../hooks/useTabBarInset';
 import {
   CHALLENGE_DURATION_DAYS,
 } from '../utils/constants';
+import { isPremiumUser } from '../utils/premium';
+import { FortyFiveHardMainScreenProps } from '../types/navigation';
+import { useScreenTracking } from '../hooks/useScreenTracking';
 
-export default function FortyFiveHardScreen({ navigation }: any) {
-  const { theme, isDark } = useTheme();
+export default function FortyFiveHardScreen({ navigation }: FortyFiveHardMainScreenProps) {
+  useScreenTracking('45NOW');
+  const { theme } = useTheme();
   const { appState, getTodayProgress } = useApp();
   const tabBarInset = useTabBarInset();
   const todayProgress = useMemo(() => getTodayProgress(), [getTodayProgress]);
+  const [isPremium, setIsPremium] = useState(false);
+  const [showPremiumGate, setShowPremiumGate] = useState(false);
+
+  useFocusEffect(
+    useCallback(() => {
+      let isActive = true;
+      const checkStatus = async () => {
+        try {
+          const premium = await isPremiumUser();
+          if (!isActive) return;
+          setIsPremium(premium);
+        } catch (error) {
+          if (!isActive) return;
+          setIsPremium(false);
+        }
+      };
+      checkStatus();
+      return () => {
+        isActive = false;
+      };
+    }, [])
+  );
 
   // Calculate challenge progress
   const currentDay = appState.totalDays || 1;
@@ -76,17 +105,52 @@ export default function FortyFiveHardScreen({ navigation }: any) {
 
   const completedToday = dailyRequirements.filter(r => r.completed).length;
   const isDayComplete = completedToday === dailyRequirements.length;
+  const premiumTools = [
+    {
+      id: 'custom-plan',
+      title: 'Personalized 45-day plan',
+      description: 'Adapt the challenge to your goals and schedule.',
+      icon: 'sparkles',
+    },
+    {
+      id: 'reminders',
+      title: 'Smart reminder schedule',
+      description: 'Get timed nudges to finish every daily task.',
+      icon: 'notifications',
+    },
+    {
+      id: 'insights',
+      title: 'Progress insights',
+      description: 'See trends and streak insights over time.',
+      icon: 'bar-chart',
+    },
+  ];
+
+  const handleUpgradePress = () => {
+    if (!isPremium) {
+      setShowPremiumGate(true);
+    }
+  };
+
+  const handlePremiumToolPress = () => {
+    if (!isPremium) {
+      setShowPremiumGate(true);
+      return;
+    }
+    Alert.alert('Coming Soon', 'This premium tool will be available in a future update.');
+  };
 
   return (
-    <Screen
-      scroll
-      title="45 NOW Challenge"
-      subtitle="Transform your life in 45 days"
-      contentContainerStyle={{
-        paddingTop: tokens.spacing.xs,
-        paddingBottom: tabBarInset,
-      }}
-    >
+    <>
+      <Screen
+        scroll
+        title="45 NOW Challenge"
+        subtitle="Transform your life in 45 days"
+        contentContainerStyle={{
+          paddingTop: tokens.spacing.xs,
+          paddingBottom: tabBarInset,
+        }}
+      >
       {/* Challenge Explanation - Hero Card */}
       <GlassCard style={styles.heroCard}>
         <View style={styles.heroContent}>
@@ -97,6 +161,40 @@ export default function FortyFiveHardScreen({ navigation }: any) {
           <Text style={[styles.heroDescription, { color: theme.colors.textSecondary }]}>
             Complete 5 daily tasks for 45 consecutive days to transform your habits and manifest your goals through consistent action.
           </Text>
+          {!isPremium && (
+            <TouchableOpacity
+              style={styles.upgradeButton}
+              onPress={handleUpgradePress}
+              activeOpacity={0.9}
+              accessibilityRole="button"
+              accessibilityLabel="Unlock premium access"
+            >
+              <BlurView
+                intensity={80}
+                tint="light"
+                style={styles.upgradeButtonBlur}
+              >
+                <LinearGradient
+                  colors={[
+                    'rgba(124, 58, 237, 1)',
+                    'rgba(167, 139, 250, 1)',
+                    'rgba(199, 125, 255, 1)',
+                  ]}
+                  style={styles.upgradeButtonGradient}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                >
+                  <View style={styles.upgradeButtonContent}>
+                    <Ionicons name="sparkles" size={20} color="#FFFFFF" />
+                    <Text style={styles.upgradeButtonText}>Unlock Premium Access</Text>
+                    <Ionicons name="chevron-forward" size={18} color="#FFFFFF" style={{ opacity: 0.9 }} />
+                  </View>
+                  {/* Glossy shine effect */}
+                  <View style={styles.upgradeButtonShine} />
+                </LinearGradient>
+              </BlurView>
+            </TouchableOpacity>
+          )}
         </View>
       </GlassCard>
 
@@ -132,7 +230,7 @@ export default function FortyFiveHardScreen({ navigation }: any) {
 
         <Text style={[styles.daysRemainingText, { color: theme.colors.textSecondary }]}>
           {daysRemaining === 0
-            ? '🎉 Challenge complete! Amazing work!'
+            ? 'Challenge complete! Amazing work!'
             : `${daysRemaining} day${daysRemaining === 1 ? '' : 's'} to go`}
         </Text>
       </SectionCard>
@@ -163,11 +261,11 @@ export default function FortyFiveHardScreen({ navigation }: any) {
           ))}
         </View>
 
-        {!isDayComplete && (
-          <TouchableOpacity
-            style={styles.goToTodayButton}
-            onPress={() => navigation.navigate('Today')}
-            activeOpacity={0.8}
+      {!isDayComplete && (
+        <TouchableOpacity
+          style={styles.goToTodayButton}
+          onPress={() => navigation.getParent()?.navigate('Today' as never)}
+          activeOpacity={0.8}
           >
             <LinearGradient
               colors={[tokens.colors.accent, tokens.colors.primary]}
@@ -178,6 +276,83 @@ export default function FortyFiveHardScreen({ navigation }: any) {
               <Text style={styles.goToTodayText}>Go to Today Tab to Execute</Text>
               <Ionicons name="arrow-forward" size={20} color="#FFFFFF" />
             </LinearGradient>
+          </TouchableOpacity>
+        )}
+      </SectionCard>
+
+      {/* Premium Tools - Locked for free users */}
+      <SectionCard style={styles.premiumCard}>
+        <View style={styles.premiumHeader}>
+          <Text style={[styles.premiumTitle, { color: theme.colors.textPrimary }]}>Premium tools</Text>
+          {!isPremium && (
+            <View style={styles.premiumBadge}>
+              <Ionicons name="lock-closed" size={12} color={tokens.colors.textInverse} />
+              <Text style={styles.premiumBadgeText}>Locked</Text>
+            </View>
+          )}
+        </View>
+        <Text style={[styles.premiumSubtitle, { color: theme.colors.textSecondary }]}>
+          {isPremium
+            ? 'Premium tools are unlocked and rolling out in upcoming updates.'
+            : 'Unlock deeper structure and guidance for the full 45-day journey.'}
+        </Text>
+        <View style={styles.premiumList}>
+          {premiumTools.map(tool => (
+            <TouchableOpacity
+              key={tool.id}
+              style={styles.premiumRow}
+              onPress={handlePremiumToolPress}
+              activeOpacity={0.85}
+            >
+              <View style={[styles.premiumIcon, { backgroundColor: `${tokens.colors.accent}15` }]}>
+                <Ionicons name={tool.icon as any} size={18} color={tokens.colors.accent} />
+              </View>
+              <View style={styles.premiumText}>
+                <Text style={[styles.premiumRowTitle, { color: theme.colors.textPrimary }]}>
+                  {tool.title}
+                </Text>
+                <Text style={[styles.premiumRowSubtitle, { color: theme.colors.textSecondary }]}>
+                  {tool.description}
+                </Text>
+              </View>
+              <Ionicons
+                name={isPremium ? 'checkmark-circle' : 'lock-closed'}
+                size={18}
+                color={isPremium ? tokens.colors.success : tokens.colors.textTertiary}
+              />
+            </TouchableOpacity>
+          ))}
+        </View>
+        {!isPremium && (
+          <TouchableOpacity
+            style={styles.premiumCTA}
+            onPress={handleUpgradePress}
+            activeOpacity={0.9}
+            accessibilityRole="button"
+            accessibilityLabel="Unlock premium access"
+          >
+            <BlurView
+              intensity={80}
+              tint="light"
+              style={styles.premiumCTABlur}
+            >
+              <LinearGradient
+                colors={[
+                  'rgba(124, 58, 237, 1)',
+                  'rgba(167, 139, 250, 1)',
+                  'rgba(199, 125, 255, 1)',
+                ]}
+                style={styles.premiumCTAGradient}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+              >
+                <View style={styles.premiumCTAContent}>
+                  <Ionicons name="sparkles" size={18} color="#FFFFFF" />
+                  <Text style={styles.premiumCTAText}>Unlock Premium Access</Text>
+                </View>
+                <View style={styles.premiumCTAShine} />
+              </LinearGradient>
+            </BlurView>
           </TouchableOpacity>
         )}
       </SectionCard>
@@ -212,7 +387,7 @@ export default function FortyFiveHardScreen({ navigation }: any) {
           <Text style={[styles.motivationQuote, { color: theme.colors.textPrimary }]}>
             "Consistency is the bridge between goals and accomplishment"
           </Text>
-          <Text style={[styles.motivationAuthor, { color: theme.colors.textSecondary }]}>— Jim Rohn</Text>
+          <Text style={[styles.motivationAuthor, { color: theme.colors.textSecondary }]}>- Jim Rohn</Text>
         </View>
       </SectionCard>
 
@@ -270,9 +445,22 @@ export default function FortyFiveHardScreen({ navigation }: any) {
         </View>
       </GlassCard>
 
-      {/* Extra bottom padding */}
-      <View style={{ height: 110 }} />
-    </Screen>
+        {/* Extra bottom padding */}
+        <View style={{ height: 110 }} />
+      </Screen>
+
+      <PremiumGate
+        visible={showPremiumGate && !isPremium}
+        onClose={() => setShowPremiumGate(false)}
+        onUpgrade={async () => {
+          const premium = await isPremiumUser();
+          setIsPremium(premium);
+          setShowPremiumGate(false);
+        }}
+        featureName="45 NOW"
+        featureDescription="Lock in consistency with your 45-day challenge, streak tracking, and daily structure to reach your goals."
+      />
+    </>
   );
 }
 
@@ -286,6 +474,53 @@ const styles = StyleSheet.create({
   heroContent: {
     alignItems: 'center',
     gap: tokens.spacing.md,
+  },
+  upgradeButton: {
+    borderRadius: tokens.radii.lg,
+    overflow: 'hidden',
+    marginTop: tokens.spacing.md,
+    ...tokens.shadows.floating,
+  },
+  upgradeButtonBlur: {
+    borderRadius: tokens.radii.lg,
+    overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.5)',
+  },
+  upgradeButtonGradient: {
+    position: 'relative',
+    paddingVertical: tokens.spacing.md + 2,
+    paddingHorizontal: tokens.spacing.xl,
+    minHeight: 52,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  upgradeButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: tokens.spacing.sm,
+    zIndex: 2,
+  },
+  upgradeButtonText: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: 0.6,
+    textShadowColor: 'rgba(0, 0, 0, 0.4)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 4,
+  },
+  upgradeButtonShine: {
+    position: 'absolute',
+    top: -50,
+    left: -50,
+    width: 200,
+    height: 200,
+    borderRadius: 100,
+    backgroundColor: 'rgba(255, 255, 255, 0.35)',
+    transform: [{ rotate: '45deg' }],
+    zIndex: 1,
   },
   heroIcon: {
     width: 64,
@@ -438,6 +673,121 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     color: '#FFFFFF',
+  },
+
+  // Premium Tools
+  premiumCard: {
+    marginBottom: tokens.spacing.md,
+    padding: tokens.spacing.lg,
+  },
+  premiumHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: tokens.spacing.xs,
+  },
+  premiumTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  premiumBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: tokens.colors.accent,
+    paddingHorizontal: tokens.spacing.sm,
+    paddingVertical: 4,
+    borderRadius: tokens.radii.full,
+  },
+  premiumBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: tokens.colors.textInverse,
+    letterSpacing: 0.4,
+  },
+  premiumSubtitle: {
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: tokens.spacing.md,
+  },
+  premiumList: {
+    gap: tokens.spacing.md,
+  },
+  premiumRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: tokens.spacing.md,
+    backgroundColor: tokens.colors.surface,
+    borderRadius: tokens.radii.md,
+    padding: tokens.spacing.md,
+    borderWidth: 1,
+    borderColor: tokens.colors.borderSubtle,
+  },
+  premiumIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  premiumText: {
+    flex: 1,
+  },
+  premiumRowTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  premiumRowSubtitle: {
+    fontSize: 12,
+    lineHeight: 16,
+    marginTop: 2,
+  },
+  premiumCTA: {
+    marginTop: tokens.spacing.md,
+    borderRadius: tokens.radii.lg,
+    overflow: 'hidden',
+    ...tokens.shadows.floating,
+  },
+  premiumCTABlur: {
+    borderRadius: tokens.radii.lg,
+    overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.5)',
+  },
+  premiumCTAGradient: {
+    position: 'relative',
+    paddingVertical: tokens.spacing.md + 2,
+    paddingHorizontal: tokens.spacing.lg,
+    minHeight: 48,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  premiumCTAContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: tokens.spacing.sm,
+    zIndex: 2,
+  },
+  premiumCTAText: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: 0.6,
+    textShadowColor: 'rgba(0, 0, 0, 0.4)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 4,
+  },
+  premiumCTAShine: {
+    position: 'absolute',
+    top: -40,
+    left: -40,
+    width: 150,
+    height: 150,
+    borderRadius: 75,
+    backgroundColor: 'rgba(255, 255, 255, 0.35)',
+    transform: [{ rotate: '45deg' }],
+    zIndex: 1,
   },
 
   // Streak Card

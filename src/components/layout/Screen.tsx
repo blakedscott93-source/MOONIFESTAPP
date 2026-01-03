@@ -64,7 +64,7 @@ export const Screen: React.FC<ScreenProps> = ({
       {title && (
         <View style={headerStyle === 'compact' ? styles.compactHeader : styles.defaultHeader}>
           <View style={[styles.headerContent, headerStyle === 'compact' && { paddingHorizontal }]}>
-            <View>
+            <View style={styles.headerTextBlock}>
               <Text style={[styles.title, { color: textPrimary }]}>{title}</Text>
               {subtitle && (
                 <Text style={[styles.subtitle, { color: textSecondary }]}>
@@ -121,15 +121,22 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
+  headerTextBlock: {
+    flex: 1,
+    flexShrink: 1,
+    paddingRight: tokens.spacing.md,
+  },
   title: {
     fontSize: 28,
     fontWeight: '700',
+    fontFamily: tokens.typography.title.fontFamily,
     letterSpacing: -0.3,
     lineHeight: 36,
   },
   subtitle: {
     fontSize: 13,
     fontWeight: '400',
+    fontFamily: 'Sora_400Regular',
     letterSpacing: 0.1,
     lineHeight: 18,
     marginTop: 2,

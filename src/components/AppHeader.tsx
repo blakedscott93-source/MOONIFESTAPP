@@ -107,6 +107,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 24, // Reduced from 28 to 24
     fontWeight: '700',
+    fontFamily: Theme.typography.h2.fontFamily,
     letterSpacing: -0.3,
     color: Theme.colors.textPrimary,
     lineHeight: 30, // Reduced from 34
@@ -114,10 +115,12 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 13, // Keep at 13 (within 13-14 range)
     fontWeight: '600',
+    fontFamily: 'Sora_400Regular',
     color: Theme.colors.textSecondary,
     marginTop: 3, // Reduced from 4
   },
 });
+
 
 
 

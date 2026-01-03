@@ -3,17 +3,24 @@ import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
+  FlatList,
   TouchableOpacity,
   TextInput,
   KeyboardAvoidingView,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Screen } from '../components/Screen';
 import { Theme, TOUCH_TARGET_MIN } from '../utils/theme';
 import { useNavigation } from '@react-navigation/native';
+import { 
+  getAIResponse, 
+  isOpenAIConfigured, 
+  formatConversationHistory,
+  ChatResponse,
+} from '../utils/openaiChat';
 
 interface Message {
   id: string;
@@ -53,7 +60,7 @@ const CHATBOT_RESPONSES: { [key: string]: { text: string; options?: string[] } }
     ],
   },
   'how do i use this app?': {
-    text: "Let me show you around! 🗺️\n\n🏠 Today Tab: Your daily overview\n✨ Affirmations: Guided audio sessions\n📖 Journal: Write gratitude entries\n⭐ 45 NOW: Complete your daily tasks\n\nEach day, complete:\n1. Your 3 must-do tasks\n2. 3 Guided affirmation sessions\n3. Guided meditation\n4. 3 Gratitude check-ins\n\nMiss a day? You start over. That's what makes you mentally tough!\n\nWhat would you like to explore?",
+    text: "Let me show you around! 🗺️\n\n🏠 Today Tab: Your daily overview\n✨ Affirmations: Guided audio sessions\n📖 Journal: Write gratitude entries\n⭐ 45 NOW: Complete your daily tasks\n\nEach day, complete:\n1. Your 3 must-do tasks\n2. 3 Guided affirmation sessions\n3. Guided meditation\n4. 1 Gratitude check-in\n\nMiss a day? You start over. That's what makes you mentally tough!\n\nWhat would you like to explore?",
     options: [
       'How to write good affirmations?',
       'What are must-do tasks?',
@@ -112,11 +119,26 @@ export default function ChatbotScreen() {
     },
   ]);
   const [inputText, setInputText] = useState('');
-  const scrollViewRef = useRef<ScrollView>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [aiEnabled, setAiEnabled] = useState(false);
+  const listRef = useRef<FlatList<Message>>(null);
+  const timeoutsRef = useRef<NodeJS.Timeout[]>([]);
 
   useEffect(() => {
-    scrollViewRef.current?.scrollToEnd({ animated: true });
+    // Check if OpenAI is configured
+    setAiEnabled(isOpenAIConfigured());
+  }, []);
+
+  useEffect(() => {
+    listRef.current?.scrollToEnd({ animated: true });
   }, [messages]);
+
+  useEffect(() => {
+    return () => {
+      timeoutsRef.current.forEach(timeoutId => clearTimeout(timeoutId));
+      timeoutsRef.current = [];
+    };
+  }, []);
 
   const handleOptionPress = (option: string) => {
     // Add user message
@@ -130,7 +152,7 @@ export default function ChatbotScreen() {
     setMessages((prev) => [...prev, userMessage]);
 
     // Get bot response
-    setTimeout(() => {
+    const responseTimeoutId = setTimeout(() => {
       const responseKey = option.toLowerCase();
       const response = CHATBOT_RESPONSES[responseKey] || CHATBOT_RESPONSES['back to main menu'];
 
@@ -144,10 +166,11 @@ export default function ChatbotScreen() {
 
       setMessages((prev) => [...prev, botMessage]);
     }, 500);
+    timeoutsRef.current.push(responseTimeoutId);
   };
 
-  const handleSendMessage = () => {
-    if (!inputText.trim()) return;
+  const handleSendMessage = async () => {
+    if (!inputText.trim() || isLoading) return;
 
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -157,34 +180,32 @@ export default function ChatbotScreen() {
     };
 
     setMessages((prev) => [...prev, userMessage]);
+    const currentInput = inputText;
     setInputText('');
+    setIsLoading(true);
 
-    // Enhanced keyword matching for custom input
-    setTimeout(() => {
-      let responseText = "I appreciate your question! For now, try selecting from the options below, or explore the main topics. More conversational AI coming soon! ✨";
-      let options = CHATBOT_RESPONSES['back to main menu'].options;
+    try {
+      let responseText: string;
+      let options: string[] | undefined;
 
-      const input = inputText.toLowerCase();
-      
-      // Keyword matching with fallback
-      if (input.includes('369') || input.includes('method') || input.includes('affirm')) {
-        responseText = CHATBOT_RESPONSES['how does the 369 method work?'].text;
-        options = CHATBOT_RESPONSES['how does the 369 method work?'].options;
-      } else if (input.includes('manifest') || input.includes('desire') || input.includes('goal')) {
-        responseText = CHATBOT_RESPONSES['what is manifestation?'].text;
-        options = CHATBOT_RESPONSES['what is manifestation?'].options;
-      } else if (input.includes('motivat') || input.includes('encourage') || input.includes('stuck')) {
-        responseText = CHATBOT_RESPONSES['i need motivation'].text;
-        options = CHATBOT_RESPONSES['i need motivation'].options;
-      } else if (input.includes('consist') || input.includes('habit') || input.includes('routine')) {
-        responseText = CHATBOT_RESPONSES['tips for staying consistent'].text;
-        options = CHATBOT_RESPONSES['tips for staying consistent'].options;
-      } else if (input.includes('app') || input.includes('use') || input.includes('how to')) {
-        responseText = CHATBOT_RESPONSES['how do i use this app?'].text;
-        options = CHATBOT_RESPONSES['how do i use this app?'].options;
-      } else if (input.includes('write') || input.includes('example') || input.includes('what should')) {
-        responseText = CHATBOT_RESPONSES['what should i write?'].text;
-        options = CHATBOT_RESPONSES['what should i write?'].options;
+      if (aiEnabled) {
+        // Use AI-powered response
+        const conversationHistory = formatConversationHistory(messages);
+        const aiResponse: ChatResponse = await getAIResponse(currentInput, conversationHistory);
+        
+        if (aiResponse.error) {
+          // Fallback to rule-based if AI fails
+          responseText = getRuleBasedResponse(currentInput);
+          options = CHATBOT_RESPONSES['back to main menu'].options;
+        } else {
+          responseText = aiResponse.text;
+          // Don't show options for AI responses - they're conversational
+          options = undefined;
+        }
+      } else {
+        // Use rule-based responses
+        responseText = getRuleBasedResponse(currentInput);
+        options = CHATBOT_RESPONSES['back to main menu'].options;
       }
 
       const botMessage: Message = {
@@ -196,8 +217,78 @@ export default function ChatbotScreen() {
       };
 
       setMessages((prev) => [...prev, botMessage]);
-    }, 500);
+    } catch (error) {
+      console.error('Error getting response:', error);
+      const errorMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        text: "I'm having trouble right now. Please try again or select from the options below! ✨",
+        sender: 'bot',
+        timestamp: new Date(),
+        options: CHATBOT_RESPONSES['back to main menu'].options,
+      };
+      setMessages((prev) => [...prev, errorMessage]);
+    } finally {
+      setIsLoading(false);
+    }
   };
+
+  const getRuleBasedResponse = (input: string): string => {
+    const lowerInput = input.toLowerCase();
+    let responseText = "I appreciate your question! For now, try selecting from the options below, or explore the main topics. More conversational AI coming soon! ✨";
+
+    // Enhanced keyword matching
+    if (lowerInput.includes('369') || lowerInput.includes('method') || lowerInput.includes('affirm')) {
+      responseText = CHATBOT_RESPONSES['how does the 369 method work?'].text;
+    } else if (lowerInput.includes('manifest') || lowerInput.includes('desire') || lowerInput.includes('goal')) {
+      responseText = CHATBOT_RESPONSES['what is manifestation?'].text;
+    } else if (lowerInput.includes('motivat') || lowerInput.includes('encourage') || lowerInput.includes('stuck')) {
+      responseText = CHATBOT_RESPONSES['i need motivation'].text;
+    } else if (lowerInput.includes('consist') || lowerInput.includes('habit') || lowerInput.includes('routine')) {
+      responseText = CHATBOT_RESPONSES['tips for staying consistent'].text;
+    } else if (lowerInput.includes('app') || lowerInput.includes('use') || lowerInput.includes('how to')) {
+      responseText = CHATBOT_RESPONSES['how do i use this app?'].text;
+    } else if (lowerInput.includes('write') || lowerInput.includes('example') || lowerInput.includes('what should')) {
+      responseText = CHATBOT_RESPONSES['what should i write?'].text;
+    }
+
+    return responseText;
+  };
+
+  const renderMessage = ({ item }: { item: Message }) => (
+    <View>
+      <View
+        style={[
+          styles.messageBubble,
+          item.sender === 'user' ? styles.userBubble : styles.botBubble,
+        ]}
+      >
+        <Text
+          style={[
+            styles.messageText,
+            item.sender === 'user' ? styles.userText : styles.botText,
+          ]}
+        >
+          {item.text}
+        </Text>
+      </View>
+
+      {item.options && item.sender === 'bot' && (
+        <View style={styles.optionsContainer}>
+          {item.options.map((option, index) => (
+            <TouchableOpacity
+              key={index}
+              style={styles.optionButton}
+              onPress={() => handleOptionPress(option)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.optionText}>{option}</Text>
+              <Ionicons name="chevron-forward" size={16} color={Theme.colors.accent} />
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
+    </View>
+  );
 
   return (
     <Screen style={styles.container}>
@@ -226,55 +317,26 @@ export default function ChatbotScreen() {
             </View>
             <View>
               <Text style={styles.headerTitle}>Moonifest Guide</Text>
-              <Text style={styles.headerSubtitle}>Your manifestation assistant</Text>
+              <Text style={styles.headerSubtitle}>
+                {aiEnabled ? 'AI-powered assistant ✨' : 'Your manifestation assistant'}
+              </Text>
             </View>
           </View>
           <View style={{ width: TOUCH_TARGET_MIN }} />
         </View>
 
         {/* Messages */}
-        <ScrollView
-          ref={scrollViewRef}
+        <FlatList
+          ref={listRef}
+          data={messages}
+          renderItem={renderMessage}
+          keyExtractor={(item) => item.id}
           style={styles.messagesContainer}
           contentContainerStyle={styles.messagesContent}
           showsVerticalScrollIndicator={false}
-        >
-          {messages.map((message) => (
-            <View key={message.id}>
-              <View
-                style={[
-                  styles.messageBubble,
-                  message.sender === 'user' ? styles.userBubble : styles.botBubble,
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.messageText,
-                    message.sender === 'user' ? styles.userText : styles.botText,
-                  ]}
-                >
-                  {message.text}
-                </Text>
-              </View>
-
-              {message.options && message.sender === 'bot' && (
-                <View style={styles.optionsContainer}>
-                  {message.options.map((option, index) => (
-                    <TouchableOpacity
-                      key={index}
-                      style={styles.optionButton}
-                      onPress={() => handleOptionPress(option)}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={styles.optionText}>{option}</Text>
-                      <Ionicons name="chevron-forward" size={16} color={Theme.colors.accent} />
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              )}
-            </View>
-          ))}
-        </ScrollView>
+          keyboardShouldPersistTaps="handled"
+          onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
+        />
 
         {/* Input */}
         <View style={styles.inputContainer}>
@@ -287,15 +349,20 @@ export default function ChatbotScreen() {
             onSubmitEditing={handleSendMessage}
           />
           <TouchableOpacity 
-            style={styles.sendButton} 
+            style={[styles.sendButton, (isLoading || !inputText.trim()) && styles.sendButtonDisabled]} 
             onPress={handleSendMessage}
+            disabled={isLoading || !inputText.trim()}
             activeOpacity={0.7}
           >
             <LinearGradient
               colors={[Theme.colors.accent, Theme.colors.accentDark]}
               style={styles.sendButtonGradient}
             >
-              <Ionicons name="send" size={18} color="#FFFFFF" />
+              {isLoading ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <Ionicons name="send" size={18} color="#FFFFFF" />
+              )}
             </LinearGradient>
           </TouchableOpacity>
         </View>
@@ -351,6 +418,7 @@ const styles = StyleSheet.create({
   },
   headerSubtitle: {
     ...Theme.typography.caption,
+    fontFamily: 'Sora_400Regular',
     color: Theme.colors.textSecondary,
   },
   messagesContainer: {
@@ -441,5 +509,8 @@ const styles = StyleSheet.create({
     height: '100%',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  sendButtonDisabled: {
+    opacity: 0.5,
   },
 });

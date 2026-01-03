@@ -45,3 +45,4 @@
 4. Normalize typography usage
 5. Remove unnecessary icons/visual noise
 6. Ensure gradients only used for CTAs
+

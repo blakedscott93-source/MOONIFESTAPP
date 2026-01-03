@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Animated } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Theme, TOUCH_TARGET_MIN } from '../utils/theme';
 
@@ -32,19 +32,40 @@ export const ListRow: React.FC<ListRowProps> = React.memo(({
   completed,
   testID,
 }) => {
+  const scaleAnim = React.useRef(new Animated.Value(completed ? 1 : 1)).current;
+
+  React.useEffect(() => {
+    if (completed) {
+      // Subtle pulse animation for completed items
+      Animated.sequence([
+        Animated.timing(scaleAnim, {
+          toValue: 1.1,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+        Animated.timing(scaleAnim, {
+          toValue: 1,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }
+  }, [completed, scaleAnim]);
+
   const content = (
-    <View style={styles.container}>
+    <View style={[styles.container, completed && styles.containerCompleted]}>
       {icon && (
         <View
           style={[
             styles.iconCircle,
-            { backgroundColor: iconColor ? `${iconColor}15` : `${Theme.colors.accentSoft}` },
+            completed && styles.iconCircleCompleted,
+            { backgroundColor: completed ? '#4CAF5020' : (iconColor ? `${iconColor}15` : `${Theme.colors.accentSoft}`) },
           ]}
         >
           <Ionicons
             name={icon}
             size={22}
-            color={iconColor || Theme.colors.accent}
+            color={completed ? '#4CAF50' : (iconColor || Theme.colors.accent)}
           />
         </View>
       )}
@@ -58,16 +79,26 @@ export const ListRow: React.FC<ListRowProps> = React.memo(({
           {title}
         </Text>
         {subtitle && (
-          <Text style={styles.subtitle}>{subtitle}</Text>
+          <Text style={[styles.subtitle, completed && styles.subtitleCompleted]}>
+            {subtitle}
+          </Text>
         )}
       </View>
       {rightIcon && (
-        <Ionicons
-          name={rightIcon}
-          size={18}
-          color={onRightIconPress ? Theme.colors.danger : Theme.colors.textTertiary}
-          style={styles.rightIcon}
-        />
+        <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
+          <Ionicons
+            name={rightIcon}
+            size={completed ? 24 : 18}
+            color={
+              completed
+                ? '#22C55E' // Vibrant green checkmark for completed items
+                : onRightIconPress
+                ? Theme.colors.danger
+                : Theme.colors.textTertiary
+            }
+            style={styles.rightIcon}
+          />
+        </Animated.View>
       )}
     </View>
   );
@@ -100,6 +131,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: Theme.spacing.md,
   },
+  containerCompleted: {
+    backgroundColor: '#22C55E08', // Very subtle green background tint
+    borderRadius: 8,
+    paddingHorizontal: Theme.spacing.sm,
+    marginHorizontal: -Theme.spacing.sm,
+  },
   iconCircle: {
     width: 40,
     height: 40,
@@ -107,6 +144,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: Theme.spacing.md,
+  },
+  iconCircleCompleted: {
+    borderWidth: 2,
+    borderColor: '#22C55E40', // Vibrant green border
   },
   textContainer: {
     flex: 1,
@@ -118,12 +159,19 @@ const styles = StyleSheet.create({
   },
   titleCompleted: {
     textDecorationLine: 'line-through',
-    color: Theme.colors.textTertiary,
+    textDecorationColor: '#22C55E', // Vibrant green strikethrough
+    textDecorationStyle: 'solid',
+    color: '#22C55E', // Vibrant green text for completed items
+    fontWeight: '600',
   },
   subtitle: {
     ...Theme.typography.caption,
     color: Theme.colors.textSecondary,
     marginTop: Theme.spacing.xs / 2,
+  },
+  subtitleCompleted: {
+    color: '#22C55E80', // Vibrant green subtitle
+    fontWeight: '500',
   },
   rightIcon: {
     marginLeft: Theme.spacing.sm,

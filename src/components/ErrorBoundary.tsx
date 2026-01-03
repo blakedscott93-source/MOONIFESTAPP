@@ -62,9 +62,7 @@ export class ErrorBoundary extends Component<Props, State> {
           componentStack: errorInfo.componentStack,
         },
       });
-      console.log('✅ Error sent to Sentry for tracking');
     } else {
-      console.log('⚠️ Sentry not configured - error logged locally only');
     }
   }
 

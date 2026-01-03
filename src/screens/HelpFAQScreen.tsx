@@ -4,6 +4,7 @@ import {
   Text,
   StyleSheet,
   ScrollView,
+  FlatList,
   TouchableOpacity,
   Alert,
 } from 'react-native';
@@ -13,6 +14,7 @@ import { Screen } from '../components/Screen';
 import { AppHeader } from '../components/AppHeader';
 import { UnifiedCard } from '../components/UnifiedCard';
 import { Theme } from '../utils/theme';
+import { HelpFAQScreenProps } from '../types/navigation';
 
 interface FAQItem {
   question: string;
@@ -29,7 +31,7 @@ const FAQ_DATA: FAQItem[] = [
   },
   {
     question: 'How does the 45 NOW Challenge work?',
-    answer: 'The 45 NOW Challenge is a structured 45-day program where you complete 3 must-do tasks, 3 guided affirmation sessions, 1 meditation, and 3 gratitude check-ins every day. Completing all daily practices maintains your streak and helps build lasting positive habits.',
+    answer: 'The 45 NOW Challenge is a structured 45-day program where you complete 3 must-do tasks, 3 guided affirmation sessions, 1 meditation, and 1 gratitude check-in every day. Completing all daily practices maintains your streak and helps build lasting positive habits.',
     category: 'general',
   },
   {
@@ -100,7 +102,7 @@ const CATEGORIES = [
   { id: 'premium', label: 'Premium', icon: 'star' },
 ] as const;
 
-export default function HelpFAQScreen({ navigation }: any) {
+export default function HelpFAQScreen({ navigation }: HelpFAQScreenProps) {
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
 
@@ -129,112 +131,111 @@ export default function HelpFAQScreen({ navigation }: any) {
         }}
       />
 
-      <ScrollView
+      <FlatList
         style={styles.container}
-        showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.content}
-      >
-        {/* Category Filter */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.categoryContainer}
-        >
-          {CATEGORIES.map((category) => (
-            <TouchableOpacity
-              key={category.id}
-              style={[
-                styles.categoryChip,
-                selectedCategory === category.id && styles.categoryChipActive,
-              ]}
-              onPress={() => setSelectedCategory(category.id)}
-            >
-              <Ionicons
-                name={category.icon as any}
-                size={16}
-                color={
-                  selectedCategory === category.id
-                    ? Theme.colors.accent
-                    : Theme.colors.textSecondary
-                }
-              />
-              <Text
-                style={[
-                  styles.categoryChipText,
-                  selectedCategory === category.id && styles.categoryChipTextActive,
-                ]}
+        showsVerticalScrollIndicator={false}
+        data={filteredFAQs}
+        keyExtractor={(item) => item.question}
+        renderItem={({ item: faq }) => {
+          const isExpanded = expandedItems.has(faq.question);
+          return (
+            <UnifiedCard style={styles.faqCard}>
+              <TouchableOpacity
+                style={styles.faqHeader}
+                onPress={() => toggleExpand(faq.question)}
+                activeOpacity={0.7}
               >
-                {category.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-
-        {/* FAQ Items */}
-        {filteredFAQs.length === 0 ? (
+                <View style={styles.faqQuestionContainer}>
+                  <Text style={styles.faqQuestion}>{faq.question}</Text>
+                </View>
+                <Ionicons
+                  name={isExpanded ? 'chevron-up' : 'chevron-down'}
+                  size={24}
+                  color={Theme.colors.accent}
+                />
+              </TouchableOpacity>
+              {isExpanded && (
+                <View style={styles.faqAnswerContainer}>
+                  <Text style={styles.faqAnswer}>{faq.answer}</Text>
+                </View>
+              )}
+            </UnifiedCard>
+          );
+        }}
+        ListHeaderComponent={
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.categoryContainer}
+          >
+            {CATEGORIES.map((category) => (
+              <TouchableOpacity
+                key={category.id}
+                style={[
+                  styles.categoryChip,
+                  selectedCategory === category.id && styles.categoryChipActive,
+                ]}
+                onPress={() => setSelectedCategory(category.id)}
+              >
+                <Ionicons
+                  name={category.icon as any}
+                  size={16}
+                  color={
+                    selectedCategory === category.id
+                      ? Theme.colors.accent
+                      : Theme.colors.textSecondary
+                  }
+                />
+                <Text
+                  style={[
+                    styles.categoryChipText,
+                    selectedCategory === category.id && styles.categoryChipTextActive,
+                  ]}
+                >
+                  {category.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        }
+        ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <Ionicons name="help-circle-outline" size={60} color={Theme.colors.textTertiary} />
             <Text style={styles.emptyText}>No FAQs found in this category</Text>
           </View>
-        ) : (
-          filteredFAQs.map((faq, index) => {
-            const isExpanded = expandedItems.has(faq.question);
-            return (
-              <UnifiedCard key={index} style={styles.faqCard}>
-                <TouchableOpacity
-                  style={styles.faqHeader}
-                  onPress={() => toggleExpand(faq.question)}
-                  activeOpacity={0.7}
+        }
+        ListFooterComponent={
+          <>
+            <UnifiedCard style={styles.contactCard}>
+              <Ionicons name="mail-outline" size={32} color={Theme.colors.accent} />
+              <Text style={styles.contactTitle}>Still need help?</Text>
+              <Text style={styles.contactText}>
+                Can't find what you're looking for? Contact our support team and we'll get back to you as soon as possible.
+              </Text>
+              <TouchableOpacity
+                style={styles.contactButton}
+                onPress={() => {
+                  Alert.alert(
+                    'Contact Support',
+                    'For support, please email us at support@moonifest.app or use the Contact Support option in Settings.',
+                    [{ text: 'OK' }]
+                  );
+                }}
+              >
+                <LinearGradient
+                  colors={[Theme.colors.accent, Theme.colors.accentDark]}
+                  style={styles.contactButtonGradient}
                 >
-                  <View style={styles.faqQuestionContainer}>
-                    <Text style={styles.faqQuestion}>{faq.question}</Text>
-                  </View>
-                  <Ionicons
-                    name={isExpanded ? 'chevron-up' : 'chevron-down'}
-                    size={24}
-                    color={Theme.colors.accent}
-                  />
-                </TouchableOpacity>
-                {isExpanded && (
-                  <View style={styles.faqAnswerContainer}>
-                    <Text style={styles.faqAnswer}>{faq.answer}</Text>
-                  </View>
-                )}
-              </UnifiedCard>
-            );
-          })
-        )}
-
-        {/* Contact Support */}
-        <UnifiedCard style={styles.contactCard}>
-          <Ionicons name="mail-outline" size={32} color={Theme.colors.accent} />
-          <Text style={styles.contactTitle}>Still need help?</Text>
-          <Text style={styles.contactText}>
-            Can't find what you're looking for? Contact our support team and we'll get back to you as soon as possible.
-          </Text>
-          <TouchableOpacity
-            style={styles.contactButton}
-            onPress={() => {
-              // Navigate to contact or open email
-              Alert.alert(
-                'Contact Support',
-                'For support, please email us at support@moonifest.app or use the Contact Support option in Settings.',
-                [{ text: 'OK' }]
-              );
-            }}
-          >
-            <LinearGradient
-              colors={[Theme.colors.accent, Theme.colors.accentDark]}
-              style={styles.contactButtonGradient}
-            >
-              <Ionicons name="mail" size={20} color="#FFFFFF" />
-              <Text style={styles.contactButtonText}>Contact Support</Text>
-            </LinearGradient>
-          </TouchableOpacity>
-        </UnifiedCard>
-
-        <View style={{ height: Theme.spacing.xxxl }} />
-      </ScrollView>
+                  <Ionicons name="mail" size={20} color="#FFFFFF" />
+                  <Text style={styles.contactButtonText}>Contact Support</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            </UnifiedCard>
+            <View style={{ height: Theme.spacing.xxxl }} />
+          </>
+        }
+      />
     </Screen>
   );
 }
@@ -350,4 +351,3 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
 });
-

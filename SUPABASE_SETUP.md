@@ -160,3 +160,4 @@ if (isSupabaseConfigured) {
 - Supabase sync is for cloud backup and multi-device sync only
 - Users can export their data manually anytime
 
+

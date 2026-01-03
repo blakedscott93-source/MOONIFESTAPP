@@ -117,7 +117,6 @@ export async function promptForRating(context: {
     const { shouldPrompt, reason } = await shouldPromptForRating(context);
     
     if (!shouldPrompt) {
-      console.log(`Rating prompt skipped: ${reason}`);
       return false;
     }
 
@@ -127,7 +126,6 @@ export async function promptForRating(context: {
     
     // Still prompt even if not optimal time, but log it
     if (!isOptimalTime) {
-      console.log('Not optimal time of day, but prompting anyway');
     }
 
     const isAvailable = await StoreReview.isAvailableAsync();
@@ -142,7 +140,6 @@ export async function promptForRating(context: {
 
       // Request review (iOS/Android will handle rate-limiting)
       await StoreReview.requestReview();
-      console.log('Rating prompt shown to user');
       return true;
     } else {
       // Fallback: Show custom prompt

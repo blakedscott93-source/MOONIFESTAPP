@@ -3,14 +3,15 @@ import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
+  FlatList,
 } from 'react-native';
 import { Screen } from '../components/Screen';
 import { AppHeader } from '../components/AppHeader';
 import { UnifiedCard } from '../components/UnifiedCard';
 import { Theme } from '../utils/theme';
+import { TermsOfServiceScreenProps } from '../types/navigation';
 
-export default function TermsOfServiceScreen({ navigation }: any) {
+export default function TermsOfServiceScreen({ navigation }: TermsOfServiceScreenProps) {
   return (
     <Screen>
       <AppHeader
@@ -21,12 +22,14 @@ export default function TermsOfServiceScreen({ navigation }: any) {
           onPress: () => navigation.goBack(),
         }}
       />
-
-      <ScrollView
+      <FlatList
         style={styles.container}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.content}
-      >
+        data={[]}
+        renderItem={() => null}
+        ListHeaderComponent={
+          <>
         <UnifiedCard>
           <Text style={styles.lastUpdated}>Last Updated: December 2024</Text>
 
@@ -39,10 +42,10 @@ export default function TermsOfServiceScreen({ navigation }: any) {
           <Text style={styles.sectionText}>
             Permission is granted to temporarily use Moonifest for personal, non-commercial purposes. This is the grant of a license, not a transfer of title, and under this license you may not:
           </Text>
-          <Text style={styles.bulletPoint}>• Modify or copy the app</Text>
-          <Text style={styles.bulletPoint}>• Use the app for any commercial purpose</Text>
-          <Text style={styles.bulletPoint}>• Attempt to reverse engineer the app</Text>
-          <Text style={styles.bulletPoint}>• Remove any copyright or proprietary notations</Text>
+          <Text style={styles.bulletPoint}>- Modify or copy the app</Text>
+          <Text style={styles.bulletPoint}>- Use the app for any commercial purpose</Text>
+          <Text style={styles.bulletPoint}>- Attempt to reverse engineer the app</Text>
+          <Text style={styles.bulletPoint}>- Remove any copyright or proprietary notations</Text>
 
           <Text style={styles.sectionTitle}>3. User Accounts</Text>
           <Text style={styles.sectionText}>
@@ -58,10 +61,10 @@ export default function TermsOfServiceScreen({ navigation }: any) {
           <Text style={styles.sectionText}>
             You may not use Moonifest:
           </Text>
-          <Text style={styles.bulletPoint}>• In any way that violates any applicable law or regulation</Text>
-          <Text style={styles.bulletPoint}>• To transmit any malicious code or viruses</Text>
-          <Text style={styles.bulletPoint}>• To harass, abuse, or harm other users</Text>
-          <Text style={styles.bulletPoint}>• To impersonate or attempt to impersonate others</Text>
+          <Text style={styles.bulletPoint}>- In any way that violates any applicable law or regulation</Text>
+          <Text style={styles.bulletPoint}>- To transmit any malicious code or viruses</Text>
+          <Text style={styles.bulletPoint}>- To harass, abuse, or harm other users</Text>
+          <Text style={styles.bulletPoint}>- To impersonate or attempt to impersonate others</Text>
 
           <Text style={styles.sectionTitle}>6. Premium Features</Text>
           <Text style={styles.sectionText}>
@@ -107,7 +110,9 @@ export default function TermsOfServiceScreen({ navigation }: any) {
         </UnifiedCard>
 
         <View style={{ height: Theme.spacing.xxxl }} />
-      </ScrollView>
+          </>
+        }
+      />
     </Screen>
   );
 }
@@ -162,4 +167,5 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
 });
+
 

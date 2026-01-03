@@ -14,11 +14,11 @@ import { StackScreenProps } from '@react-navigation/stack';
 // ============================================================================
 
 export type MainTabParamList = {
-  Today: undefined;
-  Affirmations: NavigatorScreenParams<AffirmationsStackParamList>;
-  Journal: NavigatorScreenParams<JournalStackParamList>;
-  '45 NOW': NavigatorScreenParams<FortyFiveHardStackParamList>;
-  Vision: undefined;
+  Today: { fromDailyVisionImage?: boolean } | undefined;
+  Affirmations: NavigatorScreenParams<AffirmationsStackParamList> | undefined;
+  Journal: NavigatorScreenParams<JournalStackParamList> | undefined;
+  '45 NOW': NavigatorScreenParams<FortyFiveHardStackParamList> | undefined;
+  Vision: { fromDailyVisionImage?: boolean } | undefined;
 };
 
 // ============================================================================
@@ -30,9 +30,9 @@ export type AffirmationsStackParamList = {
   AffirmationPlayer: {
     session: {
       id: string;
+      categoryId: string;
       title: string;
       subtitle?: string;
-      category: string;
       duration: number;
       affirmations: string[];
     };
@@ -49,7 +49,9 @@ export type JournalStackParamList = {
 
 export type FortyFiveHardStackParamList = {
   FortyFiveHardMain: undefined;
-  AffirmationEntry: undefined;
+  AffirmationEntry: {
+    period: 'morning' | 'afternoon' | 'evening';
+  };
   NotificationSettings: undefined;
 };
 
@@ -68,6 +70,7 @@ export type RootStackParamList = {
       audioUrl?: string;
     };
   };
+  TasksScreen: undefined;
   ProgressScreen: undefined;
   ToolsScreen: undefined;
   CommunityScreen: undefined;
@@ -110,6 +113,7 @@ export type ChatbotScreenProps = StackScreenProps<RootStackParamList, 'ChatbotSc
 export type AchievementsScreenProps = StackScreenProps<RootStackParamList, 'AchievementsScreen'>;
 export type SettingsScreenProps = StackScreenProps<RootStackParamList, 'SettingsScreen'>;
 export type MeditationScreenProps = StackScreenProps<RootStackParamList, 'MeditationScreen'>;
+export type TasksScreenProps = StackScreenProps<RootStackParamList, 'TasksScreen'>;
 export type ProgressScreenProps = StackScreenProps<RootStackParamList, 'ProgressScreen'>;
 export type ToolsScreenProps = StackScreenProps<RootStackParamList, 'ToolsScreen'>;
 export type CommunityScreenProps = StackScreenProps<RootStackParamList, 'CommunityScreen'>;
@@ -128,3 +132,4 @@ declare global {
     interface RootParamList extends RootStackParamList {}
   }
 }
+

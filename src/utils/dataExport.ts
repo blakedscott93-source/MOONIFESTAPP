@@ -79,7 +79,6 @@ export async function shareExportedData(): Promise<boolean> {
       return true;
     } else {
       // Fallback: return file path for user to manually share
-      console.log('Sharing not available. File saved at:', fileUri);
       return false;
     }
   } catch (error) {

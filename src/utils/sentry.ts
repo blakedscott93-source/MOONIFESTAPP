@@ -9,7 +9,6 @@ try {
   // @env might not be available on web or if .env file doesn't exist
   SENTRY_DSN = undefined;
   if (__DEV__) {
-    console.log('⚠️ Could not load @env - Sentry will be disabled');
   }
 }
 
@@ -33,8 +32,6 @@ try {
 export function initSentry() {
   // Only initialize if DSN is configured
   if (!SENTRY_DSN || SENTRY_DSN === 'your-sentry-dsn-here') {
-    console.log('⚠️ Sentry not configured - error tracking disabled');
-    console.log('💡 To enable: Sign up at https://sentry.io and add SENTRY_DSN to .env');
     return;
   }
 
@@ -64,7 +61,6 @@ export function initSentry() {
       beforeSend(event, hint) {
         // Don't send events in development unless explicitly enabled
         if (__DEV__ && !shouldSendInDev()) {
-          console.log('🔍 Sentry event (not sent in dev):', event);
           return null;
         }
 
@@ -77,9 +73,8 @@ export function initSentry() {
       },
     });
 
-    console.log('✅ Sentry initialized successfully');
   } catch (error) {
-    console.error('❌ Failed to initialize Sentry:', error);
+    console.error('Failed to initialize Sentry:', error);
   }
 }
 
@@ -115,7 +110,6 @@ export function captureError(error: Error, context?: Record<string, any>) {
  */
 export function captureMessage(message: string, level: 'info' | 'warning' | 'error' = 'info') {
   if (!SENTRY_DSN) {
-    console.log(`Message (Sentry not configured): [${level}] ${message}`);
     return;
   }
 

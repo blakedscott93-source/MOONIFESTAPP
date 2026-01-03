@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ViewStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Theme, TOUCH_TARGET_MIN } from '../utils/theme';
@@ -10,6 +10,7 @@ interface PrimaryButtonProps {
   icon?: keyof typeof Ionicons.glyphMap;
   disabled?: boolean;
   fullWidth?: boolean;
+  style?: ViewStyle;
   testID?: string;
 }
 
@@ -22,11 +23,12 @@ export const PrimaryButton: React.FC<PrimaryButtonProps> = ({
   icon,
   disabled,
   fullWidth,
+  style,
   testID,
 }) => {
   return (
     <TouchableOpacity
-      style={[styles.primaryButton, fullWidth && styles.fullWidth, disabled && styles.disabled]}
+      style={[styles.primaryButton, fullWidth && styles.fullWidth, disabled && styles.disabled, style]}
       onPress={onPress}
       disabled={disabled}
       activeOpacity={0.8}

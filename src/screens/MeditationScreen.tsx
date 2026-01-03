@@ -1,11 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   Animated,
-  Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -15,6 +14,10 @@ import { AppHeader } from '../components/AppHeader';
 import { Theme } from '../utils/theme';
 import { useApp } from '../context/AppContext';
 import { AudioPlayer, MEDITATION_AUDIO, MeditationAudioId } from '../utils/audioPlayer';
+import { MeditationScreenProps } from '../types/navigation';
+import { useScreenTracking } from '../hooks/useScreenTracking';
+import { trackEvent } from '../utils/analytics';
+import { useTabBarInset } from '../hooks/useTabBarInset';
 
 const MEDITATION_SESSIONS = [
   { id: 'morning-1', label: 'Morning Clarity', category: 'morning' },
@@ -28,8 +31,10 @@ const MEDITATION_SESSIONS = [
   { id: 'sleep-3', label: 'Dream Journey', category: 'sleep' },
 ];
 
-export default function MeditationScreen({ navigation, route }: any) {
+export default function MeditationScreen({ navigation, route }: MeditationScreenProps) {
+  useScreenTracking('Meditation', { meditation_id: route.params?.meditation?.id });
   const { completeMeditation, addGlowPoints } = useApp();
+  const tabBarInset = useTabBarInset();
 
   // Get current time period
   const getCurrentPeriod = () => {
@@ -48,7 +53,7 @@ export default function MeditationScreen({ navigation, route }: any) {
 
   // Default to first session of current period
   const defaultSessionId = availableSessions[0]?.id || 'morning-1';
-  const sessionId = route?.params?.sessionId as MeditationAudioId || defaultSessionId;
+  const sessionId = (route.params?.meditation?.id as MeditationAudioId) || defaultSessionId;
 
   const [selectedSession, setSelectedSession] = useState<MeditationAudioId>(sessionId);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -60,15 +65,37 @@ export default function MeditationScreen({ navigation, route }: any) {
   const breathAnimation = useRef(new Animated.Value(0)).current;
   const pulseAnimation = useRef(new Animated.Value(1)).current;
 
+  const handleComplete = useCallback(async () => {
+    setIsPlaying(false);
+    setIsPaused(false);
+    await audioPlayerRef.current.stop();
+    await completeMeditation();
+    await addGlowPoints(30, 'Completed meditation session');
+    trackEvent('meditation_completed', { 
+      meditation_id: selectedSession,
+      category: currentPeriod,
+      duration_seconds: Math.floor(duration / 1000)
+    });
+    // Show completion message
+    navigation.goBack();
+  }, [addGlowPoints, completeMeditation, currentPeriod, duration, navigation, selectedSession]);
+
   // Load audio when component mounts or session changes
   useEffect(() => {
+    const audioPlayer = audioPlayerRef.current;
+    let isActive = true;
+
     const loadAudio = async () => {
       try {
         const audioPath = MEDITATION_AUDIO[selectedSession];
-        await audioPlayerRef.current.loadAudio(audioPath);
+        await audioPlayer.loadAudio(audioPath);
+
+        if (!isActive) {
+          return;
+        }
 
         // Set up playback status update listener
-        audioPlayerRef.current.setOnPlaybackStatusUpdate((status: AVPlaybackStatus) => {
+        audioPlayer.setOnPlaybackStatusUpdate((status: AVPlaybackStatus) => {
           if (status.isLoaded) {
             setCurrentPosition(status.positionMillis);
             setDuration(status.durationMillis || 0);
@@ -87,64 +114,53 @@ export default function MeditationScreen({ navigation, route }: any) {
     loadAudio();
 
     return () => {
-      audioPlayerRef.current.unloadAudio();
+      isActive = false;
+      audioPlayer.unloadAudio();
     };
-  }, [selectedSession]);
+  }, [handleComplete, selectedSession]);
 
   // Handle animations when playing/paused
   useEffect(() => {
     if (isPlaying && !isPaused) {
-      startBreathingAnimation();
-      startPulseAnimation();
+      const breathLoop = Animated.loop(
+        Animated.sequence([
+          Animated.timing(breathAnimation, {
+            toValue: 1,
+            duration: 4000,
+            useNativeDriver: true,
+          }),
+          Animated.timing(breathAnimation, {
+            toValue: 0,
+            duration: 4000,
+            useNativeDriver: true,
+          }),
+        ])
+      );
+      const pulseLoop = Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnimation, {
+            toValue: 1.1,
+            duration: 4000,
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulseAnimation, {
+            toValue: 1,
+            duration: 4000,
+            useNativeDriver: true,
+          }),
+        ])
+      );
+      breathLoop.start();
+      pulseLoop.start();
+      return () => {
+        breathLoop.stop();
+        pulseLoop.stop();
+      };
     } else {
       breathAnimation.stopAnimation();
       pulseAnimation.stopAnimation();
     }
-  }, [isPlaying, isPaused]);
-
-  const startBreathingAnimation = () => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(breathAnimation, {
-          toValue: 1,
-          duration: 4000,
-          useNativeDriver: true,
-        }),
-        Animated.timing(breathAnimation, {
-          toValue: 0,
-          duration: 4000,
-          useNativeDriver: true,
-        }),
-      ])
-    ).start();
-  };
-
-  const startPulseAnimation = () => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnimation, {
-          toValue: 1.1,
-          duration: 4000,
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulseAnimation, {
-          toValue: 1,
-          duration: 4000,
-          useNativeDriver: true,
-        }),
-      ])
-    ).start();
-  };
-
-  const handleComplete = async () => {
-    setIsPlaying(false);
-    setIsPaused(false);
-    await audioPlayerRef.current.stop();
-    await completeMeditation();
-    await addGlowPoints(30, 'Completed meditation session');
-    // Show completion message
-    navigation.goBack();
-  };
+  }, [breathAnimation, isPaused, isPlaying, pulseAnimation]);
 
   const handleStart = async () => {
     try {
@@ -199,11 +215,6 @@ export default function MeditationScreen({ navigation, route }: any) {
     return 'Breathe Out...';
   };
 
-  const getSessionLabel = () => {
-    const session = MEDITATION_SESSIONS.find(s => s.id === selectedSession);
-    return session?.label || 'Meditation Session';
-  };
-
   return (
     <Screen style={styles.container}>
       <AppHeader
@@ -216,20 +227,20 @@ export default function MeditationScreen({ navigation, route }: any) {
         }}
         rightIcon={{
           name: 'home-outline',
-          onPress: () => navigation.navigate('Today'),
+          onPress: () => navigation.navigate('MainTabs', { screen: 'Today' }),
           accessibilityLabel: 'Back to Today',
         }}
       />
 
-      <View style={styles.content}>
+      <View style={[styles.content, { paddingBottom: tabBarInset }]}>
         {!isPlaying ? (
           <>
             {/* Session Selection */}
             <View style={styles.durationContainer}>
               <Text style={styles.sectionTitle}>
-                {currentPeriod === 'morning' && '🌅 Morning Meditations'}
-                {currentPeriod === 'midday' && '☀️ Midday Meditations'}
-                {currentPeriod === 'sleep' && '🌙 Evening Meditations'}
+                {currentPeriod === 'morning' && 'Morning Meditations'}
+                {currentPeriod === 'midday' && 'Midday Meditations'}
+                {currentPeriod === 'sleep' && 'Evening Meditations'}
               </Text>
               <Text style={styles.sectionSubtitle}>
                 Perfect for {currentPeriod === 'morning' ? 'starting your day' : currentPeriod === 'midday' ? 'a refreshing break' : 'winding down'}

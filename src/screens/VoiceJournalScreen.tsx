@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -6,7 +6,7 @@ import {
   TouchableOpacity,
   TextInput,
   Animated,
-  ScrollView,
+  FlatList,
   KeyboardAvoidingView,
   Platform,
   Alert,
@@ -19,6 +19,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Screen } from '../components/Screen';
 import { Theme, TOUCH_TARGET_MIN } from '../utils/theme';
+import { REQUIRED_DAILY_GRATITUDE_CHECKINS } from '../utils/constants';
 import {
   startRecording,
   stopRecording,
@@ -27,8 +28,9 @@ import {
   formatDuration,
   getRecordingDuration,
 } from '../utils/voiceRecording';
-import { transcribeAudio } from '../utils/voiceTranscription';
+import { transcribeAudio, isTranscriptionAvailable } from '../utils/voiceTranscription';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { VoiceJournalScreenProps } from '../types/navigation';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -100,7 +102,7 @@ const IDLE_SIDEBAR_ITEMS = [
   { icon: 'create-outline', label: 'Type', action: 'type' },
 ];
 
-export default function VoiceJournalScreen({ navigation }: any) {
+export default function VoiceJournalScreen({ navigation }: VoiceJournalScreenProps) {
   const {
     getTodayCheckIns,
     getTodayCheckInCount,
@@ -125,6 +127,7 @@ export default function VoiceJournalScreen({ navigation }: any) {
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [userGoal, setUserGoal] = useState<string>('');
   const [activePrompts, setActivePrompts] = useState<string[]>(MANIFESTATION_PROMPTS);
+  const checkInLabel = REQUIRED_DAILY_GRATITUDE_CHECKINS === 1 ? 'check-in' : 'check-ins';
 
   // Entrance animations
   const headerOpacity = useRef(new Animated.Value(0)).current;
@@ -150,6 +153,7 @@ export default function VoiceJournalScreen({ navigation }: any) {
 
   // Ref to store the recording duration interval ID
   const durationIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const isRecordingRef = useRef(false);
 
   // Sidebar animations
   const sidebarItems = isPressing ? RECORDING_SIDEBAR_ITEMS : IDLE_SIDEBAR_ITEMS;
@@ -161,6 +165,22 @@ export default function VoiceJournalScreen({ navigation }: any) {
     loadTodayData();
     startEntranceAnimations();
     startIdleAnimations();
+  }, [loadTodayData, startEntranceAnimations, startIdleAnimations]);
+
+  useEffect(() => {
+    isRecordingRef.current = isRecording;
+  }, [isRecording]);
+
+  useEffect(() => {
+    return () => {
+      if (durationIntervalRef.current) {
+        clearInterval(durationIntervalRef.current);
+        durationIntervalRef.current = null;
+      }
+      if (isRecordingRef.current) {
+        cancelRecording().catch(() => null);
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -178,7 +198,7 @@ export default function VoiceJournalScreen({ navigation }: any) {
     }).start();
   }, [textEntry]);
 
-  const loadTodayData = async () => {
+  const loadTodayData = useCallback(async () => {
     const count = await getTodayCheckInCount();
     const complete = await isTodayGratitudeComplete();
     setCheckInCount(count);
@@ -200,10 +220,10 @@ export default function VoiceJournalScreen({ navigation }: any) {
     } catch (error) {
       console.error('Error loading onboarding data:', error);
     }
-  };
+  }, [getTodayCheckInCount, isTodayGratitudeComplete]);
 
   // Entrance animations - fade up for all components
-  const startEntranceAnimations = () => {
+  const startEntranceAnimations = useCallback(() => {
     // Header
     Animated.parallel([
       Animated.timing(headerOpacity, {
@@ -269,10 +289,19 @@ export default function VoiceJournalScreen({ navigation }: any) {
         useNativeDriver: true,
       }),
     ]).start();
-  };
+  }, [
+    headerOpacity,
+    headerTranslateY,
+    micButtonOpacity,
+    micButtonScale,
+    promptOpacity,
+    promptTranslateY,
+    textInputOpacity,
+    textInputTranslateY,
+  ]);
 
   // Subtle idle animations
-  const startIdleAnimations = () => {
+  const startIdleAnimations = useCallback(() => {
     // Gentle pulse on mic button
     Animated.loop(
       Animated.sequence([
@@ -304,7 +333,7 @@ export default function VoiceJournalScreen({ navigation }: any) {
         }),
       ])
     ).start();
-  };
+  }, [glowRingOpacity, pulseAnim]);
 
 
   // Waveform animation
@@ -341,7 +370,6 @@ export default function VoiceJournalScreen({ navigation }: any) {
 
   // Handle press in (start recording)
   const handlePressIn = () => {
-    console.log('🎤 Press in detected - starting animations immediately');
     
     // Start animations IMMEDIATELY (before async permission check)
     setIsPressing(true);
@@ -386,7 +414,7 @@ export default function VoiceJournalScreen({ navigation }: any) {
         // Request permission first
         const hasPermission = await requestMicrophonePermission();
         if (!hasPermission) {
-          console.warn('⚠️ Microphone permission denied');
+          console.warn('Microphone permission denied');
           Alert.alert(
             'Microphone Permission',
             Platform.OS === 'web' 
@@ -415,7 +443,6 @@ export default function VoiceJournalScreen({ navigation }: any) {
 
         // Start actual voice recording
         await startRecording();
-        console.log('🎤 Recording started successfully');
 
         // Update recording duration every 100ms
         const durationInterval = setInterval(async () => {
@@ -425,12 +452,12 @@ export default function VoiceJournalScreen({ navigation }: any) {
           } catch (durationError) {
             console.warn('Error getting recording duration:', durationError);
           }
-        }, 100);
+        }, 500);
 
         // Store interval ID in ref to clear it later
         durationIntervalRef.current = durationInterval;
       } catch (error) {
-        console.error('❌ Failed to start recording:', error);
+        console.error('Failed to start recording:', error);
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
         
         // Reset state on error
@@ -452,7 +479,7 @@ export default function VoiceJournalScreen({ navigation }: any) {
         // Show user-friendly error message
         const errorAlert = Platform.OS === 'web'
           ? 'Voice recording on web requires HTTPS or localhost. Please:\n\n1. Use Chrome or Edge browser\n2. Allow microphone permissions\n3. Or test on iOS/Android for full functionality'
-          : `Failed to start recording: ${errorMessage}\n\nPlease check:\n• Microphone permissions\n• Microphone is not being used by another app\n• Try restarting the app`;
+          : `Failed to start recording: ${errorMessage}\n\nPlease check:\n- Microphone permissions\n- Microphone is not being used by another app\n- Try restarting the app`;
         
         Alert.alert('Recording Error', errorAlert, [{ text: 'OK' }]);
         showError('Recording Error', 'Failed to start recording. Check console for details.');
@@ -493,11 +520,38 @@ export default function VoiceJournalScreen({ navigation }: any) {
 
       // Stop recording and get URI
       const uri = await stopRecording();
-      console.log('🎤 Stopped recording, URI:', uri);
 
       if (uri) {
         setRecordingUri(uri);
         const duration = formatDuration(recordingDuration);
+
+        if (!isTranscriptionAvailable()) {
+          setIsTranscribing(false);
+          Alert.alert(
+            'Transcription Unavailable',
+            'Voice-only entries are supported right now. Would you like to save this as a voice entry?',
+            [
+              {
+                text: 'Save Voice Entry',
+                onPress: async () => {
+                  const voiceOnlyText = `Voice journal entry (${duration})`;
+                  await saveEntry(voiceOnlyText);
+                  setRecordingUri(null);
+                  setRecordingDuration(0);
+                },
+              },
+              {
+                text: 'Re-record',
+                onPress: () => {
+                  setRecordingUri(null);
+                  setRecordingDuration(0);
+                },
+                style: 'cancel',
+              },
+            ]
+          );
+          return;
+        }
 
         // Start transcribing
         setIsTranscribing(true);
@@ -522,7 +576,7 @@ export default function VoiceJournalScreen({ navigation }: any) {
                 {
                   text: 'Save Voice Entry',
                   onPress: async () => {
-                    const voiceOnlyText = `🎤 Voice journal entry (${duration})`;
+                    const voiceOnlyText = `Voice journal entry (${duration})`;
                     await saveEntry(voiceOnlyText);
                     setRecordingUri(null);
                     setRecordingDuration(0);
@@ -544,7 +598,7 @@ export default function VoiceJournalScreen({ navigation }: any) {
             const confidence = transcriptionResult.confidence ? ` (${Math.round(transcriptionResult.confidence * 100)}% confidence)` : '';
 
             Alert.alert(
-              '✅ Transcription Complete!',
+              'Transcription Complete',
               `"${transcribedText}"\n\n${duration} recording${confidence}`,
               [
                 {
@@ -625,7 +679,7 @@ export default function VoiceJournalScreen({ navigation }: any) {
 
   const saveEntry = async (content: string) => {
     if (isComplete) {
-      showInfo('Day Complete', 'You\'ve already completed 3 check-ins today. Keep going!');
+      showInfo('Day Complete', `You've already completed ${REQUIRED_DAILY_GRATITUDE_CHECKINS} ${checkInLabel} today. Keep going!`);
       // Still proceed with save
       await proceedWithSave(content);
       return;
@@ -699,10 +753,8 @@ export default function VoiceJournalScreen({ navigation }: any) {
       stopWaveformAnimation();
       startIdleAnimations();
 
-      console.log('❌ Recording cancelled');
     } else if (action === 'undo') {
       // Undo functionality - could implement later
-      console.log('Undo');
     } else if (action === 'type') {
       setShowTextInput(true);
     }
@@ -724,12 +776,16 @@ export default function VoiceJournalScreen({ navigation }: any) {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
       >
-        <ScrollView
+        <FlatList
           style={styles.scrollView}
+          data={[]}
+          renderItem={() => null}
+          keyExtractor={(_, index) => `voice-journal-${index}`}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
-        >
+          ListHeaderComponent={
+            <>
           {/* Header Section */}
           <Animated.View
             style={[
@@ -757,7 +813,7 @@ export default function VoiceJournalScreen({ navigation }: any) {
                 <Ionicons name="flame" size={12} color="#FF6B35" />
                 <Text style={styles.progressText}>{appState.currentStreak} day streak</Text>
                 <View style={styles.progressDivider} />
-                <Text style={styles.progressText}>{checkInCount}/3 today</Text>
+                <Text style={styles.progressText}>{checkInCount}/{REQUIRED_DAILY_GRATITUDE_CHECKINS} today</Text>
               </View>
             </View>
 
@@ -988,7 +1044,7 @@ export default function VoiceJournalScreen({ navigation }: any) {
                   <TextInput
                     style={styles.textInput}
                     multiline
-                    placeholder="Type your manifestation here…"
+                    placeholder="Type your manifestation here..."
                     placeholderTextColor={Theme.colors.textTertiary}
                     value={textEntry}
                     onChangeText={setTextEntry}
@@ -1064,12 +1120,14 @@ export default function VoiceJournalScreen({ navigation }: any) {
                   end={{ x: 1, y: 1 }}
                 >
                   <Ionicons name="create-outline" size={24} color={Theme.colors.accent} />
-                  <Text style={styles.textInputTriggerText}>Type your manifestation here…</Text>
+                  <Text style={styles.textInputTriggerText}>Type your manifestation here...</Text>
                 </LinearGradient>
               </TouchableOpacity>
             </Animated.View>
           )}
-        </ScrollView>
+            </>
+          }
+        />
       </KeyboardAvoidingView>
     </Screen>
   );

@@ -35,7 +35,6 @@ interface ThemeProviderProps {
  */
 export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
   if (__DEV__) {
-    console.log('✅ ThemeProvider rendering...');
   }
   
   // Sync with the main ThemeContext from ThemeContext.tsx
@@ -70,7 +69,6 @@ export const useTheme = (): ThemeContextValue => {
   }
   return context;
 };
-
 
 
 

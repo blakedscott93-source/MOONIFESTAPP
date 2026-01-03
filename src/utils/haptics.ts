@@ -22,7 +22,6 @@ export async function lightHaptic(): Promise<void> {
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   } catch (error) {
     hapticsAvailable = false;
-    console.log('Haptics not available');
   }
 }
 

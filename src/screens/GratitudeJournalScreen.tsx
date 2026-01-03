@@ -1,18 +1,18 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
+  FlatList,
   TouchableOpacity,
   TextInput,
   Animated,
-  ActivityIndicator,
   Alert,
   Animated as RNAnimated,
   KeyboardAvoidingView,
   Platform,
   Keyboard,
+  DimensionValue,
 } from 'react-native';
 import { useApp } from '../context/AppContext';
 import { Ionicons } from '@expo/vector-icons';
@@ -25,26 +25,32 @@ import { JournalEmptyState } from '../components/JournalEmptyState';
 import { JournalEntriesList } from '../components/JournalEntriesList';
 import { JournalFAB } from '../components/JournalFAB';
 import { IncompleteDayModal } from '../components/IncompleteDayModal';
+import { SkeletonLoader, SkeletonCard } from '../components/SkeletonLoader';
 import { tokens } from '../theme/tokens';
 import { useTheme } from '../context/ThemeContext';
 import { useTabBarInset, TAB_BAR_SPACE } from '../hooks/useTabBarInset';
 import { GratitudeCheckIn } from '../utils/dayRollover';
 import { IncompleteDayInfo } from '../utils/dayRolloverManager';
-import { successHaptic, celebrationHaptic, lightHaptic } from '../utils/haptics';
+import { successHaptic, lightHaptic } from '../utils/haptics';
+import { JournalMainScreenProps } from '../types/navigation';
+import { useScreenTracking } from '../hooks/useScreenTracking';
+import { trackEvent } from '../utils/analytics';
 
 const TOUCH_TARGET_MIN = 44; // Minimum touch target size for accessibility
+const AnimatedFlatList = Animated.createAnimatedComponent(FlatList);
 
 const DAILY_PROMPTS = [
-  { text: "Write about one thing you like about your appearance today.", emoji: "✨" },
-  { text: "What made you smile today?", emoji: "😊" },
-  { text: "Who are you grateful for and why?", emoji: "💝" },
-  { text: "What's a small win you experienced today?", emoji: "🎯" },
-  { text: "What brought you joy today?", emoji: "🌟" },
-  { text: "What challenged you and how did you grow?", emoji: "💪" },
-  { text: "What are you looking forward to tomorrow?", emoji: "🌅" },
+  'What is one thing you are grateful for today?',
+  'Who helped you today, and what did they do?',
+  'What simple pleasure are you grateful for right now?',
+  'What is something about your body or health you appreciate?',
+  'What is a small win you are grateful for today?',
+  'What part of your day felt peaceful or calming?',
+  'What are you grateful to look forward to tomorrow?',
 ];
 
-export default function GratitudeJournalScreen({ navigation }: any) {
+export default function GratitudeJournalScreen({ navigation }: JournalMainScreenProps) {
+  useScreenTracking('GratitudeJournal');
   const { theme, isDark } = useTheme();
   const {
     appState,
@@ -66,7 +72,7 @@ export default function GratitudeJournalScreen({ navigation }: any) {
   const [currentPromptIndex, setCurrentPromptIndex] = useState(todayPromptIndex);
   const todayPrompt = DAILY_PROMPTS[currentPromptIndex];
   const [searchText, setSearchText] = useState('');
-  const [showFAB, setShowFAB] = useState(true);
+  const [showFAB, setShowFAB] = useState(false);
   const [checkInCount, setCheckInCount] = useState(0);
   const [isTodayComplete, setIsTodayComplete] = useState(false);
   const [todayCheckIns, setTodayCheckIns] = useState<GratitudeCheckIn[]>([]);
@@ -74,32 +80,35 @@ export default function GratitudeJournalScreen({ navigation }: any) {
   const [incompleteDay, setIncompleteDay] = useState<IncompleteDayInfo | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isScrolling, setIsScrolling] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [showTextInput, setShowTextInput] = useState(false);
+  const [textEntry, setTextEntry] = useState('');
+  const [recordingDuration, setRecordingDuration] = useState(0);
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
   
   const scrollY = useRef(new Animated.Value(0)).current;
-  const fabOpacity = useRef(new Animated.Value(1)).current;
+  const fabOpacity = useRef(new Animated.Value(0)).current;
   const streakScale = useRef(new Animated.Value(0.95)).current;
-  const scrollViewRef = useRef<any>(null);
   const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const focusTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const textInputRef = useRef<TextInput>(null);
+  const keyboardHeight = useRef(new Animated.Value(0)).current;
+  const recordButtonScale = useRef(new RNAnimated.Value(1)).current;
+  const pulseAnim = useRef(new RNAnimated.Value(1)).current;
+  const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const recordingStartTime = useRef<number>(0);
+  const isRecordingRef = useRef(false);
+  const MIN_RECORDING_DURATION = 30000; // 30 seconds minimum
 
-  // Check for day rollover on mount
-  useEffect(() => {
-    checkDayRollover();
-  }, []);
-
-  // Load today's check-in data
-  useEffect(() => {
-    loadTodayData();
-  }, []);
-
-  const checkDayRollover = async () => {
+  const checkDayRollover = useCallback(async () => {
     const result = await checkForDayRollover();
     if (result.hasRollover && result.incompleteDay) {
       setIncompleteDay(result.incompleteDay);
       setShowIncompleteModal(true);
     }
-  };
+  }, [checkForDayRollover]);
 
-  const loadTodayData = async () => {
+  const loadTodayData = useCallback(async () => {
     try {
       setIsLoading(true);
       const count = await getTodayCheckInCount();
@@ -114,7 +123,17 @@ export default function GratitudeJournalScreen({ navigation }: any) {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [getTodayCheckInCount, getTodayCheckIns, isTodayGratitudeComplete]);
+
+  // Check for day rollover on mount
+  useEffect(() => {
+    checkDayRollover();
+  }, [checkDayRollover]);
+
+  // Load today's check-in data
+  useEffect(() => {
+    loadTodayData();
+  }, [loadTodayData]);
 
   const entryCount = useMemo(
     () =>
@@ -212,17 +231,17 @@ export default function GratitudeJournalScreen({ navigation }: any) {
         }, 200);
         
         // Show/hide FAB based on scroll position
-        if (offsetY > 50 && showFAB) {
-          setShowFAB(false);
-          Animated.timing(fabOpacity, {
-            toValue: 0,
-            duration: 200,
-            useNativeDriver: true,
-          }).start();
-        } else if (offsetY <= 50 && !showFAB) {
+        if (offsetY > 180 && !showFAB) {
           setShowFAB(true);
           Animated.timing(fabOpacity, {
             toValue: 1,
+            duration: 200,
+            useNativeDriver: true,
+          }).start();
+        } else if (offsetY <= 180 && showFAB) {
+          setShowFAB(false);
+          Animated.timing(fabOpacity, {
+            toValue: 0,
             duration: 200,
             useNativeDriver: true,
           }).start();
@@ -236,6 +255,32 @@ export default function GratitudeJournalScreen({ navigation }: any) {
     return () => {
       if (scrollTimeoutRef.current) {
         clearTimeout(scrollTimeoutRef.current);
+      }
+      if (focusTimeoutRef.current) {
+        clearTimeout(focusTimeoutRef.current);
+        focusTimeoutRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    isRecordingRef.current = isRecording;
+  }, [isRecording]);
+
+  useEffect(() => {
+    return () => {
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+        recordingTimerRef.current = null;
+      }
+      pulseAnim.stopAnimation();
+      recordButtonScale.stopAnimation();
+      pulseAnim.setValue(1);
+      recordButtonScale.setValue(1);
+      if (isRecordingRef.current) {
+        import('../utils/voiceRecording')
+          .then(({ cancelRecording }) => cancelRecording())
+          .catch(() => null);
       }
     };
   }, []);
@@ -251,40 +296,32 @@ export default function GratitudeJournalScreen({ navigation }: any) {
     }));
   }, [isTodayComplete]);
 
-  const [isRecording, setIsRecording] = useState(false);
-  const [showTextInput, setShowTextInput] = useState(false);
-  const [textEntry, setTextEntry] = useState('');
-  const [recordingUri, setRecordingUri] = useState<string | null>(null);
-  const [recordingDuration, setRecordingDuration] = useState(0);
-  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
-  const textInputRef = useRef<TextInput>(null);
-  const keyboardHeight = useRef(new Animated.Value(0)).current;
-  const recordButtonScale = useRef(new RNAnimated.Value(1)).current;
-  const pulseAnim = useRef(new RNAnimated.Value(1)).current;
-  const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const recordingStartTime = useRef<number>(0);
-  const MIN_RECORDING_DURATION = 30000; // 30 seconds minimum
+
+  const patternDots = useMemo(
+    () =>
+      [...Array(20)].map((_, index) => ({
+        key: `dot-${index}`,
+        top: Math.random() * 100,
+        left: Math.random() * 100,
+        opacity: 0.08 + Math.random() * 0.08,
+      })),
+    []
+  );
 
   const handleStartRecording = async () => {
     try {
-      console.log('[GratitudeJournal] Starting recording process...');
       const { startRecording: startRec, requestMicrophonePermission } = await import('../utils/voiceRecording');
 
-      console.log('[GratitudeJournal] Requesting microphone permission...');
       const hasPermission = await requestMicrophonePermission();
-      console.log('[GratitudeJournal] Permission result:', hasPermission);
 
       if (!hasPermission) {
         Alert.alert('Microphone Access', 'Please enable microphone access to record voice journal entries.');
         return;
       }
 
-      console.log('[GratitudeJournal] Calling startRecording...');
       await startRec();
-      console.log('[GratitudeJournal] startRecording completed successfully');
 
       setIsRecording(true);
-      console.log('[GratitudeJournal] Recording started, isRecording should be true');
       recordingStartTime.current = Date.now();
       setRecordingDuration(0);
 
@@ -304,11 +341,11 @@ export default function GratitudeJournalScreen({ navigation }: any) {
         ])
       ).start();
 
-      // Update duration every 100ms
+      // Update duration every 500ms
       recordingTimerRef.current = setInterval(() => {
         const elapsed = Date.now() - recordingStartTime.current;
         setRecordingDuration(elapsed);
-      }, 100);
+      }, 500);
 
       RNAnimated.loop(
         RNAnimated.sequence([
@@ -332,12 +369,6 @@ export default function GratitudeJournalScreen({ navigation }: any) {
 
   const handleStopRecording = async () => {
     try {
-      // Clear the timer
-      if (recordingTimerRef.current) {
-        clearInterval(recordingTimerRef.current);
-        recordingTimerRef.current = null;
-      }
-
       // Check minimum duration
       const elapsed = Date.now() - recordingStartTime.current;
       if (elapsed < MIN_RECORDING_DURATION) {
@@ -347,6 +378,12 @@ export default function GratitudeJournalScreen({ navigation }: any) {
           `Please record for at least 30 seconds. ${remaining} more seconds needed.`
         );
         return;
+      }
+
+      // Clear the timer
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+        recordingTimerRef.current = null;
       }
 
       const { stopRecording } = await import('../utils/voiceRecording');
@@ -375,14 +412,18 @@ export default function GratitudeJournalScreen({ navigation }: any) {
   const handleSaveRecording = async (uri: string) => {
     try {
       const duration = Math.floor(recordingDuration / 1000);
-      const text = `🎤 Voice journal (${duration}s): ${todayPrompt.emoji} ${todayPrompt.text}`;
+      const text = `Voice journal (${duration}s): ${todayPrompt}`;
 
       // Save the journal entry
       await addGratitudeCheckIn(text);
+      trackEvent('gratitude_check_in_completed', { 
+        method: 'voice', 
+        duration_seconds: duration,
+        check_in_count: checkInCount + 1 
+      });
 
       // Reload data to show the new entry
       await loadTodayData();
-      setRecordingUri(null);
 
       // Show success feedback
       successHaptic();
@@ -399,6 +440,11 @@ export default function GratitudeJournalScreen({ navigation }: any) {
     try {
       // Save the journal entry
       await addGratitudeCheckIn(textEntry.trim());
+      trackEvent('gratitude_check_in_completed', { 
+        method: 'text', 
+        check_in_count: checkInCount + 1,
+        text_length: textEntry.trim().length 
+      });
 
       // Reload data to show the new entry
       await loadTodayData();
@@ -416,7 +462,10 @@ export default function GratitudeJournalScreen({ navigation }: any) {
   const handleWrite = () => {
     setShowTextInput(true);
     // Focus input after a short delay to ensure it's rendered
-    setTimeout(() => {
+    if (focusTimeoutRef.current) {
+      clearTimeout(focusTimeoutRef.current);
+    }
+    focusTimeoutRef.current = setTimeout(() => {
       textInputRef.current?.focus();
     }, 100);
   };
@@ -497,21 +546,21 @@ export default function GratitudeJournalScreen({ navigation }: any) {
     <Screen
       rightAction={{
         icon: 'home-outline',
-        onPress: () => navigation.navigate('Today'),
+        onPress: () => navigation.getParent()?.navigate('Today' as never),
         label: 'Back to Today',
       }}
     >
       {/* Subtle Background Pattern */}
       <View style={styles.backgroundPattern}>
-        {[...Array(30)].map((_, i) => (
+        {patternDots.map(dot => (
           <View
-            key={i}
+            key={dot.key}
             style={[
               styles.patternDot,
               {
-                top: `${Math.random() * 100}%`,
-                left: `${Math.random() * 100}%`,
-                opacity: 0.15 + Math.random() * 0.1,
+                top: `${dot.top}%` as DimensionValue,
+                left: `${dot.left}%` as DimensionValue,
+                opacity: dot.opacity,
               },
             ]}
           />
@@ -524,19 +573,23 @@ export default function GratitudeJournalScreen({ navigation }: any) {
         onHistoryPress={() => navigation.navigate('JournalHistory')}
       />
 
-      <Animated.ScrollView
-        ref={scrollViewRef}
+      <AnimatedFlatList
         style={styles.scrollView}
+        data={[]}
+        renderItem={() => null}
+        keyExtractor={(_, index) => `gratitude-journal-${index}`}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[styles.scrollContent, { paddingBottom: tabBarInset }]}
         onScroll={handleScroll}
         scrollEventThrottle={16}
-      >
+        ListHeaderComponent={
+          <>
         {/* Loading State */}
         {isLoading && (
           <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={tokens.colors.accent} />
-            <Text style={[styles.loadingText, { color: tokens.colors.textSecondary }]}>Loading...</Text>
+            <SkeletonCard style={{ marginBottom: tokens.spacing.lg }} />
+            <SkeletonCard style={{ marginBottom: tokens.spacing.lg }} />
+            <SkeletonLoader width="100%" height={200} borderRadius={tokens.radii.lg} />
           </View>
         )}
 
@@ -545,32 +598,40 @@ export default function GratitudeJournalScreen({ navigation }: any) {
             {/* PRIMARY CTA - Modern, Focused Journal Interface */}
             <GlassCard style={styles.primaryCTACard}>
               {/* Header with prompt */}
-              <View style={styles.promptHeaderRow}>
-                <View style={styles.promptEmojiContainer}>
-                  <Text style={styles.promptEmoji}>{todayPrompt.emoji}</Text>
+              <View style={styles.promptHeader}>
+                <View style={styles.promptTopRow}>
+                  <View style={styles.promptEmojiContainer}>
+                    <Ionicons name="sparkles" size={22} color={tokens.colors.accent} />
+                  </View>
+                  <TouchableOpacity
+                    onPress={handleChangePrompt}
+                    style={styles.changePromptLink}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    accessibilityLabel="Change prompt"
+                    accessibilityRole="button"
+                  >
+                    <Ionicons name="sync" size={16} color={tokens.colors.accent} />
+                    <Text style={[styles.changePromptText, { color: tokens.colors.accent }]}>
+                      Change prompt
+                    </Text>
+                  </TouchableOpacity>
                 </View>
-                <View style={styles.promptTextContainer}>
+                <View style={styles.promptCtaCard}>
                   <Text style={[styles.primaryCTAPrompt, { color: tokens.colors.textPrimary }]}>
-                    {todayPrompt.text}
+                    {todayPrompt}
                   </Text>
-                  {isTodayComplete && (
-                    <View style={styles.completeCheckBadge}>
-                      <Ionicons name="checkmark-circle" size={16} color={tokens.colors.success} />
-                      <Text style={[styles.completeCheckText, { color: tokens.colors.success }]}>
-                        Done for today
-                      </Text>
-                    </View>
-                  )}
+                  <Text style={[styles.promptSubtext, { color: tokens.colors.textSecondary }]}>
+                    Share what you are grateful for and why it matters today.
+                  </Text>
                 </View>
-                <TouchableOpacity
-                  onPress={handleChangePrompt}
-                  style={styles.changePromptButton}
-                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-                  accessibilityLabel="Change prompt"
-                  accessibilityRole="button"
-                >
-                  <Ionicons name="sync" size={20} color={tokens.colors.accent} />
-                </TouchableOpacity>
+                {isTodayComplete && (
+                  <View style={styles.completeCheckBadge}>
+                    <Ionicons name="checkmark-circle" size={16} color={tokens.colors.success} />
+                    <Text style={[styles.completeCheckText, { color: tokens.colors.success }]}>
+                      Done for today
+                    </Text>
+                  </View>
+                )}
               </View>
 
               {/* Voice Recording Interface - Simplified, Bigger Hit Target */}
@@ -580,16 +641,9 @@ export default function GratitudeJournalScreen({ navigation }: any) {
                   {isRecording && (
                     <RNAnimated.View style={[styles.recIndicator, { opacity: pulseAnim }]}>
                       <View style={styles.recDot} />
-                      <Text style={styles.recText}>REC</Text>
+                      <Text style={styles.recText}>Recording</Text>
                     </RNAnimated.View>
                   )}
-                  {/* Debug indicator - Always visible for testing */}
-                  {__DEV__ && (
-                    <Text style={{ fontSize: 12, color: '#FF3B30', marginBottom: 8 }}>
-                      Recording: {isRecording ? 'YES' : 'NO'}
-                    </Text>
-                  )}
-
                   <TouchableOpacity
                     onPress={isRecording ? handleStopRecording : handleStartRecording}
                     onPressIn={() => {
@@ -627,13 +681,13 @@ export default function GratitudeJournalScreen({ navigation }: any) {
                   </TouchableOpacity>
                   <Text style={[styles.recordButtonLabel, { color: tokens.colors.textPrimary }]}>
                     {isRecording
-                      ? `Recording: ${Math.floor(recordingDuration / 1000)}s`
+                      ? `Recording - ${Math.floor(recordingDuration / 1000)}s`
                       : 'Tap to record'}
                   </Text>
                   <Text style={[styles.recordButtonHint, { color: tokens.colors.textSecondary }]}>
                     {isRecording
                       ? 'Minimum 30 seconds'
-                      : '30s minimum • Speak your thoughts freely'}
+                      : 'Voice note - 30s minimum'}
                   </Text>
 
                   {/* Divider */}
@@ -646,7 +700,13 @@ export default function GratitudeJournalScreen({ navigation }: any) {
                   {/* Type Instead Button - More Prominent */}
                   <TouchableOpacity
                     onPress={() => setShowTextInput(true)}
-                    style={[styles.textModeButton, { borderColor: tokens.colors.border }]}
+                    style={[
+                      styles.textModeButton,
+                      {
+                        borderColor: tokens.colors.border,
+                        backgroundColor: `${tokens.colors.accent}08`,
+                      },
+                    ]}
                     activeOpacity={0.7}
                   >
                     <Ionicons name="create-outline" size={20} color={tokens.colors.accent} />
@@ -671,13 +731,14 @@ export default function GratitudeJournalScreen({ navigation }: any) {
                         backgroundColor: tokens.colors.surface,
                         borderColor: isKeyboardVisible 
                           ? tokens.colors.accent 
-                          : tokens.colors.border,
+                          : tokens.colors.borderSubtle,
                       },
                     ]}>
                       <TextInput
                         ref={textInputRef}
                         style={[
                           styles.textInput,
+                          Platform.OS === 'web' && styles.textInputWeb,
                           {
                             color: tokens.colors.textPrimary,
                           },
@@ -688,6 +749,8 @@ export default function GratitudeJournalScreen({ navigation }: any) {
                         onChangeText={setTextEntry}
                         multiline
                         autoFocus
+                        autoCorrect={Platform.OS !== 'web'}
+                        spellCheck={Platform.OS !== 'web'}
                         textAlignVertical="top"
                         onFocus={() => setIsKeyboardVisible(true)}
                         onBlur={() => setIsKeyboardVisible(false)}
@@ -725,15 +788,39 @@ export default function GratitudeJournalScreen({ navigation }: any) {
                           Cancel
                         </Text>
                       </TouchableOpacity>
-                      <PrimaryButton
-                        title={isTodayComplete ? "Add Another" : "Save Entry"}
+                      <TouchableOpacity
                         onPress={() => {
-                          handleTextSubmit();
-                          Keyboard.dismiss();
+                          if (textEntry.trim()) {
+                            handleTextSubmit();
+                            Keyboard.dismiss();
+                          }
                         }}
-                        style={styles.textInputSaveButton}
                         disabled={!textEntry.trim()}
-                      />
+                        activeOpacity={0.7}
+                        style={[
+                          styles.textInputSaveButton,
+                          { borderColor: !textEntry.trim() ? tokens.colors.border : tokens.colors.accent },
+                          !textEntry.trim() && styles.textInputSaveButtonDisabled,
+                        ]}
+                      >
+                        <LinearGradient
+                          colors={
+                            !textEntry.trim()
+                              ? ['rgba(255, 255, 255, 0)', 'rgba(255, 255, 255, 0)']
+                              : ['rgba(139, 125, 216, 1)', 'rgba(199, 125, 255, 1)']
+                          }
+                          style={styles.textInputSaveButtonGradient}
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 1, y: 1 }}
+                        >
+                          <Text style={[
+                            styles.textInputSaveButtonText,
+                            { color: !textEntry.trim() ? tokens.colors.textTertiary : '#FFFFFF' }
+                          ]}>
+                            {isTodayComplete ? "Add Another" : "Save Entry"}
+                          </Text>
+                        </LinearGradient>
+                      </TouchableOpacity>
                     </View>
                   </View>
                 </KeyboardAvoidingView>
@@ -823,14 +910,16 @@ export default function GratitudeJournalScreen({ navigation }: any) {
             )}
           </>
         )}
-      </Animated.ScrollView>
+          </>
+        }
+      />
 
       {/* Floating Action Button - Primary CTA */}
       <JournalFAB
         onPress={handleWrite}
         opacity={fabOpacity}
         translateY={fabTranslateY}
-        visible={showFAB}
+        visible={showFAB && !showTextInput && !isRecording}
         isScrolling={isScrolling}
       />
 
@@ -854,10 +943,10 @@ const styles = StyleSheet.create({
   },
   patternDot: {
     position: 'absolute',
-    width: 3,
-    height: 3,
+    width: 2,
+    height: 2,
     backgroundColor: tokens.colors.accent,
-    borderRadius: 1.5,
+    borderRadius: 1,
   },
   scrollView: {
     flex: 1,
@@ -1139,13 +1228,19 @@ const styles = StyleSheet.create({
   // New styles for refactored flow - Modern, Clean UI
   primaryCTACard: {
     marginBottom: tokens.spacing.md,
-    padding: tokens.spacing.xl,
+    paddingVertical: tokens.spacing.xl,
+    paddingHorizontal: tokens.spacing.lg,
   },
-  promptHeaderRow: {
+  promptHeader: {
+    alignItems: 'center',
+    gap: tokens.spacing.sm,
+    marginBottom: tokens.spacing.lg,
+  },
+  promptTopRow: {
+    width: '100%',
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: tokens.spacing.md,
-    marginBottom: tokens.spacing.xl,
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   promptEmojiContainer: {
     width: 48,
@@ -1159,34 +1254,53 @@ const styles = StyleSheet.create({
   promptEmoji: {
     fontSize: 24,
   },
-  promptTextContainer: {
-    flex: 1,
-    gap: tokens.spacing.xs,
-  },
   primaryCTAPrompt: {
-    fontSize: 17,
-    fontWeight: '600',
-    lineHeight: 24,
-    letterSpacing: -0.2,
+    fontSize: 18,
+    fontWeight: '700',
+    lineHeight: 26,
+    letterSpacing: 0.2,
+    textAlign: 'center',
+  },
+  promptCtaCard: {
+    width: '100%',
+    paddingVertical: tokens.spacing.lg,
+    paddingHorizontal: tokens.spacing.lg,
+    borderRadius: tokens.radii.lg,
+    backgroundColor: `${tokens.colors.accent}0F`,
+    borderWidth: 1,
+    borderColor: `${tokens.colors.accent}25`,
+    gap: tokens.spacing.xs,
+    ...tokens.shadows.subtle,
+  },
+  promptSubtext: {
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: 'center',
+    maxWidth: 280,
   },
   completeCheckBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    alignSelf: 'flex-start',
+    alignSelf: 'center',
+    marginTop: tokens.spacing.xs,
   },
   completeCheckText: {
     fontSize: 13,
     fontWeight: '600',
   },
-  changePromptButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: `${tokens.colors.accent}10`,
+  changePromptLink: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
+    gap: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: tokens.radii.full,
+    backgroundColor: `${tokens.colors.accent}12`,
+  },
+  changePromptText: {
+    fontSize: 13,
+    fontWeight: '600',
   },
   // Recording Interface Styles - Improved
   recordingInterface: {
@@ -1207,18 +1321,27 @@ const styles = StyleSheet.create({
     backgroundColor: '#FF3B30', // iOS red - always visible
   },
   recText: {
-    fontSize: 18,
-    fontWeight: '900',
+    fontSize: 16,
+    fontWeight: '700',
     color: '#FF3B30', // iOS red - always visible
-    letterSpacing: 4,
+    letterSpacing: 0.6,
   },
   recordButton: {
+    width: 112,
+    height: 112,
+    borderRadius: 56,
+    backgroundColor: tokens.colors.surface,
+    borderWidth: 1,
+    borderColor: tokens.colors.borderSubtle,
+    alignItems: 'center',
+    justifyContent: 'center',
     marginVertical: tokens.spacing.md,
+    ...tokens.shadows.subtle,
   },
   recordButtonInner: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
+    width: 88,
+    height: 88,
+    borderRadius: 44,
     alignItems: 'center',
     justifyContent: 'center',
     ...tokens.shadows.card,
@@ -1230,7 +1353,7 @@ const styles = StyleSheet.create({
   },
   recordButtonHint: {
     fontSize: 13,
-    fontWeight: '400',
+    fontWeight: '500',
     textAlign: 'center',
   },
   modeDivider: {
@@ -1268,24 +1391,35 @@ const styles = StyleSheet.create({
   },
   // Text Input Interface Styles - Premium, Elevated
   textInputInterface: {
-    gap: tokens.spacing.md,
+    gap: tokens.spacing.lg,
     marginTop: tokens.spacing.sm,
   },
   textInputContainer: {
-    borderRadius: tokens.radii.lg,
-    borderWidth: 2,
+    borderRadius: tokens.radii.xl,
+    borderWidth: 1,
+    padding: tokens.spacing.md,
     overflow: 'hidden',
-    ...tokens.shadows.card,
+    backgroundColor: tokens.colors.surface,
+    ...tokens.shadows.subtle,
     position: 'relative',
   },
   textInput: {
-    padding: tokens.spacing.xl,
+    paddingHorizontal: tokens.spacing.lg,
+    paddingTop: tokens.spacing.md,
+    paddingBottom: tokens.spacing.xxl,
     fontSize: 17,
-    lineHeight: 26,
-    minHeight: 180,
+    lineHeight: 28,
+    minHeight: 260,
     maxHeight: 300,
     fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
     letterSpacing: 0.2,
+    backgroundColor: 'transparent',
+  },
+  textInputWeb: {
+    outlineStyle: 'none',
+    outlineWidth: 0,
+    outlineColor: 'transparent',
+    boxShadow: 'none',
   },
   characterCountBadge: {
     position: 'absolute',
@@ -1303,21 +1437,24 @@ const styles = StyleSheet.create({
   },
   textInputActions: {
     flexDirection: 'row',
-    gap: tokens.spacing.md,
     alignItems: 'center',
-    justifyContent: 'flex-end',
-    marginTop: tokens.spacing.xs,
+    justifyContent: 'space-between',
+    gap: tokens.spacing.md,
+    marginTop: tokens.spacing.md,
     paddingTop: tokens.spacing.md,
+    paddingBottom: tokens.spacing.xs,
     borderTopWidth: 1,
     borderTopColor: tokens.colors.borderSubtle,
   },
   textInputCancelButton: {
+    flex: 1,
+    minWidth: 0,
     paddingVertical: tokens.spacing.md,
-    paddingHorizontal: tokens.spacing.xl,
-    borderRadius: tokens.radii.md,
+    paddingHorizontal: tokens.spacing.lg,
+    borderRadius: tokens.radii.lg,
     borderWidth: 1.5,
     backgroundColor: 'transparent',
-    minHeight: 44,
+    height: 48,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -1327,8 +1464,37 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
   },
   textInputSaveButton: {
-    flex: 0,
-    minWidth: 140,
+    flex: 1,
+    minWidth: 0,
+    paddingVertical: tokens.spacing.md,
+    paddingHorizontal: tokens.spacing.lg,
+    borderRadius: tokens.radii.lg,
+    borderWidth: 1.5,
+    backgroundColor: 'transparent',
+    height: 48,
+    justifyContent: 'center',
+    alignItems: 'center',
+    overflow: 'hidden',
+  },
+  textInputSaveButtonDisabled: {
+    opacity: 0.5,
+    backgroundColor: tokens.colors.surfaceSecondary,
+    borderColor: tokens.colors.borderSubtle,
+  },
+  textInputSaveButtonGradient: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  textInputSaveButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    letterSpacing: 0.3,
+    zIndex: 1,
   },
   streakCard: {
     marginBottom: tokens.spacing.md,
@@ -1382,3 +1548,5 @@ const styles = StyleSheet.create({
     fontSize: 10,
   },
 });
+
+

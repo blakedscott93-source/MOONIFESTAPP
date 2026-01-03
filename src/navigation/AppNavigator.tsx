@@ -5,6 +5,13 @@ import { createStackNavigator } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
 import { FloatingTabBar } from '../components/navigation/FloatingTabBar';
 import { tokens } from '../theme/tokens';
+import {
+  MainTabParamList,
+  RootStackParamList,
+  AffirmationsStackParamList,
+  JournalStackParamList,
+  FortyFiveHardStackParamList,
+} from '../types/navigation';
 
 import HomeScreen from '../screens/HomeScreen';
 import AffirmationsScreen from '../screens/AffirmationsScreen';
@@ -32,38 +39,41 @@ import MoodInsightsScreen from '../screens/MoodInsightsScreen';
 import PrivacyPolicyScreen from '../screens/PrivacyPolicyScreen';
 import TermsOfServiceScreen from '../screens/TermsOfServiceScreen';
 
-const Tab = createBottomTabNavigator();
-const Stack = createStackNavigator();
+const Tab = createBottomTabNavigator<MainTabParamList>();
+const RootStack = createStackNavigator<RootStackParamList>();
+const AffirmationsStackNav = createStackNavigator<AffirmationsStackParamList>();
+const JournalStackNav = createStackNavigator<JournalStackParamList>();
+const FortyFiveHardStackNav = createStackNavigator<FortyFiveHardStackParamList>();
 
 // Stack navigator for Affirmations and its player screen
 function AffirmationsStack() {
   return (
-    <Stack.Navigator
+    <AffirmationsStackNav.Navigator
       screenOptions={{
         headerShown: false,
       }}
     >
-      <Stack.Screen
+      <AffirmationsStackNav.Screen
         name="AffirmationsMain"
         component={AffirmationsScreen}
       />
-      <Stack.Screen
+      <AffirmationsStackNav.Screen
         name="AffirmationPlayer"
         component={AffirmationPlayerScreen}
       />
-      <Stack.Screen
+      <AffirmationsStackNav.Screen
         name="AffirmationLibrary"
         component={AffirmationLibraryScreen}
         options={{ headerShown: false }}
       />
-    </Stack.Navigator>
+    </AffirmationsStackNav.Navigator>
   );
 }
 
 // Stack navigator for Journal and its entry screen
 function JournalStack() {
   return (
-    <Stack.Navigator
+    <JournalStackNav.Navigator
       screenOptions={{
         headerStyle: {
           backgroundColor: tokens.colors.bg,
@@ -135,12 +145,12 @@ function JournalStack() {
         },
       }}
     >
-      <Stack.Screen
+      <JournalStackNav.Screen
         name="JournalMain"
         component={GratitudeJournalScreen}
         options={{ headerShown: false }}
       />
-      <Stack.Screen
+      <JournalStackNav.Screen
         name="Journal"
         component={JournalScreen}
         options={{
@@ -148,7 +158,7 @@ function JournalStack() {
           headerBackTitle: 'Back',
         }}
       />
-      <Stack.Screen
+      <JournalStackNav.Screen
         name="VoiceJournal"
         component={VoiceJournalScreen}
         options={{ 
@@ -156,19 +166,19 @@ function JournalStack() {
           presentation: 'modal', // Modal presentation for voice entry
         }}
       />
-      <Stack.Screen
+      <JournalStackNav.Screen
         name="JournalHistory"
         component={JournalHistoryScreen}
         options={{ headerShown: false }}
       />
-    </Stack.Navigator>
+    </JournalStackNav.Navigator>
   );
 }
 
 // Stack navigator for 45 NOW and its sub-screens
 function FortyFiveHardStack() {
   return (
-    <Stack.Navigator
+    <FortyFiveHardStackNav.Navigator
       screenOptions={{
         headerStyle: {
           backgroundColor: '#FAF8FF',
@@ -180,28 +190,29 @@ function FortyFiveHardStack() {
         headerTitleStyle: {
           fontWeight: '600',
           fontSize: 18,
+          fontFamily: tokens.typography.h3.fontFamily,
         },
       }}
     >
-      <Stack.Screen
+      <FortyFiveHardStackNav.Screen
         name="FortyFiveHardMain"
         component={FortyFiveHardScreen}
         options={{ headerShown: false }}
       />
-      <Stack.Screen
+      <FortyFiveHardStackNav.Screen
         name="AffirmationEntry"
-        component={AffirmationEntryScreen as any}
+        component={AffirmationEntryScreen}
         options={{
           title: '369 Method',
           headerBackTitle: 'Back',
         }}
       />
-      <Stack.Screen
+      <FortyFiveHardStackNav.Screen
         name="NotificationSettings"
         component={NotificationSettingsScreen}
         options={{ headerShown: false }}
       />
-    </Stack.Navigator>
+    </FortyFiveHardStackNav.Navigator>
   );
 }
 
@@ -327,16 +338,16 @@ function MainTabs() {
 // Root Navigator - wraps tabs and allows modal screens
 export default function AppNavigator() {
   return (
-    <Stack.Navigator
+    <RootStack.Navigator
       screenOptions={{
         headerShown: false,
       }}
     >
-      <Stack.Screen
+      <RootStack.Screen
         name="MainTabs"
         component={MainTabs}
       />
-      <Stack.Screen
+      <RootStack.Screen
         name="ChatbotScreen"
         component={ChatbotScreen}
         options={{
@@ -344,7 +355,7 @@ export default function AppNavigator() {
           headerShown: false, // ChatbotScreen has its own custom header
         }}
       />
-      <Stack.Screen
+      <RootStack.Screen
         name="AchievementsScreen"
         component={AchievementsScreen}
         options={{
@@ -352,12 +363,12 @@ export default function AppNavigator() {
           headerShown: false,
         }}
       />
-      <Stack.Screen
+      <RootStack.Screen
         name="SettingsScreen"
         component={SettingsScreen}
         options={{ headerShown: false }}
       />
-      <Stack.Screen
+      <RootStack.Screen
         name="MeditationScreen"
         component={MeditationScreen}
         options={{
@@ -365,7 +376,7 @@ export default function AppNavigator() {
           headerShown: false,
         }}
       />
-      <Stack.Screen
+      <RootStack.Screen
         name="TasksScreen"
         component={TasksScreen}
         options={{
@@ -373,7 +384,7 @@ export default function AppNavigator() {
           headerShown: false,
         }}
       />
-      <Stack.Screen
+      <RootStack.Screen
         name="ProgressScreen"
         component={ProgressScreen}
         options={{
@@ -381,7 +392,7 @@ export default function AppNavigator() {
           headerShown: false,
         }}
       />
-      <Stack.Screen
+      <RootStack.Screen
         name="ToolsScreen"
         component={ToolsScreen}
         options={{
@@ -389,7 +400,7 @@ export default function AppNavigator() {
           headerShown: false,
         }}
       />
-      <Stack.Screen
+      <RootStack.Screen
         name="CommunityScreen"
         component={CommunityScreen}
         options={{
@@ -397,31 +408,31 @@ export default function AppNavigator() {
           headerShown: false,
         }}
       />
-      <Stack.Screen
+      <RootStack.Screen
         name="SavedAffirmationsScreen"
         component={SavedAffirmationsScreen}
         options={{ headerShown: false }}
       />
-      <Stack.Screen
+      <RootStack.Screen
         name="HelpFAQScreen"
         component={HelpFAQScreen}
         options={{ headerShown: false }}
       />
-      <Stack.Screen
+      <RootStack.Screen
         name="MoodInsightsScreen"
         component={MoodInsightsScreen}
         options={{ headerShown: false }}
       />
-      <Stack.Screen
+      <RootStack.Screen
         name="PrivacyPolicyScreen"
         component={PrivacyPolicyScreen}
         options={{ headerShown: false }}
       />
-      <Stack.Screen
+      <RootStack.Screen
         name="TermsOfServiceScreen"
         component={TermsOfServiceScreen}
         options={{ headerShown: false }}
       />
-    </Stack.Navigator>
+    </RootStack.Navigator>
   );
 }

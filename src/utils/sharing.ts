@@ -22,13 +22,10 @@ export async function shareText(content: ShareContent): Promise<boolean> {
 
     if (result.action === Share.sharedAction) {
       if (result.activityType) {
-        console.log('Shared with activity type:', result.activityType);
       } else {
-        console.log('Shared successfully');
       }
       return true;
     } else if (result.action === Share.dismissedAction) {
-      console.log('Share dismissed');
       return false;
     }
     return false;

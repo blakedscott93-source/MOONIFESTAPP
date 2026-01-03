@@ -12,18 +12,13 @@ interface WebPhoneWrapperProps {
 }
 
 export const WebPhoneWrapper: React.FC<WebPhoneWrapperProps> = ({ children }) => {
-  if (__DEV__) {
-    console.log('✅ WebPhoneWrapper rendering, Platform.OS:', Platform.OS);
-  }
-  
-  // Only apply phone wrapper on web
-  if (Platform.OS !== 'web') {
-    return <>{children}</>;
-  }
-
   useEffect(() => {
     // Inject styles to make it look more mobile-native
-    if (Platform.OS === 'web' && typeof window !== 'undefined' && typeof document !== 'undefined') {
+    if (Platform.OS !== 'web') {
+      return;
+    }
+
+    if (typeof window !== 'undefined' && typeof document !== 'undefined') {
       try {
         // Remove default margins/padding
         if (document.body) {
@@ -32,7 +27,7 @@ export const WebPhoneWrapper: React.FC<WebPhoneWrapperProps> = ({ children }) =>
           document.body.style.overflow = 'hidden';
           document.body.style.backgroundColor = '#000000';
         }
-        
+
         // Make html full height
         const html = document.documentElement;
         if (html) {
@@ -49,6 +44,11 @@ export const WebPhoneWrapper: React.FC<WebPhoneWrapperProps> = ({ children }) =>
       }
     }
   }, []);
+
+  // Only apply phone wrapper on web
+  if (Platform.OS !== 'web') {
+    return <>{children}</>;
+  }
 
   return (
     <View style={styles.container}>
@@ -123,4 +123,3 @@ const styles = StyleSheet.create({
     }),
   },
 });
-

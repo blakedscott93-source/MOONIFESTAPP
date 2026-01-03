@@ -1,10 +1,13 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, FlatList } from 'react-native';
 import { useApp } from '../context/AppContext';
 import { Ionicons } from '@expo/vector-icons';
 import { CHALLENGE_DURATION_DAYS, PROGRESS_MILESTONES } from '../utils/constants';
+import { ProgressScreenProps } from '../types/navigation';
+import { useScreenTracking } from '../hooks/useScreenTracking';
 
-export default function ProgressScreen() {
+export default function ProgressScreen({ navigation, route }: ProgressScreenProps) {
+  useScreenTracking('Progress');
   const { appState } = useApp();
 
   const iconMap: Record<number, string> = {
@@ -23,114 +26,123 @@ export default function ProgressScreen() {
   }));
 
   return (
-    <ScrollView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Your Progress</Text>
-        <Text style={styles.subtitle}>Track your transformation</Text>
-      </View>
-
-      {/* Main Stats */}
-      <View style={styles.statsGrid}>
-        <View style={styles.statCard}>
-          <Ionicons name="flame" size={32} color="#FF6B35" />
-          <Text style={styles.statNumber}>{appState.currentStreak}</Text>
-          <Text style={styles.statLabel}>Current Streak</Text>
-        </View>
-
-        <View style={styles.statCard}>
-          <Ionicons name="calendar" size={32} color="#8B7DD8" />
-          <Text style={styles.statNumber}>{appState.totalDays}</Text>
-          <Text style={styles.statLabel}>Total Days</Text>
-        </View>
-
-        <View style={styles.statCard}>
-          <Ionicons name="trending-up" size={32} color="#4ECDC4" />
-          <Text style={styles.statNumber}>{Math.round((appState.totalDays / CHALLENGE_DURATION_DAYS) * 100)}%</Text>
-          <Text style={styles.statLabel}>Complete</Text>
-        </View>
-      </View>
-
-      {/* Milestones */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>🎯 Milestones</Text>
-        {milestones.map((milestone) => (
+    <FlatList
+      style={styles.container}
+      data={milestones}
+      keyExtractor={(item) => item.day.toString()}
+      renderItem={({ item: milestone }) => (
+        <View
+          style={[
+            styles.milestoneCard,
+            milestone.reached && styles.milestoneReached,
+          ]}
+        >
           <View
-            key={milestone.day}
             style={[
-              styles.milestoneCard,
-              milestone.reached && styles.milestoneReached,
+              styles.milestoneIcon,
+              milestone.reached && styles.milestoneIconReached,
             ]}
           >
-            <View
+            <Ionicons
+              name={milestone.icon as any}
+              size={28}
+              color={milestone.reached ? '#FFD700' : '#666'}
+            />
+          </View>
+          <View style={styles.milestoneContent}>
+            <Text
               style={[
-                styles.milestoneIcon,
-                milestone.reached && styles.milestoneIconReached,
+                styles.milestoneTitle,
+                milestone.reached && styles.milestoneTextReached,
               ]}
             >
-              <Ionicons
-                name={milestone.icon as any}
-                size={28}
-                color={milestone.reached ? '#FFD700' : '#666'}
-              />
-            </View>
-            <View style={styles.milestoneContent}>
-              <Text
-                style={[
-                  styles.milestoneTitle,
-                  milestone.reached && styles.milestoneTextReached,
-                ]}
-              >
-                {milestone.title}
-              </Text>
-              <Text style={styles.milestoneDay}>Day {milestone.day}</Text>
-            </View>
-            {milestone.reached && (
-              <Ionicons name="checkmark-circle" size={24} color="#4CAF50" />
-            )}
+              {milestone.title}
+            </Text>
+            <Text style={styles.milestoneDay}>Day {milestone.day}</Text>
           </View>
-        ))}
-      </View>
-
-      {/* Motivational Message */}
-      <View style={styles.motivationCard}>
-        {appState.totalDays === 0 ? (
-          <>
-            <Ionicons name="rocket" size={32} color="#FFD700" />
-            <Text style={styles.motivationText}>
-              Your journey begins today! The first step is always the hardest, but you've got this.
-            </Text>
-          </>
-        ) : appState.totalDays < CHALLENGE_DURATION_DAYS ? (
-          <>
-            <Ionicons name="sparkles" size={32} color="#FFD700" />
-            <Text style={styles.motivationText}>
-              You're doing amazing! Keep going - every day you're manifesting a better version of yourself.
-            </Text>
-          </>
-        ) : (
-          <>
-            <Ionicons name="trophy" size={32} color="#FFD700" />
-            <Text style={styles.motivationText}>
-              Congratulations! You've completed the 45 NOW Challenge. You're a manifestation master!
-            </Text>
-          </>
-        )}
-      </View>
-
-      {/* Challenge Info */}
-      {appState.startDate && (
-        <View style={styles.infoCard}>
-          <Text style={styles.infoLabel}>Challenge Started</Text>
-          <Text style={styles.infoValue}>
-            {new Date(appState.startDate).toLocaleDateString('en-US', {
-              month: 'long',
-              day: 'numeric',
-              year: 'numeric',
-            })}
-          </Text>
+          {milestone.reached && (
+            <Ionicons name="checkmark-circle" size={24} color="#4CAF50" />
+          )}
         </View>
       )}
-    </ScrollView>
+      ListHeaderComponent={
+        <>
+          <View style={styles.header}>
+            <Text style={styles.title}>Your Progress</Text>
+            <Text style={styles.subtitle}>Track your transformation</Text>
+          </View>
+
+          {/* Main Stats */}
+          <View style={styles.statsGrid}>
+            <View style={styles.statCard}>
+              <Ionicons name="flame" size={32} color="#FF6B35" />
+              <Text style={styles.statNumber}>{appState.currentStreak}</Text>
+              <Text style={styles.statLabel}>Current Streak</Text>
+            </View>
+
+            <View style={styles.statCard}>
+              <Ionicons name="calendar" size={32} color="#8B7DD8" />
+              <Text style={styles.statNumber}>{appState.totalDays}</Text>
+              <Text style={styles.statLabel}>Total Days</Text>
+            </View>
+
+            <View style={styles.statCard}>
+              <Ionicons name="trending-up" size={32} color="#4ECDC4" />
+              <Text style={styles.statNumber}>{Math.round((appState.totalDays / CHALLENGE_DURATION_DAYS) * 100)}%</Text>
+              <Text style={styles.statLabel}>Complete</Text>
+            </View>
+          </View>
+
+          {/* Milestones */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Milestones</Text>
+          </View>
+        </>
+      }
+      ListFooterComponent={
+        <>
+          {/* Motivational Message */}
+          <View style={styles.motivationCard}>
+            {appState.totalDays === 0 ? (
+              <>
+                <Ionicons name="rocket" size={32} color="#FFD700" />
+                <Text style={styles.motivationText}>
+                  Your journey begins today! The first step is always the hardest, but you've got this.
+                </Text>
+              </>
+            ) : appState.totalDays < CHALLENGE_DURATION_DAYS ? (
+              <>
+                <Ionicons name="sparkles" size={32} color="#FFD700" />
+                <Text style={styles.motivationText}>
+                  You're doing amazing! Keep going - every day you're manifesting a better version of yourself.
+                </Text>
+              </>
+            ) : (
+              <>
+                <Ionicons name="trophy" size={32} color="#FFD700" />
+                <Text style={styles.motivationText}>
+                  Congratulations! You've completed the 45 NOW Challenge. You're a manifestation master!
+                </Text>
+              </>
+            )}
+          </View>
+
+          {/* Challenge Info */}
+          {appState.startDate && (
+            <View style={styles.infoCard}>
+              <Text style={styles.infoLabel}>Challenge Started</Text>
+              <Text style={styles.infoValue}>
+                {new Date(appState.startDate).toLocaleDateString('en-US', {
+                  month: 'long',
+                  day: 'numeric',
+                  year: 'numeric',
+                })}
+              </Text>
+            </View>
+          )}
+        </>
+      }
+    />
   );
 }
 

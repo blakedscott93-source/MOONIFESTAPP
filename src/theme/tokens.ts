@@ -7,6 +7,15 @@
 import { Platform } from 'react-native';
 
 // ============================================
+// FONTS
+// ============================================
+export const fonts = {
+  headingBold: 'Sora_700Bold',
+  heading: 'Sora_600SemiBold',
+  headingRegular: 'Sora_400Regular',
+} as const;
+
+// ============================================
 // SPACING SYSTEM (6, 10, 12, 16, 24)
 // ============================================
 export const spacing = {
@@ -124,6 +133,7 @@ export const typography = {
   title: {
     fontSize: 28,
     fontWeight: '700' as const,
+    fontFamily: fonts.headingBold,
     letterSpacing: -0.3,
     lineHeight: 36,
   },
@@ -131,6 +141,7 @@ export const typography = {
   h2: {
     fontSize: 22,
     fontWeight: '700' as const,
+    fontFamily: fonts.heading,
     letterSpacing: -0.2,
     lineHeight: 30,
   },
@@ -138,6 +149,7 @@ export const typography = {
   h3: {
     fontSize: 18,
     fontWeight: '600' as const,
+    fontFamily: fonts.heading,
     letterSpacing: 0,
     lineHeight: 24,
   },
@@ -145,6 +157,7 @@ export const typography = {
   headline: {
     fontSize: 22,
     fontWeight: '700' as const,
+    fontFamily: fonts.heading,
     letterSpacing: -0.2,
     lineHeight: 30,
   },
@@ -152,6 +165,7 @@ export const typography = {
   subhead: {
     fontSize: 18,
     fontWeight: '600' as const,
+    fontFamily: fonts.heading,
     letterSpacing: 0,
     lineHeight: 24,
   },

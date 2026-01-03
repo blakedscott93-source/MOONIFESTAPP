@@ -18,6 +18,7 @@ import {
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
   useSharedValue,
@@ -88,11 +89,7 @@ const RAINBOW_SPECTRUM_DARK = [
 // Glass constants
 const GLASS_BLUR = 35; // Reduced from 50 for cleaner look
 
-interface FloatingTabBarProps {
-  state: any;
-  descriptors: any;
-  navigation: any;
-}
+type FloatingTabBarProps = BottomTabBarProps;
 
 export const FloatingTabBar: React.FC<FloatingTabBarProps> = ({
   state,
@@ -104,6 +101,7 @@ export const FloatingTabBar: React.FC<FloatingTabBarProps> = ({
   const colors = getColors(isDark);
 
   const [reducedMotion, setReducedMotion] = React.useState(false);
+  const tabScaleRefs = useRef<Record<string, RNAnimated.Value>>({});
 
   // Plus button press animation
   const plusButtonScale = React.useRef(new RNAnimated.Value(1)).current;
@@ -129,16 +127,9 @@ export const FloatingTabBar: React.FC<FloatingTabBarProps> = ({
     return () => subscription?.remove();
   }, []);
 
-  // Refs for layout debugging
-  const outerContainerRef = useRef<View>(null);
-  const pillWrapperRef = useRef<View>(null);
-  const tabsRowRef = useRef<View>(null);
-  const tabItemRefs = useRef<{ [key: string]: View | null }>({});
-
   // Measure pill width for active highlight calculation
   const [pillWidth, setPillWidth] = React.useState(0);
   const [pillHeight, setPillHeight] = React.useState(0);
-  const [tabsContainerWidth, setTabsContainerWidth] = React.useState(0);
 
   // Reanimated values for active pill animation
   const highlightX = useSharedValue(0);
@@ -156,54 +147,13 @@ export const FloatingTabBar: React.FC<FloatingTabBarProps> = ({
   const HIGHLIGHT_VERTICAL_INSET = 12; // 12px vertical padding
   const HIGHLIGHT_BORDER_RADIUS = 20; // 20px radius for active indicator
 
-  // Layout handlers for debugging (only in __DEV__)
-  const handleOuterLayout = (event: LayoutChangeEvent) => {
-    if (__DEV__) {
-      const { width, height, x, y } = event.nativeEvent.layout;
-      console.log('[FloatingTabBar] Outer container:', { width, height, x, y, screenWidth: SCREEN_WIDTH });
-    }
-  };
-
-  const handlePillWrapperLayout = (event: LayoutChangeEvent) => {
-    if (__DEV__) {
-      const { width, height } = event.nativeEvent.layout;
-      console.log('[FloatingTabBar] Pill wrapper:', { width, height });
-    }
-  };
-
   // Measure inner pill width (content layer width) for active pill calculation
   const handleContentLayerLayout = (event: LayoutChangeEvent) => {
     const { width, height } = event.nativeEvent.layout;
     setPillWidth(width);
     setPillHeight(height);
-    if (__DEV__) {
-      console.log('[FloatingTabBar] Content layer (pill inner width):', { width, height });
-    }
   };
   
-  // Measure pill container for SVG perimeter calculation
-  const handlePillContainerLayout = (event: LayoutChangeEvent) => {
-    const { width, height } = event.nativeEvent.layout;
-    if (__DEV__) {
-      console.log('[FloatingTabBar] Pill container:', { width, height });
-    }
-  };
-
-  const handleTabsRowLayout = (event: LayoutChangeEvent) => {
-    const { width, height } = event.nativeEvent.layout;
-    setTabsContainerWidth(width);
-    if (__DEV__) {
-      console.log('[FloatingTabBar] Tabs row:', { width, height, routes: state.routes.length });
-    }
-  };
-
-  const handleTabItemLayout = (routeKey: string) => (event: LayoutChangeEvent) => {
-    if (__DEV__) {
-      const { width, height } = event.nativeEvent.layout;
-      console.log(`[FloatingTabBar] Tab item ${routeKey}:`, { width, height });
-    }
-  };
-
   /**
    * Calculate active pill position using reanimated
    * 
@@ -242,17 +192,6 @@ export const FloatingTabBar: React.FC<FloatingTabBarProps> = ({
       // Position highlight (no padding offset since tabs fill full width)
       const translateX = state.index * tabWidth + HIGHLIGHT_HORIZONTAL_INSET;
       
-      if (__DEV__) {
-        console.log('[FloatingTabBar] Active pill calculation:', {
-          pillWidth,
-          TAB_COUNT,
-          tabWidth,
-          highlightWidth,
-          translateX,
-          index: state.index,
-        });
-      }
-
       if (reducedMotion) {
         // Snap without animation for reduced motion
         highlightX.value = translateX;
@@ -346,6 +285,21 @@ export const FloatingTabBar: React.FC<FloatingTabBarProps> = ({
   
   // Rainbow spectrum - more saturated in dark mode
   const rainbowSpectrum = isDark ? RAINBOW_SPECTRUM_DARK : RAINBOW_SPECTRUM_LIGHT;
+  const beamStops = isDark
+    ? [
+        <Stop key="dark-0" offset="0%" stopColor="rgba(255, 255, 255, 0)" />,
+        <Stop key="dark-20" offset="20%" stopColor="rgba(255, 255, 255, 0.40)" />,
+        <Stop key="dark-50" offset="50%" stopColor="rgba(255, 255, 255, 0.60)" />,
+        <Stop key="dark-80" offset="80%" stopColor="rgba(255, 255, 255, 0.40)" />,
+        <Stop key="dark-100" offset="100%" stopColor="rgba(255, 255, 255, 0)" />,
+      ]
+    : [
+        <Stop key="light-0" offset="0%" stopColor="rgba(124, 58, 237, 0)" />,
+        <Stop key="light-20" offset="20%" stopColor="rgba(124, 58, 237, 0.30)" />,
+        <Stop key="light-50" offset="50%" stopColor="rgba(124, 58, 237, 0.45)" />,
+        <Stop key="light-80" offset="80%" stopColor="rgba(124, 58, 237, 0.30)" />,
+        <Stop key="light-100" offset="100%" stopColor="rgba(124, 58, 237, 0)" />,
+      ];
   
   // Outer glow colors for dark mode (very subtle rainbow echo)
   const outerGlowColors = isDark
@@ -364,8 +318,6 @@ export const FloatingTabBar: React.FC<FloatingTabBarProps> = ({
 
   return (
     <View
-      ref={outerContainerRef}
-      onLayout={handleOuterLayout}
       style={[
         styles.outerContainer,
         {
@@ -378,11 +330,7 @@ export const FloatingTabBar: React.FC<FloatingTabBarProps> = ({
       {/* Horizontal row: Left pill + Right + button */}
       <View style={styles.rowContainer}>
         {/* LEFT: Pill wrapper with flex:1 and maxWidth constraint */}
-        <View
-          ref={pillWrapperRef}
-          onLayout={handlePillWrapperLayout}
-          style={styles.pillWrapper}
-        >
+        <View style={styles.pillWrapper}>
           {/* Pill container - relative positioning for absolute children */}
           <View
             style={[
@@ -453,25 +401,7 @@ export const FloatingTabBar: React.FC<FloatingTabBarProps> = ({
                     
                     {/* Beam highlight gradient - visible animation */}
                     <SvgLinearGradient id="beamGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                      {isDark ? (
-                        // Dark mode: visible beam
-                        <>
-                          <Stop offset="0%" stopColor="rgba(255, 255, 255, 0)" />
-                          <Stop offset="20%" stopColor="rgba(255, 255, 255, 0.40)" />
-                          <Stop offset="50%" stopColor="rgba(255, 255, 255, 0.60)" />
-                          <Stop offset="80%" stopColor="rgba(255, 255, 255, 0.40)" />
-                          <Stop offset="100%" stopColor="rgba(255, 255, 255, 0)" />
-                        </>
-                      ) : (
-                        // Light mode: visible beam
-                        <>
-                          <Stop offset="0%" stopColor="rgba(124, 58, 237, 0)" />
-                          <Stop offset="20%" stopColor="rgba(124, 58, 237, 0.30)" />
-                          <Stop offset="50%" stopColor="rgba(124, 58, 237, 0.45)" />
-                          <Stop offset="80%" stopColor="rgba(124, 58, 237, 0.30)" />
-                          <Stop offset="100%" stopColor="rgba(124, 58, 237, 0)" />
-                        </>
-                      )}
+                      {beamStops}
                     </SvgLinearGradient>
                   </Defs>
                   
@@ -613,8 +543,6 @@ export const FloatingTabBar: React.FC<FloatingTabBarProps> = ({
 
             {/* CONTENT LAYER - Tabs container - Clipped to inner pill for active highlight */}
             <View
-              ref={tabsRowRef}
-              onLayout={handleTabsRowLayout}
               style={[
                 styles.contentLayer,
                 {
@@ -636,7 +564,7 @@ export const FloatingTabBar: React.FC<FloatingTabBarProps> = ({
 
               {/* Tabs - All 5 tabs with flex:1 for equal distribution */}
               <View style={styles.tabsRow}>
-                {state.routes.map((route: any, index: number) => {
+                {state.routes.map((route, index) => {
                   const { options } = descriptors[route.key];
                   const isFocused = state.index === index;
 
@@ -654,11 +582,8 @@ export const FloatingTabBar: React.FC<FloatingTabBarProps> = ({
                   };
 
                   // Animation for tab press - use a ref to persist across renders
-                  const scaleAnimRef = React.useRef<RNAnimated.Value | null>(null);
-                  if (!scaleAnimRef.current) {
-                    scaleAnimRef.current = new RNAnimated.Value(1);
-                  }
-                  const scaleAnim = scaleAnimRef.current;
+                  const scaleAnim = tabScaleRefs.current[route.key]
+                    || (tabScaleRefs.current[route.key] = new RNAnimated.Value(1));
                   
                   const handlePressIn = () => {
                     RNAnimated.spring(scaleAnim, {
@@ -714,12 +639,6 @@ export const FloatingTabBar: React.FC<FloatingTabBarProps> = ({
                     >
                       <TouchableOpacity
                         key={route.key}
-                        ref={(ref) => {
-                          if (__DEV__) {
-                            tabItemRefs.current[route.key] = ref;
-                          }
-                        }}
-                        onLayout={__DEV__ ? handleTabItemLayout(route.key) : undefined}
                         accessibilityRole="button"
                         accessibilityState={isFocused ? { selected: true } : {}}
                         accessibilityLabel={options.tabBarAccessibilityLabel || label}

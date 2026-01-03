@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useMemo, useCallback, useRef, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AppState, DayProgress, Task, GuidedSession } from '../types';
@@ -26,7 +26,7 @@ import {
   POINTS
 } from '../utils/constants';
 import { ManifestationGoal, GoalCategory } from '../types/goals';
-import { loadGoals, getPrimaryGoals, updateGoalMetrics } from '../utils/goalManager';
+import { loadGoals, updateGoalMetrics } from '../utils/goalManager';
 
 export interface GlowPointsEntry {
   id: string;
@@ -78,11 +78,80 @@ const defaultAppState: AppState = {
   dailyProgress: {},
 };
 
+const getTodayString = (): string => {
+  return new Date().toISOString().split('T')[0];
+};
+
+const buildEmptyDayProgress = (date: string): DayProgress => ({
+  date,
+  tasks: [],
+  guidedSessions: [],
+  meditationCompleted: false,
+  gratitudeEntry: '',
+  visionImageAddedToday: false,
+  isComplete: false,
+});
+
+const checkDayCompleteSync = (progress: DayProgress): boolean => {
+  // Check must-do tasks
+  const mustDoTasks = progress.tasks?.filter(t => t.isMustDo) || [];
+  const allTasksComplete = mustDoTasks.length >= REQUIRED_DAILY_MUST_DO_TASKS &&
+    mustDoTasks.every(t => t.completed && t.text.trim() !== '');
+
+  // Check affirmations (3 sessions)
+  const affirmationsComplete = (progress.guidedSessions?.length || 0) >= REQUIRED_DAILY_AFFIRMATION_SESSIONS;
+
+  // Check meditation
+  const meditationComplete = progress.meditationCompleted === true;
+
+  // Check gratitude entry (legacy format)
+  const gratitudeEntryComplete = progress.gratitudeEntry === 'COMPLETE' ||
+    (progress.gratitudeEntry?.trim().length || 0) > 0;
+
+  // Check vision image (always required for now - can be gated by challengeActive later)
+  const visionImageComplete = progress.visionImageAddedToday === true;
+
+  return allTasksComplete && affirmationsComplete && meditationComplete && gratitudeEntryComplete && visionImageComplete;
+};
+
+const calculateStreaks = (dailyProgress: { [date: string]: DayProgress }): { currentStreak: number; totalDays: number } => {
+  // Sort dates chronologically
+  const dates = Object.keys(dailyProgress)
+    .filter(date => dailyProgress[date].isComplete)
+    .sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
+
+  if (dates.length === 0) {
+    return { currentStreak: 0, totalDays: 0 };
+  }
+
+  // Calculate current streak (consecutive days ending today)
+  let currentStreak = 0;
+
+  // Start from today and count backwards
+  let currentDate = new Date();
+  while (true) {
+    const dateKey = getLocalDayKey(currentDate);
+    // Check both formats - ISO date string and local day key
+    const progress = dailyProgress[dateKey] || dailyProgress[currentDate.toISOString().split('T')[0]];
+    if (progress?.isComplete) {
+      currentStreak++;
+      // Go to previous day
+      currentDate.setDate(currentDate.getDate() - 1);
+    } else {
+      break;
+    }
+  }
+
+  // Total days is just the count of completed days
+  const totalDays = dates.length;
+
+  return { currentStreak, totalDays };
+};
+
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   if (__DEV__) {
-    console.log('✅ AppProvider rendering...');
   }
   
   const [appState, setAppState] = useState<AppState>(defaultAppState);
@@ -101,23 +170,20 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   }, []);
 
-  // Recalculate streaks on initial load (after state is loaded from storage)
+  // Recalculate streaks when daily progress changes
   useEffect(() => {
-    // Use a small delay to ensure state is fully loaded
-    const timer = setTimeout(() => {
-      if (Object.keys(appState.dailyProgress).length > 0) {
-        const { currentStreak, totalDays } = calculateStreaks(appState.dailyProgress);
-        // Only update if values are different
-        setAppState(prev => {
-          if (currentStreak !== prev.currentStreak || totalDays !== prev.totalDays) {
-            return { ...prev, currentStreak, totalDays };
-          }
-          return prev;
-        });
+    if (Object.keys(appState.dailyProgress).length === 0) {
+      return;
+    }
+    const { currentStreak, totalDays } = calculateStreaks(appState.dailyProgress);
+    // Only update if values are different
+    setAppState(prev => {
+      if (currentStreak !== prev.currentStreak || totalDays !== prev.totalDays) {
+        return { ...prev, currentStreak, totalDays };
       }
-    }, 100);
-    return () => clearTimeout(timer);
-  }, []); // Only run once on mount
+      return prev;
+    });
+  }, [appState.dailyProgress]);
 
   // Debounce AsyncStorage saves to prevent excessive writes
   const saveAppStateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -130,7 +196,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       clearTimeout(saveAppStateTimeoutRef.current);
     }
     saveAppStateTimeoutRef.current = setTimeout(() => {
-      saveAppState();
+      AsyncStorage.setItem('appState', JSON.stringify(appState)).catch((error) => {
+        console.error('Error saving app state:', error);
+      });
     }, DEBOUNCE_DELAY);
     
     return () => {
@@ -146,7 +214,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       clearTimeout(saveGlowPointsTimeoutRef.current);
     }
     saveGlowPointsTimeoutRef.current = setTimeout(() => {
-      saveGlowPoints();
+      AsyncStorage.setItem('@glow_points', JSON.stringify(glowPoints)).catch((error) => {
+        console.error('Error saving glow points:', error);
+      });
     }, DEBOUNCE_DELAY);
     
     return () => {
@@ -167,14 +237,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
-  const saveAppState = async () => {
-    try {
-      await AsyncStorage.setItem('appState', JSON.stringify(appState));
-    } catch (error) {
-      console.error('Error saving app state:', error);
-    }
-  };
-
   const loadGlowPoints = async () => {
     try {
       const saved = await AsyncStorage.getItem('@glow_points');
@@ -186,14 +248,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
-  const saveGlowPoints = async () => {
-    try {
-      await AsyncStorage.setItem('@glow_points', JSON.stringify(glowPoints));
-    } catch (error) {
-      console.error('Error saving glow points:', error);
-    }
-  };
-
   const loadUserGoals = async () => {
     try {
       const goals = await loadGoals();
@@ -201,7 +255,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       // Extract unique goal categories from user's goals
       const categories = goals.map(g => g.category);
       setGoalCategories(categories);
-      console.log('✅ Loaded', goals.length, 'user goals');
     } catch (error) {
       console.error('Error loading user goals:', error);
     }
@@ -219,7 +272,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       await updateGoalMetrics(goalId, activityType);
       // Refresh goals to get updated progress
       await loadUserGoals();
-      console.log(`✅ Tracked ${activityType} for goal ${goalId}`);
     } catch (error) {
       console.error('Error tracking goal activity:', error);
     }
@@ -231,38 +283,26 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       if (hasPermission) {
         const settings = await getNotificationSettings();
         await scheduleNotifications(settings);
-        console.log('✅ Notifications initialized');
       }
     } catch (error) {
       console.error('Error initializing notifications:', error);
     }
   };
 
-  const getTodayString = (): string => {
-    return new Date().toISOString().split('T')[0];
-  };
-
   // Memoize getTodayProgress to prevent unnecessary recalculations
   const getTodayProgress = useCallback((): DayProgress => {
     const today = getTodayString();
     if (!appState.dailyProgress[today]) {
-      return {
-        date: today,
-        tasks: [],
-        guidedSessions: [],
-        meditationCompleted: false,
-        gratitudeEntry: '',
-        visionImageAddedToday: false,
-        isComplete: false,
-      };
+      return buildEmptyDayProgress(today);
     }
     return appState.dailyProgress[today];
   }, [appState.dailyProgress]);
 
-  const updateTodayProgress = (updater: (progress: DayProgress) => DayProgress) => {
+  const updateTodayProgress = useCallback((updater: (progress: DayProgress) => DayProgress) => {
     const today = getTodayString();
     setAppState((prev) => {
-      const updatedProgress = updater(getTodayProgress());
+      const currentProgress = prev.dailyProgress[today] || buildEmptyDayProgress(today);
+      const updatedProgress = updater(currentProgress);
       // Check if day is complete after update (using sync version)
       const isComplete = checkDayCompleteSync(updatedProgress);
       const finalProgress = { ...updatedProgress, isComplete };
@@ -276,7 +316,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       };
       
       // If day just became complete, recalculate streaks and total days
-      if (isComplete && !updatedProgress.isComplete) {
+      if (isComplete && !currentProgress.isComplete) {
         const { currentStreak, totalDays } = calculateStreaks(newState.dailyProgress);
         return {
           ...newState,
@@ -287,135 +327,35 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       
       return newState;
     });
-  };
-
-  // Check if all daily requirements are complete
-  const checkDayComplete = async (progress: DayProgress, date: string): Promise<boolean> => {
-    // Check must-do tasks
-    const mustDoTasks = progress.tasks?.filter(t => t.isMustDo) || [];
-    const allTasksComplete = mustDoTasks.length >= REQUIRED_DAILY_MUST_DO_TASKS &&
-      mustDoTasks.every(t => t.completed && t.text.trim() !== '');
-    
-    // Check affirmations (3 sessions)
-    const affirmationsComplete = (progress.guidedSessions?.length || 0) >= REQUIRED_DAILY_AFFIRMATION_SESSIONS;
-    
-    // Check meditation
-    const meditationComplete = progress.meditationCompleted === true;
-    
-    // Check gratitude (3 check-ins)
-    const gratitudeComplete = await isTodayGratitudeComplete();
-    // Also check if gratitudeEntry indicates completion (legacy check)
-    const gratitudeEntryComplete = progress.gratitudeEntry === 'COMPLETE' || 
-      (progress.gratitudeEntry?.trim().length || 0) > 0;
-    
-    // Check vision image (always required for now - can be gated by challengeActive later)
-    const visionImageComplete = progress.visionImageAddedToday === true;
-    
-    return allTasksComplete && affirmationsComplete && meditationComplete && 
-           (gratitudeComplete || gratitudeEntryComplete) && visionImageComplete;
-  };
-
-  // Synchronous version for use in updateTodayProgress (without async gratitude check)
-  const checkDayCompleteSync = (progress: DayProgress): boolean => {
-    // Check must-do tasks
-    const mustDoTasks = progress.tasks?.filter(t => t.isMustDo) || [];
-    const allTasksComplete = mustDoTasks.length >= REQUIRED_DAILY_MUST_DO_TASKS &&
-      mustDoTasks.every(t => t.completed && t.text.trim() !== '');
-    
-    // Check affirmations (3 sessions)
-    const affirmationsComplete = (progress.guidedSessions?.length || 0) >= REQUIRED_DAILY_AFFIRMATION_SESSIONS;
-    
-    // Check meditation
-    const meditationComplete = progress.meditationCompleted === true;
-    
-    // Check gratitude entry (legacy format)
-    const gratitudeEntryComplete = progress.gratitudeEntry === 'COMPLETE' || 
-      (progress.gratitudeEntry?.trim().length || 0) > 0;
-    
-    // Check vision image (always required for now - can be gated by challengeActive later)
-    const visionImageComplete = progress.visionImageAddedToday === true;
-    
-    return allTasksComplete && affirmationsComplete && meditationComplete && gratitudeEntryComplete && visionImageComplete;
-  };
-
-  // Calculate streaks and total days from daily progress
-  const calculateStreaks = (dailyProgress: { [date: string]: DayProgress }): { currentStreak: number; totalDays: number } => {
-    // Sort dates chronologically
-    const dates = Object.keys(dailyProgress)
-      .filter(date => dailyProgress[date].isComplete)
-      .sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
-    
-    if (dates.length === 0) {
-      return { currentStreak: 0, totalDays: 0 };
-    }
-    
-    // Calculate current streak (consecutive days ending today)
-    const today = getTodayString();
-    let currentStreak = 0;
-    
-    // Start from today and count backwards
-    let currentDate = new Date();
-    while (true) {
-      const dateKey = getLocalDayKey(currentDate);
-      // Check both formats - ISO date string and local day key
-      const progress = dailyProgress[dateKey] || dailyProgress[currentDate.toISOString().split('T')[0]];
-      if (progress?.isComplete) {
-        currentStreak++;
-        // Go to previous day
-        currentDate.setDate(currentDate.getDate() - 1);
-      } else {
-        break;
-      }
-    }
-    
-    // Total days is just the count of completed days
-    const totalDays = dates.length;
-    
-    return { currentStreak, totalDays };
-  };
+  }, []);
 
   const updateTasks = useCallback(async (tasks: Task[]) => {
     updateTodayProgress((progress) => ({
       ...progress,
       tasks,
     }));
-    // Recalculate streaks after task update
-    setAppState((prev) => {
-      const { currentStreak, totalDays } = calculateStreaks(prev.dailyProgress);
-      return { ...prev, currentStreak, totalDays };
-    });
-  }, []);
+  }, [updateTodayProgress]);
 
   const updateGuidedSessions = useCallback(async (sessions: GuidedSession[]) => {
     updateTodayProgress((progress) => ({
       ...progress,
       guidedSessions: sessions,
     }));
-    // Recalculate streaks after session update
-    setAppState((prev) => {
-      const { currentStreak, totalDays } = calculateStreaks(prev.dailyProgress);
-      return { ...prev, currentStreak, totalDays };
-    });
-  }, []);
+  }, [updateTodayProgress]);
 
   const completeMeditation = useCallback(async () => {
     updateTodayProgress((progress) => ({
       ...progress,
       meditationCompleted: true,
     }));
-    // Recalculate streaks after meditation completion
-    setAppState((prev) => {
-      const { currentStreak, totalDays } = calculateStreaks(prev.dailyProgress);
-      return { ...prev, currentStreak, totalDays };
-    });
-  }, []);
+  }, [updateTodayProgress]);
 
   const updateGratitudeEntry = useCallback(async (entry: string) => {
     updateTodayProgress((progress) => ({
       ...progress,
       gratitudeEntry: entry,
     }));
-  }, []);
+  }, [updateTodayProgress]);
 
   const startChallenge = useCallback(async () => {
     setAppState({
@@ -447,6 +387,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     checkIns.push(checkIn);
     await saveGratitudeCheckIns(checkIns);
 
+    const gratitudeLabel = REQUIRED_DAILY_GRATITUDE_CHECKINS === 1 ? 'check-in' : 'check-ins';
+
     // Award Glow points for gratitude check-in
     await addGlowPoints(POINTS.GRATITUDE_CHECKIN, 'Gratitude check-in');
 
@@ -454,7 +396,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const count = await getCheckInCountForDay(localDayKey);
     if (count >= MIN_CHECKINS_FOR_COMPLETION) {
       // Bonus points for completing daily goal
-      await addGlowPoints(POINTS.GRATITUDE_COMPLETE_DAILY, `Completed ${REQUIRED_DAILY_GRATITUDE_CHECKINS} daily gratitude check-ins`);
+      await addGlowPoints(POINTS.GRATITUDE_COMPLETE_DAILY, `Completed ${REQUIRED_DAILY_GRATITUDE_CHECKINS} daily gratitude ${gratitudeLabel}`);
       await markDayComplete(localDayKey);
       // Mark gratitude task complete in 45 NOW
       const today = getTodayString();
@@ -468,7 +410,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           // Create gratitude task if it doesn't exist
           gratitudeTask = {
             id: 'gratitude-task',
-            text: `Gratitude Journal (${REQUIRED_DAILY_GRATITUDE_CHECKINS} check-ins)`,
+            text: `Gratitude Journal (${REQUIRED_DAILY_GRATITUDE_CHECKINS} ${gratitudeLabel})`,
             completed: true,
             isMustDo: true,
             createdAt: new Date().toISOString(),
@@ -510,7 +452,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const isTodayGratitudeComplete = async (): Promise<boolean> => {
     const count = await getTodayCheckInCount();
-    return count >= 3;
+    return count >= MIN_CHECKINS_FOR_COMPLETION;
   };
 
   const markYesterdayComplete = async (): Promise<void> => {
@@ -560,7 +502,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       // Update total
       setGlowPoints((prev) => prev + points);
 
-      console.log(`✨ +${points} Glow points: ${reason}`);
     } catch (error) {
       console.error('Error adding glow points:', error);
     }
@@ -617,7 +558,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         moodEntryId: entry.id,
       }));
 
-      console.log('✨ Mood entry saved:', entry);
       return entry;
     } catch (error) {
       console.error('Error saving mood entry:', error);

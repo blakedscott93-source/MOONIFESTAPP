@@ -58,7 +58,7 @@ export async function startRecording(): Promise<void> {
   try {
     // Check if we're on web - recording might have limitations
     if (Platform.OS === 'web') {
-      console.warn('⚠️ Voice recording on web may have limitations. Consider testing on iOS/Android for full functionality.');
+      console.warn('Voice recording on web may have limitations. Consider testing on iOS/Android for full functionality.');
     }
 
     // Request permission first
@@ -94,7 +94,6 @@ export async function startRecording(): Promise<void> {
     // Use HIGH_QUALITY preset which is cross-platform compatible
     const recordingOptions = Audio.RecordingOptionsPresets.HIGH_QUALITY;
 
-    console.log('🎤 Starting recording with HIGH_QUALITY preset');
 
     const { recording: newRecording } = await Audio.Recording.createAsync(
       recordingOptions
@@ -107,7 +106,6 @@ export async function startRecording(): Promise<void> {
       // Wait a brief moment for recording to initialize
       await new Promise(resolve => setTimeout(resolve, 100));
       const status = await newRecording.getStatusAsync();
-      console.log('🎤 Recording status after start:', status);
       
       // Note: On web, status might not immediately show isRecording: true
       // This is okay - the recording object exists and will work
@@ -119,7 +117,6 @@ export async function startRecording(): Promise<void> {
       // Continue anyway - recording might still work
     }
     
-    console.log('🎤 Recording started successfully');
   } catch (error) {
     console.error('Failed to start recording:', error);
     // Reset recording state on error
@@ -132,11 +129,9 @@ export async function startRecording(): Promise<void> {
 export async function stopRecording(): Promise<string | null> {
   try {
     if (!recording) {
-      console.log('No active recording to stop');
       return null;
     }
 
-    console.log('⏹️ Stopping recording...');
     await recording.stopAndUnloadAsync();
     const uri = recording.getURI();
     recordingUri = uri;
@@ -149,7 +144,6 @@ export async function stopRecording(): Promise<string | null> {
       staysActiveInBackground: false,
     });
 
-    console.log('✅ Recording stopped, URI:', uri);
     return uri;
   } catch (error) {
     console.error('Failed to stop recording:', error);
@@ -165,7 +159,6 @@ export async function cancelRecording(): Promise<void> {
       await recording.stopAndUnloadAsync();
       recording = null;
       recordingUri = null;
-      console.log('❌ Recording cancelled');
     }
 
     // Reset audio mode

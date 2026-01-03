@@ -3,7 +3,7 @@ import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
+  FlatList,
   TouchableOpacity,
   TextInput,
   Alert,
@@ -15,10 +15,11 @@ import { Theme, TOUCH_TARGET_MIN } from '../utils/theme';
 import { useTheme } from '../theme/ThemeProvider';
 import { AFFIRMATION_CATEGORIES, searchAffirmations } from '../data/affirmationLibrary';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { AffirmationLibraryScreenProps } from '../types/navigation';
 
 const SAVED_AFFIRMATIONS_KEY = '@saved_affirmations';
 
-export default function AffirmationLibraryScreen({ navigation }: any) {
+export default function AffirmationLibraryScreen({ navigation }: AffirmationLibraryScreenProps) {
   const { theme: designTheme } = useTheme();
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -59,11 +60,17 @@ export default function AffirmationLibraryScreen({ navigation }: any) {
   };
 
   const renderCategoryGrid = () => {
+    const shouldShowCollection = savedAffirmations.length > 0;
     return (
-      <View style={styles.categoryGrid}>
-        {AFFIRMATION_CATEGORIES.map((category, index) => (
+      <FlatList
+        data={AFFIRMATION_CATEGORIES}
+        numColumns={2}
+        keyExtractor={(item) => item.id}
+        columnWrapperStyle={styles.categoryGridRow}
+        contentContainerStyle={styles.categoryGrid}
+        showsVerticalScrollIndicator={false}
+        renderItem={({ item: category }) => (
           <Card
-            key={category.id}
             style={[
               styles.categoryCard,
               { backgroundColor: category.color + '20' },
@@ -81,8 +88,37 @@ export default function AffirmationLibraryScreen({ navigation }: any) {
               <Text style={[styles.categoryCount, { color: designTheme.colors.textSecondary }]}>{category.affirmations.length} affirmations</Text>
             </TouchableOpacity>
           </Card>
-        ))}
-      </View>
+        )}
+        ListFooterComponent={
+          <View>
+            {shouldShowCollection && (
+              <Card style={styles.myCollectionCard}>
+                <RowItem
+                  title={`My Collection (${savedAffirmations.length})`}
+                  icon="bookmarks"
+                  iconColor={designTheme.colors.primary}
+                  onPress={() => {
+                    Alert.alert(
+                      'My Collection',
+                      `You have ${savedAffirmations.length} saved affirmation${savedAffirmations.length !== 1 ? 's' : ''}.`,
+                      [
+                        {
+                          text: 'View',
+                          onPress: () => {
+                            navigation.getParent()?.getParent()?.navigate('SavedAffirmationsScreen' as never);
+                          },
+                        },
+                        { text: 'Cancel', style: 'cancel' },
+                      ]
+                    );
+                  }}
+                />
+              </Card>
+            )}
+            <View style={{ height: 100 }} />
+          </View>
+        }
+      />
     );
   };
 
@@ -115,15 +151,16 @@ export default function AffirmationLibraryScreen({ navigation }: any) {
         </View>
 
         {/* Affirmations */}
-        <ScrollView
+        <FlatList
           style={styles.affirmationsList}
-          showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.affirmationsListContent}
-        >
-          {category.affirmations.map((affirmation, index) => {
+          showsVerticalScrollIndicator={false}
+          data={category.affirmations}
+          keyExtractor={(item, index) => `${category.id}-${index}`}
+          renderItem={({ item: affirmation }) => {
             const isSaved = savedAffirmations.includes(affirmation);
             return (
-              <Card key={index} style={styles.affirmationCard}>
+              <Card style={styles.affirmationCard}>
                 <View style={styles.affirmationContent}>
                   <Ionicons name="chatbubble-ellipses-outline" size={24} color={category.color} style={styles.quoteIcon} />
                   <Text style={[styles.affirmationText, { color: designTheme.colors.textPrimary }]}>{affirmation}</Text>
@@ -141,9 +178,9 @@ export default function AffirmationLibraryScreen({ navigation }: any) {
                 </TouchableOpacity>
               </Card>
             );
-          })}
-          <View style={{ height: 100 }} />
-        </ScrollView>
+          }}
+          ListFooterComponent={<View style={{ height: 100 }} />}
+        />
       </View>
     );
   };
@@ -158,16 +195,17 @@ export default function AffirmationLibraryScreen({ navigation }: any) {
         <Text style={styles.searchResultsHeader}>
           {results.length} result{results.length !== 1 ? 's' : ''} for "{searchQuery}"
         </Text>
-        <ScrollView
+        <FlatList
           style={styles.affirmationsList}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.affirmationsListContent}
-        >
-          {results.map((result, index) => {
+          data={results}
+          keyExtractor={(item, index) => `${item.category}-${index}`}
+          renderItem={({ item: result }) => {
             const isSaved = savedAffirmations.includes(result.affirmation);
             const category = AFFIRMATION_CATEGORIES.find(c => c.name === result.category);
             return (
-              <Card key={index} style={styles.affirmationCard}>
+              <Card style={styles.affirmationCard}>
                 <View style={styles.affirmationContent}>
                   <View style={styles.searchResultCategory}>
                     <Text style={styles.searchResultCategoryText}>{result.category}</Text>
@@ -187,19 +225,19 @@ export default function AffirmationLibraryScreen({ navigation }: any) {
                 </TouchableOpacity>
               </Card>
             );
-          })}
-          <View style={{ height: 100 }} />
-        </ScrollView>
+          }}
+          ListFooterComponent={<View style={{ height: 100 }} />}
+        />
       </View>
     );
   };
 
   return (
     <Screen
-      scroll
       title="Affirmation Library"
       subtitle="Browse and save powerful affirmations to your collection"
     >
+      <View style={styles.container}>
       {/* Search Bar */}
       <Card style={styles.searchCard}>
         <View style={styles.searchContainer}>
@@ -232,38 +270,15 @@ export default function AffirmationLibraryScreen({ navigation }: any) {
           </>
         )}
 
-        {/* My Collection Link */}
-        {savedAffirmations.length > 0 && !selectedCategory && !searchQuery && (
-          <Card style={styles.myCollectionCard}>
-            <RowItem
-              title={`My Collection (${savedAffirmations.length})`}
-              icon="bookmarks"
-              iconColor={designTheme.colors.primary}
-              onPress={() => {
-                Alert.alert(
-                  'My Collection',
-                  `You have ${savedAffirmations.length} saved affirmation${savedAffirmations.length !== 1 ? 's' : ''}.`,
-                  [
-                    {
-                      text: 'View',
-                      onPress: () => {
-                        navigation.navigate('SavedAffirmationsScreen');
-                      },
-                    },
-                    { text: 'Cancel', style: 'cancel' },
-                  ]
-                );
-              }}
-            />
-          </Card>
-        )}
-
-        <View style={{ height: 100 }} />
+      </View>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
   searchCard: {
     marginHorizontal: 16,
     marginBottom: 20,
@@ -295,13 +310,16 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   categoryGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
     paddingHorizontal: 16,
+    gap: 12,
+    paddingBottom: 4,
+  },
+  categoryGridRow: {
+    justifyContent: 'space-between',
     gap: 12,
   },
   categoryCard: {
-    width: '48%',
+    flex: 1,
     padding: 16,
     alignItems: 'center',
   },

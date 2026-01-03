@@ -20,7 +20,6 @@ const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export const ThemeProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   if (__DEV__) {
-    console.log('✅ OldThemeProvider rendering...');
   }
   
   // useColorScheme might not work on web, provide fallback

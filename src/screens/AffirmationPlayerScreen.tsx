@@ -4,7 +4,7 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  ScrollView,
+  FlatList,
   ActivityIndicator,
   Animated,
   Easing,
@@ -15,7 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { AVPlaybackStatus } from 'expo-av';
-import { GUIDED_SESSIONS, AFFIRMATION_CATEGORIES } from '../data/guidedAffirmations';
+import { AFFIRMATION_CATEGORIES } from '../data/guidedAffirmations';
 import { useApp } from '../context/AppContext';
 import { GuidedSession } from '../types';
 import { useToast } from '../context/ToastContext';
@@ -24,12 +24,16 @@ import { MAX_SESSIONS_PER_DAY, POINTS } from '../utils/constants';
 import { saveAffirmation, isAffirmationSaved } from '../utils/savedAffirmations';
 import { Theme, TOUCH_TARGET_MIN } from '../utils/theme';
 import { AudioPlayer, AFFIRMATION_AUDIO, AffirmationAudioId } from '../utils/audioPlayer';
+import { AffirmationPlayerScreenProps } from '../types/navigation';
+import { useScreenTracking } from '../hooks/useScreenTracking';
+import { trackEvent } from '../utils/analytics';
+import { useTabBarInset } from '../hooks/useTabBarInset';
 
-export default function AffirmationPlayerScreen({ route, navigation }: any) {
-  const { sessionId } = route.params;
+export default function AffirmationPlayerScreen({ route, navigation }: AffirmationPlayerScreenProps) {
+  useScreenTracking('AffirmationPlayer', { session_id: route.params?.session?.id });
+  const session = route.params?.session;
   const { updateGuidedSessions, getTodayProgress, addGlowPoints } = useApp();
   const { showSuccess, showPoints } = useToast();
-  const session = GUIDED_SESSIONS.find(s => s.id === sessionId);
   const category = AFFIRMATION_CATEGORIES.find(c => c.id === session?.categoryId);
 
   const [isPlaying, setIsPlaying] = useState(false);
@@ -41,7 +45,14 @@ export default function AffirmationPlayerScreen({ route, navigation }: any) {
   const [savedAffirmations, setSavedAffirmations] = useState<Set<string>>(new Set());
   const [duration, setDuration] = useState(0);
   const [position, setPosition] = useState(0);
+  const tabBarInset = useTabBarInset();
   const audioPlayerRef = useRef<AudioPlayer>(new AudioPlayer());
+  const speakingAnimationsRef = useRef<Animated.CompositeAnimation[]>([]);
+
+  const stopSpeakingAnimations = () => {
+    speakingAnimationsRef.current.forEach(animation => animation.stop());
+    speakingAnimationsRef.current = [];
+  };
   
   // Animation values (only transform and opacity for native driver)
   const playButtonScale = useRef(new Animated.Value(1)).current;
@@ -51,16 +62,11 @@ export default function AffirmationPlayerScreen({ route, navigation }: any) {
   const pulseDot2 = useRef(new Animated.Value(1)).current;
   const pulseDot3 = useRef(new Animated.Value(1)).current;
 
-  if (!session) {
-    return (
-      <View style={styles.container}>
-        <Text style={styles.errorText}>Session not found</Text>
-      </View>
-    );
-  }
-
   // Load saved affirmations and audio
   useEffect(() => {
+    if (!session) {
+      return;
+    }
     loadSavedAffirmations();
     loadAudio();
   }, []);
@@ -70,6 +76,7 @@ export default function AffirmationPlayerScreen({ route, navigation }: any) {
     return () => {
       stopAudio();
       audioPlayerRef.current.unloadAudio();
+      stopSpeakingAnimations();
     };
   }, []);
 
@@ -77,8 +84,9 @@ export default function AffirmationPlayerScreen({ route, navigation }: any) {
   // Animate play button when speaking
   useEffect(() => {
     if (isSpeaking) {
+      stopSpeakingAnimations();
       // Continuous subtle pulse
-      Animated.loop(
+      const scaleLoop = Animated.loop(
         Animated.sequence([
           Animated.timing(playButtonScale, {
             toValue: 1.05,
@@ -93,17 +101,19 @@ export default function AffirmationPlayerScreen({ route, navigation }: any) {
             useNativeDriver: true,
           }),
         ])
-      ).start();
+      );
+      scaleLoop.start();
       
       // Subtle rotation
-      Animated.loop(
+      const rotationLoop = Animated.loop(
         Animated.timing(playButtonRotation, {
           toValue: 1,
           duration: 3000,
           easing: Easing.linear,
           useNativeDriver: true,
         })
-      ).start();
+      );
+      rotationLoop.start();
 
       // Pulse dots animation (staggered)
       const createPulse = (dot: Animated.Value, delay: number) => {
@@ -126,10 +136,16 @@ export default function AffirmationPlayerScreen({ route, navigation }: any) {
         );
       };
 
-      createPulse(pulseDot1, 0).start();
-      createPulse(pulseDot2, 200).start();
-      createPulse(pulseDot3, 400).start();
+      const pulse1 = createPulse(pulseDot1, 0);
+      const pulse2 = createPulse(pulseDot2, 200);
+      const pulse3 = createPulse(pulseDot3, 400);
+      pulse1.start();
+      pulse2.start();
+      pulse3.start();
+
+      speakingAnimationsRef.current = [scaleLoop, rotationLoop, pulse1, pulse2, pulse3];
     } else {
+      stopSpeakingAnimations();
       playButtonScale.setValue(1);
       playButtonRotation.setValue(0);
       pulseDot1.setValue(1);
@@ -139,6 +155,9 @@ export default function AffirmationPlayerScreen({ route, navigation }: any) {
   }, [isSpeaking]);
 
   const loadSavedAffirmations = async () => {
+    if (!session) {
+      return;
+    }
     const saved = new Set<string>();
     for (const affirmation of session.affirmations) {
       const isSaved = await isAffirmationSaved(affirmation);
@@ -303,6 +322,12 @@ export default function AffirmationPlayerScreen({ route, navigation }: any) {
     
     try {
       setIsCompleting(true);
+      trackEvent('affirmation_session_completed', { 
+        session_id: session.id,
+        session_title: session?.title,
+        category: session?.categoryId,
+        duration_seconds: Math.floor(duration / 1000)
+      });
       
       const todayProgress = getTodayProgress();
       const existingSessions = todayProgress.guidedSessions || [];
@@ -355,6 +380,9 @@ export default function AffirmationPlayerScreen({ route, navigation }: any) {
 
   // Update progress width with smooth state transition
   useEffect(() => {
+    if (!session) {
+      return;
+    }
     const newProgress = session.affirmations.length > 0
       ? ((currentAffirmation + 1) / session.affirmations.length) * 100
       : 0;
@@ -366,7 +394,15 @@ export default function AffirmationPlayerScreen({ route, navigation }: any) {
     }, 50); // Small delay for smooth visual transition
     
     return () => clearTimeout(timeout);
-  }, [currentAffirmation, session.affirmations.length]);
+  }, [currentAffirmation, session?.affirmations.length]);
+
+  if (!session) {
+    return (
+      <View style={styles.container}>
+        <Text style={styles.errorText}>Session not found</Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -393,7 +429,7 @@ export default function AffirmationPlayerScreen({ route, navigation }: any) {
           </View>
           <TouchableOpacity
             style={styles.backButton}
-            onPress={() => navigation.navigate('Today')}
+            onPress={() => navigation.getParent()?.navigate('Today' as never)}
             hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           >
             <BlurView intensity={80} style={styles.backButtonBlur}>
@@ -410,7 +446,7 @@ export default function AffirmationPlayerScreen({ route, navigation }: any) {
             <View style={styles.sessionMeta}>
               <View style={styles.metaBadge}>
                 <Ionicons name="chatbubbles" size={14} color={Theme.colors.accent} />
-                <Text style={styles.metaText}>{session.affirmationCount} affirmations</Text>
+                <Text style={styles.metaText}>{session.affirmations.length} affirmations</Text>
               </View>
               <View style={styles.metaDivider} />
               <View style={styles.metaBadge}>
@@ -427,38 +463,45 @@ export default function AffirmationPlayerScreen({ route, navigation }: any) {
               { transform: [{ scale: cardScale }] }
             ]}
           >
-            <BlurView intensity={90} tint="light" style={styles.affirmationCard}>
-              <View style={styles.affirmationCardContent}>
-                <View style={styles.affirmationNumberBadge}>
-                  <Text style={styles.affirmationNumber}>
-                    {currentAffirmation + 1}
-                  </Text>
-                  <View style={styles.affirmationNumberDivider} />
-                  <Text style={styles.affirmationNumberTotal}>
-                    {session.affirmations.length}
+            <BlurView intensity={100} tint="light" style={styles.affirmationCard}>
+              <LinearGradient
+                colors={['rgba(255, 255, 255, 0.95)', 'rgba(255, 255, 255, 0.85)', 'rgba(248, 245, 255, 0.9)']}
+                style={styles.affirmationCardGradient}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+              >
+                <View style={styles.affirmationCardContent}>
+                  <View style={styles.affirmationNumberBadge}>
+                    <Text style={styles.affirmationNumber}>
+                      {currentAffirmation + 1}
+                    </Text>
+                    <View style={styles.affirmationNumberDivider} />
+                    <Text style={styles.affirmationNumberTotal}>
+                      {session.affirmations.length}
+                    </Text>
+                  </View>
+                  <Text style={styles.affirmationText}>
+                    {session.affirmations[currentAffirmation]}
                   </Text>
                 </View>
-                <Text style={styles.affirmationText}>
-                  {session.affirmations[currentAffirmation]}
-                </Text>
-              </View>
+              </LinearGradient>
             </BlurView>
           </Animated.View>
 
           {/* ScrollView for All Affirmations */}
-          <ScrollView
+          <FlatList
             style={styles.affirmationScroll}
             contentContainerStyle={styles.affirmationContent}
             showsVerticalScrollIndicator={false}
-          >
-            <Text style={styles.listTitle}>All Affirmations</Text>
-            {session.affirmations.map((affirmation, index) => {
-              const isSaved = savedAffirmations.has(affirmation);
+            data={session.affirmations}
+            keyExtractor={(item, index) => `${item}-${index}`}
+            ListHeaderComponent={<Text style={styles.listTitle}>All Affirmations</Text>}
+            ListFooterComponent={<View style={{ height: Theme.spacing.xl }} />}
+            renderItem={({ item, index }) => {
+              const isSaved = savedAffirmations.has(item);
               const isActive = index === currentAffirmation;
-              
               return (
                 <TouchableOpacity
-                  key={index}
                   style={[
                     styles.affirmationItemContainer,
                     isActive && styles.affirmationItemActive,
@@ -485,12 +528,12 @@ export default function AffirmationPlayerScreen({ route, navigation }: any) {
                       ]}
                       numberOfLines={2}
                     >
-                      {affirmation}
+                      {item}
                     </Text>
                   </View>
                   <TouchableOpacity
                     style={styles.saveButton}
-                    onPress={() => handleSaveAffirmation(affirmation)}
+                    onPress={() => handleSaveAffirmation(item)}
                     hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
                   >
                     <Ionicons
@@ -501,12 +544,11 @@ export default function AffirmationPlayerScreen({ route, navigation }: any) {
                   </TouchableOpacity>
                 </TouchableOpacity>
               );
-            })}
-            <View style={{ height: Theme.spacing.xl }} />
-          </ScrollView>
+            }}
+          />
 
           {/* Fixed Bottom Controls */}
-          <View style={styles.bottomControls}>
+          <View style={[styles.bottomControls, { paddingBottom: tabBarInset }]}>
             {/* Progress Section */}
             <View style={styles.progressSection}>
               <View style={styles.progressBarContainer}>
@@ -735,7 +777,7 @@ const styles = StyleSheet.create({
   },
   sessionInfo: {
     alignItems: 'center',
-    marginBottom: Theme.spacing.xl,
+    marginBottom: Theme.spacing.lg,
   },
   sessionTitle: {
     ...Theme.typography.title,
@@ -767,18 +809,26 @@ const styles = StyleSheet.create({
     backgroundColor: Theme.colors.border,
   },
   affirmationCardWrapper: {
-    marginBottom: Theme.spacing.xl,
-    ...Theme.shadow.large,
+    marginBottom: Theme.spacing.lg,
+    borderRadius: Theme.radius.xl,
+    shadowColor: '#8B7DD8',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.25,
+    shadowRadius: 24,
+    elevation: 12,
   },
   affirmationCard: {
     borderRadius: Theme.radius.xl,
     overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.5)',
+    borderWidth: 0,
+  },
+  affirmationCardGradient: {
+    width: '100%',
+    height: '100%',
   },
   affirmationCardContent: {
     padding: Theme.spacing.xl,
-    minHeight: 200,
+    minHeight: 150,
     justifyContent: 'center',
   },
   affirmationNumberBadge: {
@@ -805,19 +855,19 @@ const styles = StyleSheet.create({
     ...Theme.typography.h2,
     color: Theme.colors.textPrimary,
     textAlign: 'center',
-    lineHeight: 32,
+    lineHeight: 28,
     letterSpacing: -0.3,
   },
   affirmationScroll: {
     flex: 1,
   },
   affirmationContent: {
-    paddingBottom: Theme.spacing.lg,
+    paddingBottom: Theme.spacing.md,
   },
   listTitle: {
     ...Theme.typography.h3,
     color: Theme.colors.textPrimary,
-    marginBottom: Theme.spacing.md,
+    marginBottom: Theme.spacing.sm,
   },
   affirmationItemContainer: {
     flexDirection: 'row',
@@ -878,7 +928,6 @@ const styles = StyleSheet.create({
   },
   bottomControls: {
     paddingTop: Theme.spacing.md,
-    paddingBottom: Platform.OS === 'ios' ? Theme.spacing.xxl : Theme.spacing.xl,
   },
   progressSection: {
     marginBottom: Theme.spacing.lg,

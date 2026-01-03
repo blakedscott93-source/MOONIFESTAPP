@@ -1,13 +1,12 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
+  FlatList,
   TouchableOpacity,
   Switch,
   Alert,
-  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as StoreReview from 'expo-store-review';
@@ -16,10 +15,23 @@ import { Theme, TOUCH_TARGET_MIN } from '../utils/theme';
 import { useTheme } from '../context/ThemeContext';
 import { getColors } from '../utils/themeColors';
 import { openSupportEmail } from '../utils/contactSupport';
+import { SettingsScreenProps } from '../types/navigation';
+import { useScreenTracking } from '../hooks/useScreenTracking';
+import { SkeletonLoader, SkeletonCard } from '../components/SkeletonLoader';
 
-export default function SettingsScreen({ navigation }: any) {
+export default function SettingsScreen({ navigation }: SettingsScreenProps) {
+  useScreenTracking('Settings');
   const { themeMode, setThemeMode, isDark } = useTheme();
   const colors = getColors(isDark);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const loadSettings = async () => {
+      setIsLoading(true);
+      setIsLoading(false);
+    };
+    loadSettings();
+  }, []);
 
   const themeOptions = [
     { value: 'light' as const, label: 'Light', icon: 'sunny' },
@@ -35,7 +47,7 @@ export default function SettingsScreen({ navigation }: any) {
           icon: 'notifications',
           label: 'Notification Settings',
           type: 'navigate' as const,
-          onPress: () => navigation.navigate('NotificationSettings'),
+          onPress: () => navigation.navigate('MainTabs', { screen: '45 NOW', params: { screen: 'NotificationSettings' } }),
         },
       ],
     },
@@ -63,13 +75,13 @@ export default function SettingsScreen({ navigation }: any) {
           icon: 'library',
           label: 'Affirmation Library',
           type: 'navigate' as const,
-          onPress: () => navigation.navigate('AffirmationLibrary'),
+          onPress: () => navigation.navigate('MainTabs', { screen: 'Affirmations', params: { screen: 'AffirmationLibrary' } }),
         },
         {
           icon: 'images',
           label: 'Vision Board',
           type: 'navigate' as const,
-          onPress: () => navigation.navigate('VisionBoardScreen'),
+          onPress: () => navigation.navigate('MainTabs', { screen: 'Vision' }),
         },
         {
           icon: 'bookmarks',
@@ -83,18 +95,6 @@ export default function SettingsScreen({ navigation }: any) {
       title: 'Account & Data',
       items: [
         {
-          icon: 'cloud-upload',
-          label: 'Backup & Sync',
-          type: 'navigate' as const,
-          onPress: () => {
-            Alert.alert(
-              'Backup & Sync',
-              'Cloud backup and sync is coming soon! For now, you can export your data using the "Export My Data" option below.\n\nYour data is currently stored securely on your device.',
-              [{ text: 'OK' }]
-            );
-          },
-        },
-        {
           icon: 'download',
           label: 'Export My Data',
           type: 'navigate' as const,
@@ -105,7 +105,7 @@ export default function SettingsScreen({ navigation }: any) {
               
               Alert.alert(
                 'Export Your Data',
-                `Export all your Moonifest data including:\n\n• ${summary.streak} day streak\n• ${summary.totalDays} total days\n• ${summary.glowPoints} glow points\n• ${summary.moodEntries} mood entries\n• ${summary.gratitudeCheckIns} gratitude check-ins\n• ${summary.visionBoardItems} vision board items\n• ${summary.achievements} achievements\n\nYour data will be exported as a JSON file.`,
+                `Export all your Moonifest data including:\n\n- ${summary.streak} day streak\n- ${summary.totalDays} total days\n- ${summary.glowPoints} glow points\n- ${summary.moodEntries} mood entries\n- ${summary.gratitudeCheckIns} gratitude check-ins\n- ${summary.visionBoardItems} vision board items\n- ${summary.achievements} achievements\n\nYour data will be exported as a JSON file.`,
                 [
                   { text: 'Cancel', style: 'cancel' },
                   {
@@ -195,25 +195,39 @@ export default function SettingsScreen({ navigation }: any) {
     },
   ];
 
+  if (isLoading) {
+    return (
+      <Screen style={[styles.container, { backgroundColor: colors.bg }] as any}>
+        <FlatList
+          showsVerticalScrollIndicator={false}
+          data={[]}
+          renderItem={() => null}
+          keyExtractor={(_, index) => `skeleton-${index}`}
+          ListHeaderComponent={
+            <>
+              <View style={styles.header}>
+                <SkeletonLoader width={40} height={40} borderRadius={20} />
+                <SkeletonLoader width={120} height={24} />
+                <SkeletonLoader width={40} height={40} borderRadius={20} />
+              </View>
+              <SkeletonCard style={{ marginTop: 20 }} />
+              <SkeletonCard style={{ marginTop: 20 }} />
+              <SkeletonCard style={{ marginTop: 20 }} />
+            </>
+          }
+        />
+      </Screen>
+    );
+  }
+
   return (
     <Screen style={[styles.container, { backgroundColor: colors.bg }] as any}>
-      <ScrollView showsVerticalScrollIndicator={false}>
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity
-            onPress={() => navigation.goBack()}
-            style={[styles.backButton, { backgroundColor: colors.surfaceSecondary }]}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
-          </TouchableOpacity>
-          <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>Settings</Text>
-          <View style={{ width: TOUCH_TARGET_MIN }} />
-        </View>
-
-        {/* Settings Sections */}
-        {settingsSections.map((section, sectionIndex) => (
-          <View key={sectionIndex} style={sectionIndex === 0 ? styles.firstSection : styles.section}>
+      <FlatList
+        showsVerticalScrollIndicator={false}
+        data={settingsSections}
+        keyExtractor={(item) => item.title}
+        renderItem={({ item: section, index: sectionIndex }) => (
+          <View style={sectionIndex === 0 ? styles.firstSection : styles.section}>
             <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>
               {section.title}
             </Text>
@@ -221,7 +235,11 @@ export default function SettingsScreen({ navigation }: any) {
               {section.items.map((item, itemIndex) => (
                 <View key={itemIndex}>
                   {item.type === 'custom' ? (
-                    <View style={styles.settingItem}>
+                    <TouchableOpacity
+                      style={styles.settingItem}
+                      onPress={item.onPress}
+                      activeOpacity={0.7}
+                    >
                       <View style={styles.settingLeft}>
                         <View style={[styles.iconCircle, { backgroundColor: colors.accentSoft }]}>
                           <Ionicons name={item.icon as any} size={20} color={colors.accent} />
@@ -231,7 +249,7 @@ export default function SettingsScreen({ navigation }: any) {
                         </Text>
                       </View>
                       {item.renderRight && item.renderRight()}
-                    </View>
+                    </TouchableOpacity>
                   ) : (
                     <TouchableOpacity
                       style={styles.settingItem}
@@ -256,20 +274,39 @@ export default function SettingsScreen({ navigation }: any) {
               ))}
             </View>
           </View>
-        ))}
+        )}
+        ListHeaderComponent={
+          <>
+            {/* Header */}
+            <View style={styles.header}>
+              <TouchableOpacity
+                onPress={() => navigation.goBack()}
+                style={[styles.backButton, { backgroundColor: colors.surfaceSecondary }]}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
+              </TouchableOpacity>
+              <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>Settings</Text>
+              <View style={{ width: TOUCH_TARGET_MIN }} />
+            </View>
+          </>
+        }
+        ListFooterComponent={
+          <>
+            {/* App Version */}
+            <View style={styles.versionContainer}>
+              <Text style={[styles.versionText, { color: colors.textTertiary }]}>
+                Moonifest v1.0.0
+              </Text>
+              <Text style={[styles.versionText, { color: colors.textTertiary }]}>
+                Made with love for manifestation
+              </Text>
+            </View>
 
-        {/* App Version */}
-        <View style={styles.versionContainer}>
-          <Text style={[styles.versionText, { color: colors.textTertiary }]}>
-            Moonifest v1.0.0
-          </Text>
-          <Text style={[styles.versionText, { color: colors.textTertiary }]}>
-            Made with love for manifestation
-          </Text>
-        </View>
-
-        <View style={{ height: 100 }} />
-      </ScrollView>
+            <View style={{ height: 100 }} />
+          </>
+        }
+      />
     </Screen>
   );
 }

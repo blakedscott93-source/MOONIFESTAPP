@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useRef, useEffect, ReactNode } from 'react';
 import { Toast, ToastType } from '../components/Toast';
 
 interface ToastConfig {
@@ -35,17 +35,29 @@ interface ToastProviderProps {
 
 export const ToastProvider: React.FC<ToastProviderProps> = ({ children }) => {
   if (__DEV__) {
-    console.log('✅ ToastProvider rendering...');
   }
   
   const [toast, setToast] = useState<(ToastConfig & { visible: boolean }) | null>(null);
+  const showTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (showTimeoutRef.current) {
+        clearTimeout(showTimeoutRef.current);
+        showTimeoutRef.current = null;
+      }
+    };
+  }, []);
 
   const showToast = (config: ToastConfig) => {
     // Hide current toast if any
     setToast(null);
 
     // Show new toast after a brief delay
-    setTimeout(() => {
+    if (showTimeoutRef.current) {
+      clearTimeout(showTimeoutRef.current);
+    }
+    showTimeoutRef.current = setTimeout(() => {
       setToast({ ...config, visible: true });
     }, 100);
   };

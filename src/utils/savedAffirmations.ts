@@ -96,3 +96,4 @@ export async function isAffirmationSaved(text: string): Promise<boolean> {
   }
 }
 
+

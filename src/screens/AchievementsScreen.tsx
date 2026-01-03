@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
+  FlatList,
   TouchableOpacity,
   Animated,
 } from 'react-native';
@@ -25,6 +26,7 @@ import { shareAchievement, shareStreak, shareProgress } from '../utils/sharing';
 import { useToast } from '../context/ToastContext';
 import { Confetti } from '../components/Confetti';
 import { celebrationHaptic, successHaptic, lightHaptic } from '../utils/haptics';
+import { AchievementsScreenProps } from '../types/navigation';
 
 const UNLOCKED_ACHIEVEMENTS_KEY = '@unlocked_achievements';
 
@@ -32,30 +34,23 @@ interface UnlockedAchievement extends Achievement {
   unlockedAt: string;
 }
 
-export default function AchievementsScreen({ navigation }: any) {
-  const { appState, glowPoints, getTodayCheckInCount } = useApp();
+export default function AchievementsScreen({ navigation }: AchievementsScreenProps) {
+  const { appState, glowPoints } = useApp();
   // Note: appState is needed for rating prompts
   const { showSuccess, showInfo, showAchievement } = useToast();
   const [unlockedAchievements, setUnlockedAchievements] = useState<UnlockedAchievement[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<Achievement['category'] | 'all'>('all');
   const [showCalendar, setShowCalendar] = useState(false);
   const [completedDates, setCompletedDates] = useState<string[]>([]);
+  const [hasLoadedAchievements, setHasLoadedAchievements] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
   const [newlyUnlockedId, setNewlyUnlockedId] = useState<string | null>(null);
+  const timeoutsRef = useRef<NodeJS.Timeout[]>([]);
   
   // Animation for newly unlocked achievements
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
-  useEffect(() => {
-    loadUnlockedAchievements();
-    loadCompletedDates();
-  }, []);
-
-  useEffect(() => {
-    checkForNewAchievements();
-  }, [appState.currentStreak, glowPoints]);
-
-  const loadUnlockedAchievements = async () => {
+  const loadUnlockedAchievements = useCallback(async () => {
     try {
       const saved = await AsyncStorage.getItem(UNLOCKED_ACHIEVEMENTS_KEY);
       if (saved) {
@@ -63,24 +58,25 @@ export default function AchievementsScreen({ navigation }: any) {
       }
     } catch (error) {
       console.error('Error loading unlocked achievements:', error);
+    } finally {
+      setHasLoadedAchievements(true);
     }
-  };
+  }, []);
 
-  const loadCompletedDates = async () => {
+  const loadCompletedDates = useCallback(async () => {
     try {
       // Get all dates from daily progress
       const dates = Object.keys(appState.dailyProgress).filter(date => {
         const progress = appState.dailyProgress[date];
-        // Consider a day completed if user did at least one check-in
-        return progress.gratitudeEntry.trim().length > 0 ||
-               progress.tasks.some(t => t.completed) ||
-               progress.meditationCompleted;
+        const gratitudeComplete = (progress.gratitudeEntry?.trim().length || 0) > 0;
+        const tasksComplete = progress.tasks?.some(t => t.completed) ?? false;
+        return gratitudeComplete || tasksComplete || progress.meditationCompleted;
       });
       setCompletedDates(dates);
     } catch (error) {
       console.error('Error loading completed dates:', error);
     }
-  };
+  }, [appState.dailyProgress]);
 
   // Calculate longest streak from completed dates
   const calculateLongestStreak = (): number => {
@@ -151,14 +147,19 @@ export default function AchievementsScreen({ navigation }: any) {
     }
   };
 
-  const unlockAchievement = async (achievement: Achievement) => {
+  const unlockAchievement = useCallback(async (achievement: Achievement) => {
     try {
       const newUnlocked: UnlockedAchievement = {
         ...achievement,
         unlockedAt: new Date().toISOString(),
       };
-      const updated = [...unlockedAchievements, newUnlocked];
-      setUnlockedAchievements(updated);
+      let updated: UnlockedAchievement[] = [];
+      let wasFirstAchievement = false;
+      setUnlockedAchievements((prev) => {
+        wasFirstAchievement = prev.length === 0;
+        updated = [...prev, newUnlocked];
+        return updated;
+      });
       await AsyncStorage.setItem(UNLOCKED_ACHIEVEMENTS_KEY, JSON.stringify(updated));
 
       // Show celebration effects
@@ -177,11 +178,12 @@ export default function AchievementsScreen({ navigation }: any) {
       showAchievement?.(achievement.title, `+${achievement.glowReward} Glow Points!`);
       
       // Clear newly unlocked state after animation
-      setTimeout(() => setNewlyUnlockedId(null), 3000);
+      const clearTimeoutId = setTimeout(() => setNewlyUnlockedId(null), 3000);
+      timeoutsRef.current.push(clearTimeoutId);
 
       // Prompt for rating after achievement unlock (first achievement only)
-      if (unlockedAchievements.length === 0) {
-        setTimeout(async () => {
+      if (wasFirstAchievement) {
+        const ratingTimeoutId = setTimeout(async () => {
           const { promptForRating } = await import('../utils/appRating');
           await promptForRating({
             streak: appState.currentStreak,
@@ -189,15 +191,15 @@ export default function AchievementsScreen({ navigation }: any) {
             achievementUnlocked: true,
           });
         }, 2000);
+        timeoutsRef.current.push(ratingTimeoutId);
       }
 
-      console.log(`🏆 Achievement Unlocked: ${achievement.title} (+${achievement.glowReward} Glow)`);
     } catch (error) {
       console.error('Error unlocking achievement:', error);
     }
-  };
+  }, [appState.currentStreak, appState.totalDays, showAchievement]);
 
-  const checkForNewAchievements = async () => {
+  const checkForNewAchievements = useCallback(async () => {
     // Check each achievement to see if it should be unlocked
     for (const achievement of ACHIEVEMENTS) {
       const isAlreadyUnlocked = unlockedAchievements.some(u => u.id === achievement.id);
@@ -219,7 +221,26 @@ export default function AchievementsScreen({ navigation }: any) {
         await unlockAchievement(achievement);
       }
     }
-  };
+  }, [appState.currentStreak, glowPoints, unlockedAchievements, unlockAchievement]);
+
+  useEffect(() => {
+    loadUnlockedAchievements();
+    return () => {
+      timeoutsRef.current.forEach(timeoutId => clearTimeout(timeoutId));
+      timeoutsRef.current = [];
+    };
+  }, [loadUnlockedAchievements]);
+
+  useEffect(() => {
+    loadCompletedDates();
+  }, [loadCompletedDates]);
+
+  useEffect(() => {
+    if (!hasLoadedAchievements) {
+      return;
+    }
+    checkForNewAchievements();
+  }, [appState.currentStreak, checkForNewAchievements, glowPoints, hasLoadedAchievements, unlockedAchievements]);
 
   const getCurrentValue = (achievement: Achievement): number => {
     switch (achievement.requirement.type) {
@@ -362,16 +383,15 @@ export default function AchievementsScreen({ navigation }: any) {
     // Wrap newly unlocked achievements in animated view
     if (isNewlyUnlocked) {
       return (
-        <Animated.View 
-          key={achievement.id}
-          style={{ transform: [{ scale: pulseAnim }] }}
+        <Animated.View
+          style={[styles.achievementItem, { transform: [{ scale: pulseAnim }] }]}
         >
           {cardContent}
         </Animated.View>
       );
     }
     
-    return <View key={achievement.id}>{cardContent}</View>;
+    return <View style={styles.achievementItem}>{cardContent}</View>;
   };
 
   const handleCategoryPress = (categoryId: Achievement['category'] | 'all') => {
@@ -393,127 +413,131 @@ export default function AchievementsScreen({ navigation }: any) {
         pieceCount={60}
       />
       
-      <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity
-            onPress={() => navigation.goBack()}
-            style={styles.backButton}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <Ionicons name="chevron-back" size={24} color={Theme.colors.textPrimary} />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Achievements</Text>
-          <TouchableOpacity
-            onPress={handleShareProgress}
-            style={styles.shareButton}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <Ionicons name="share-social" size={24} color={Theme.colors.accent} />
-          </TouchableOpacity>
-        </View>
+      <FlatList
+        style={styles.container}
+        showsVerticalScrollIndicator={false}
+        data={filteredAchievements}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={styles.listContent}
+        renderItem={({ item }) => renderAchievementCard(item)}
+        ListHeaderComponent={
+          <>
+            {/* Header */}
+            <View style={styles.header}>
+              <TouchableOpacity
+                onPress={() => navigation.goBack()}
+                style={styles.backButton}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Ionicons name="chevron-back" size={24} color={Theme.colors.textPrimary} />
+              </TouchableOpacity>
+              <Text style={styles.headerTitle}>Achievements</Text>
+              <TouchableOpacity
+                onPress={handleShareProgress}
+                style={styles.shareButton}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Ionicons name="share-social" size={24} color={Theme.colors.accent} />
+              </TouchableOpacity>
+            </View>
 
-        {/* Streak Counter */}
-        <StreakCounter streak={appState.currentStreak} onShare={handleShareStreak} />
+            {/* Streak Counter */}
+            <StreakCounter streak={appState.currentStreak} onShare={handleShareStreak} />
 
-        {/* Calendar Toggle */}
-        <TouchableOpacity
-          onPress={() => setShowCalendar(!showCalendar)}
-          style={styles.calendarToggle}
-          activeOpacity={0.7}
-        >
-          <Ionicons
-            name={showCalendar ? 'calendar' : 'calendar-outline'}
-            size={20}
-            color={Theme.colors.accent}
-          />
-          <Text style={styles.calendarToggleText}>
-            {showCalendar ? 'Hide' : 'Show'} Calendar View
-          </Text>
-          <Ionicons
-            name={showCalendar ? 'chevron-up' : 'chevron-down'}
-            size={20}
-            color={Theme.colors.textSecondary}
-          />
-        </TouchableOpacity>
-
-        {/* Streak Calendar */}
-        {showCalendar && (
-          <StreakCalendar
-            completedDates={completedDates}
-            currentStreak={appState.currentStreak}
-            longestStreak={calculateLongestStreak()}
-          />
-        )}
-
-        {/* Stats Summary */}
-        <View style={styles.statsContainer}>
-          <View style={styles.statCard}>
-            <Text style={styles.statValue}>{unlockedAchievements.length}</Text>
-            <Text style={styles.statLabel}>Unlocked</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statValue}>{glowPoints}</Text>
-            <Text style={styles.statLabel}>Glow Points</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statValue}>
-              {Math.round((unlockedAchievements.length / ACHIEVEMENTS.length) * 100)}%
-            </Text>
-            <Text style={styles.statLabel}>Complete</Text>
-          </View>
-        </View>
-
-        {/* Category Filters */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.categoryFilters}
-        >
-          {categories.map((category) => (
+            {/* Calendar Toggle */}
             <TouchableOpacity
-              key={category.id}
-              style={[
-                styles.categoryChip,
-                selectedCategory === category.id && styles.categoryChipActive,
-              ]}
-              onPress={() => handleCategoryPress(category.id)}
+              onPress={() => setShowCalendar(!showCalendar)}
+              style={styles.calendarToggle}
+              activeOpacity={0.7}
             >
               <Ionicons
-                name={category.icon as any}
-                size={18}
-                color={
-                  selectedCategory === category.id
-                    ? Theme.colors.accent
-                    : Theme.colors.textSecondary
-                }
+                name={showCalendar ? 'calendar' : 'calendar-outline'}
+                size={20}
+                color={Theme.colors.accent}
               />
-              <Text
-                style={[
-                  styles.categoryChipText,
-                  selectedCategory === category.id && styles.categoryChipTextActive,
-                ]}
-              >
-                {category.label}
+              <Text style={styles.calendarToggleText}>
+                {showCalendar ? 'Hide' : 'Show'} Calendar View
               </Text>
+              <Ionicons
+                name={showCalendar ? 'chevron-up' : 'chevron-down'}
+                size={20}
+                color={Theme.colors.textSecondary}
+              />
             </TouchableOpacity>
-          ))}
-        </ScrollView>
 
-        {/* Progress Header */}
-        <View style={styles.progressHeader}>
-          <Text style={styles.progressHeaderText}>
-            {unlockedCount} of {totalCount} achievements
-          </Text>
-        </View>
+            {/* Streak Calendar */}
+            {showCalendar && (
+              <StreakCalendar
+                completedDates={completedDates}
+                currentStreak={appState.currentStreak}
+                longestStreak={calculateLongestStreak()}
+              />
+            )}
 
-        {/* Achievements List */}
-        <View style={styles.achievementsList}>
-          {filteredAchievements.map(renderAchievementCard)}
-        </View>
+            {/* Stats Summary */}
+            <View style={styles.statsContainer}>
+              <View style={styles.statCard}>
+                <Text style={styles.statValue}>{unlockedAchievements.length}</Text>
+                <Text style={styles.statLabel}>Unlocked</Text>
+              </View>
+              <View style={styles.statCard}>
+                <Text style={styles.statValue}>{glowPoints}</Text>
+                <Text style={styles.statLabel}>Glow Points</Text>
+              </View>
+              <View style={styles.statCard}>
+                <Text style={styles.statValue}>
+                  {Math.round((unlockedAchievements.length / ACHIEVEMENTS.length) * 100)}%
+                </Text>
+                <Text style={styles.statLabel}>Complete</Text>
+              </View>
+            </View>
 
-        <View style={{ height: 100 }} />
-      </ScrollView>
+            {/* Category Filters */}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.categoryFilters}
+            >
+              {categories.map((category) => (
+                <TouchableOpacity
+                  key={category.id}
+                  style={[
+                    styles.categoryChip,
+                    selectedCategory === category.id && styles.categoryChipActive,
+                  ]}
+                  onPress={() => handleCategoryPress(category.id)}
+                >
+                  <Ionicons
+                    name={category.icon as any}
+                    size={18}
+                    color={
+                      selectedCategory === category.id
+                        ? Theme.colors.accent
+                        : Theme.colors.textSecondary
+                    }
+                  />
+                  <Text
+                    style={[
+                      styles.categoryChipText,
+                      selectedCategory === category.id && styles.categoryChipTextActive,
+                    ]}
+                  >
+                    {category.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
+            {/* Progress Header */}
+            <View style={styles.progressHeader}>
+              <Text style={styles.progressHeaderText}>
+                {unlockedCount} of {totalCount} achievements
+              </Text>
+            </View>
+          </>
+        }
+        ListFooterComponent={<View style={{ height: 100 }} />}
+      />
     </Screen>
   );
 }
@@ -605,7 +629,10 @@ const styles = StyleSheet.create({
     ...Theme.typography.bodyBold,
     color: Theme.colors.textSecondary,
   },
-  achievementsList: {
+  listContent: {
+    paddingBottom: Theme.spacing.lg,
+  },
+  achievementItem: {
     paddingHorizontal: Theme.spacing.lg,
   },
   achievementCard: {

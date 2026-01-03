@@ -5,12 +5,12 @@
 
 // Challenge Constants
 export const CHALLENGE_DURATION_DAYS = 45;
-export const REQUIRED_DAILY_GRATITUDE_CHECKINS = 3;
+export const REQUIRED_DAILY_GRATITUDE_CHECKINS = 1;
 export const REQUIRED_DAILY_AFFIRMATION_SESSIONS = 3;
 export const REQUIRED_DAILY_MUST_DO_TASKS = 3;
 
 // Gratitude Check-in Constants
-export const MIN_CHECKINS_FOR_COMPLETION = 3;
+export const MIN_CHECKINS_FOR_COMPLETION = 1;
 export const MAX_CHECKINS_PER_DAY = 999; // No limit, but track for stats
 
 // Affirmation Constants
@@ -88,6 +88,7 @@ export const ANIMATION_DURATION = {
 
 // Export type for better TypeScript support
 export type GlowPointsKey = keyof typeof POINTS;
+
 
 
 

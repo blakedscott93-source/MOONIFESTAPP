@@ -30,22 +30,32 @@ export const JournalEntriesList: React.FC<JournalEntriesListProps> = React.memo(
   }, [entries, searchText]);
 
   const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    const today = new Date();
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
+    const isoDateMatch = /^\d{4}-\d{2}-\d{2}$/.test(dateString);
+    const date = isoDateMatch
+      ? new Date(
+          Number(dateString.slice(0, 4)),
+          Number(dateString.slice(5, 7)) - 1,
+          Number(dateString.slice(8, 10))
+        )
+      : new Date(dateString);
 
-    if (date.toDateString() === today.toDateString()) {
+    const toLocalDay = (value: Date) => new Date(value.getFullYear(), value.getMonth(), value.getDate());
+    const today = toLocalDay(new Date());
+    const yesterday = new Date(today);
+    yesterday.setDate(today.getDate() - 1);
+    const entryDay = toLocalDay(date);
+
+    if (entryDay.getTime() === today.getTime()) {
       return 'Today';
-    } else if (date.toDateString() === yesterday.toDateString()) {
-      return 'Yesterday';
-    } else {
-      return date.toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        year: date.getFullYear() !== today.getFullYear() ? 'numeric' : undefined,
-      });
     }
+    if (entryDay.getTime() === yesterday.getTime()) {
+      return 'Yesterday';
+    }
+    return date.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: date.getFullYear() !== today.getFullYear() ? 'numeric' : undefined,
+    });
   };
 
   if (filteredEntries.length === 0) {
@@ -129,4 +139,3 @@ const styles = StyleSheet.create({
     color: Theme.colors.textSecondary,
   },
 });
-

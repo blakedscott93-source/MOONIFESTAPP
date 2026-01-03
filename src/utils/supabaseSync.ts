@@ -8,6 +8,7 @@ import { getSupabaseClient, isSupabaseConfigured, Database } from '../config/sup
 import { AppState } from '../types';
 import { MoodEntry } from '../data/moodTracking';
 import { GratitudeCheckIn } from '../utils/dayRollover';
+import { Platform } from 'react-native';
 
 // Check if user is authenticated
 export async function isAuthenticated(): Promise<boolean> {
@@ -19,6 +20,70 @@ export async function isAuthenticated(): Promise<boolean> {
     return !!session;
   } catch (error) {
     console.error('Error checking authentication:', error);
+    return false;
+  }
+}
+
+// Get current user email (if signed in)
+export async function getCurrentUserEmail(): Promise<string | null> {
+  const client = getSupabaseClient();
+  if (!client) return null;
+
+  try {
+    const { data: { user } } = await client.auth.getUser();
+    return user?.email || null;
+  } catch (error) {
+    console.error('Error getting user email:', error);
+    return null;
+  }
+}
+
+// Sign in via magic link (email OTP)
+export async function signInWithEmail(email: string): Promise<{ success: boolean; error?: string }> {
+  if (!isSupabaseConfigured) {
+    return { success: false, error: 'Supabase not configured' };
+  }
+
+  const client = getSupabaseClient();
+  if (!client) {
+    return { success: false, error: 'Supabase client not available' };
+  }
+
+  try {
+    const options: { emailRedirectTo?: string } = {};
+    if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location?.origin) {
+      options.emailRedirectTo = window.location.origin;
+    }
+
+    const { error } = await client.auth.signInWithOtp({
+      email,
+      options: Object.keys(options).length > 0 ? options : undefined,
+    });
+
+    if (error) {
+      return { success: false, error: error.message };
+    }
+
+    return { success: true };
+  } catch (error) {
+    console.error('Error signing in with email:', error);
+    return { success: false, error: 'Failed to send sign-in link' };
+  }
+}
+
+export async function signOutFromSupabase(): Promise<boolean> {
+  const client = getSupabaseClient();
+  if (!client) return false;
+
+  try {
+    const { error } = await client.auth.signOut();
+    if (error) {
+      console.error('Error signing out:', error);
+      return false;
+    }
+    return true;
+  } catch (error) {
+    console.error('Error signing out:', error);
     return false;
   }
 }
@@ -70,7 +135,6 @@ export async function syncAppStateToCloud(appState: AppState, glowPoints: number
       return false;
     }
 
-    console.log('✅ App state synced to cloud');
     return true;
   } catch (error) {
     console.error('Exception syncing app state:', error);
@@ -154,7 +218,6 @@ export async function syncMoodEntriesToCloud(entries: MoodEntry[]): Promise<bool
       }
     }
 
-    console.log(`✅ Synced ${entries.length} mood entries to cloud`);
     return true;
   } catch (error) {
     console.error('Exception syncing mood entries:', error);
@@ -197,7 +260,6 @@ export async function syncGratitudeCheckInsToCloud(checkIns: GratitudeCheckIn[])
       }
     }
 
-    console.log(`✅ Synced ${checkIns.length} gratitude check-ins to cloud`);
     return true;
   } catch (error) {
     console.error('Exception syncing gratitude check-ins:', error);
@@ -224,9 +286,8 @@ export async function syncAllDataToCloud(data: {
     );
 
     if (allSuccessful) {
-      console.log('✅ Full data sync completed');
     } else {
-      console.warn('⚠️ Some data sync operations failed');
+      console.warn('Some data sync operations failed');
     }
 
     return allSuccessful;

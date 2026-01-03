@@ -8,6 +8,7 @@ export const OfflineIndicator: React.FC = () => {
   const [isOnline, setIsOnline] = useState(true);
   const [queueCount, setQueueCount] = useState(0);
   const slideAnim = React.useRef(new Animated.Value(-100)).current;
+  const hideTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     // Skip on web - network detection not critical for web
@@ -19,6 +20,10 @@ export const OfflineIndicator: React.FC = () => {
 
       if (!connected) {
         // Show indicator when offline
+        if (hideTimeoutRef.current) {
+          clearTimeout(hideTimeoutRef.current);
+          hideTimeoutRef.current = null;
+        }
         Animated.spring(slideAnim, {
           toValue: 0,
           tension: 50,
@@ -27,7 +32,10 @@ export const OfflineIndicator: React.FC = () => {
         }).start();
       } else {
         // Hide indicator when back online
-        setTimeout(() => {
+        if (hideTimeoutRef.current) {
+          clearTimeout(hideTimeoutRef.current);
+        }
+        hideTimeoutRef.current = setTimeout(() => {
           Animated.timing(slideAnim, {
             toValue: -100,
             duration: 300,
@@ -46,6 +54,10 @@ export const OfflineIndicator: React.FC = () => {
 
     return () => {
       unsubscribe();
+      if (hideTimeoutRef.current) {
+        clearTimeout(hideTimeoutRef.current);
+        hideTimeoutRef.current = null;
+      }
     };
   }, []);
 

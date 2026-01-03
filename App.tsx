@@ -14,6 +14,7 @@ import { ErrorBoundary } from './src/components/ErrorBoundary';
 import { WebPhoneWrapper } from './src/components/WebPhoneWrapper';
 import { trackAppSession } from './src/utils/appRating';
 import { initSentry } from './src/utils/sentry';
+import { useFonts, Sora_400Regular, Sora_600SemiBold, Sora_700Bold } from '@expo-google-fonts/sora';
 
 // Initialize Sentry error tracking (wrapped in try-catch to prevent crashes)
 try {
@@ -24,7 +25,6 @@ try {
 
 function AppContent() {
   if (__DEV__) {
-    console.log('✅ AppContent component starting...');
   }
   
   // Hooks must be called unconditionally at the top level
@@ -33,13 +33,11 @@ function AppContent() {
   const colors = getColors(isDark);
   
   if (__DEV__) {
-    console.log('✅ AppContent theme loaded, isDark:', isDark);
   }
   
   // Track app session for rating prompts
   useEffect(() => {
     if (__DEV__) {
-      console.log('✅ AppContent useEffect running...');
     }
     try {
       trackAppSession();
@@ -72,7 +70,16 @@ function AppContent() {
 
 export default function App() {
   if (__DEV__) {
-    console.log('✅ App component rendering...');
+  }
+
+  const [fontsLoaded] = useFonts({
+    Sora_400Regular,
+    Sora_600SemiBold,
+    Sora_700Bold,
+  });
+
+  if (!fontsLoaded) {
+    return null;
   }
   
   try {

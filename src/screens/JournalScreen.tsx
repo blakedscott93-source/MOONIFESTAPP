@@ -1,11 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TextInput,
-  ScrollView,
-  TouchableOpacity,
+  FlatList,
   KeyboardAvoidingView,
   Platform,
   Alert,
@@ -15,10 +14,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { Screen } from '../components/Screen';
 import { GratitudeHelperSection } from '../components/GratitudeHelperSection';
 import { GratitudeCheckInCard } from '../components/GratitudeCheckInCard';
-import { PrimaryButton, SecondaryButton } from '../components/Buttons';
-import { Theme, TOUCH_TARGET_MIN } from '../utils/theme';
+import { PrimaryButton } from '../components/Buttons';
+import { Theme } from '../utils/theme';
 import { GratitudeCheckIn } from '../utils/dayRollover';
-import { getLocalDayKey } from '../utils/dayRollover';
+import { REQUIRED_DAILY_GRATITUDE_CHECKINS } from '../utils/constants';
 
 export default function JournalScreen() {
   const { 
@@ -33,12 +32,9 @@ export default function JournalScreen() {
   const [checkInCount, setCheckInCount] = useState(0);
   const [isComplete, setIsComplete] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const checkInLabel = REQUIRED_DAILY_GRATITUDE_CHECKINS === 1 ? 'check-in' : 'check-ins';
 
-  useEffect(() => {
-    loadTodayData();
-  }, []);
-
-  const loadTodayData = async () => {
+  const loadTodayData = useCallback(async () => {
     const todayCheckIns = await getTodayCheckIns();
     const count = await getTodayCheckInCount();
     const complete = await isTodayGratitudeComplete();
@@ -46,7 +42,11 @@ export default function JournalScreen() {
     setCheckIns(todayCheckIns);
     setCheckInCount(count);
     setIsComplete(complete);
-  };
+  }, [getTodayCheckIns, getTodayCheckInCount, isTodayGratitudeComplete]);
+
+  useEffect(() => {
+    loadTodayData();
+  }, [loadTodayData]);
 
   const handleSave = async () => {
     if (!entry.trim()) {
@@ -57,7 +57,7 @@ export default function JournalScreen() {
     if (isComplete) {
       Alert.alert(
         'Day Complete',
-        'You\'ve already completed 3 check-ins today. You can still add more entries, but they won\'t count toward completion.',
+        `You've already completed ${REQUIRED_DAILY_GRATITUDE_CHECKINS} ${checkInLabel} today. You can still add more entries, but they won't count toward completion.`,
         [{ text: 'OK', onPress: () => saveCheckIn() }]
       );
       return;
@@ -97,98 +97,104 @@ export default function JournalScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={90}
       >
-        <ScrollView
+        <FlatList
           style={styles.scrollView}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.scrollContent}
-        >
-          {/* Header */}
-          <View style={styles.header}>
-            <View>
-              <Text style={styles.title}>✨ Gratitude Journal</Text>
-              <Text style={styles.subtitle}>Manifest through appreciation</Text>
-            </View>
-          </View>
-
-          {/* Helper Section */}
-          <GratitudeHelperSection />
-
-          {/* Date Row with Progress */}
-          <View style={styles.dateRow}>
-            <View style={styles.dateContainer}>
-              <Ionicons name="calendar" size={20} color={Theme.colors.accent} />
-              <View style={styles.dateTextContainer}>
-                <Text style={styles.dateText}>{formatDate()}</Text>
+          data={checkIns}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => <GratitudeCheckInCard checkIn={item} />}
+          ListHeaderComponent={
+            <>
+              {/* Header */}
+              <View style={styles.header}>
+                <View>
+                  <Text style={styles.title}>Gratitude Journal</Text>
+                  <Text style={styles.subtitle}>Manifest through appreciation</Text>
+                </View>
               </View>
-            </View>
-            <View style={[styles.progressPill, isComplete && styles.progressPillComplete]}>
-              <Text style={[styles.progressText, isComplete && styles.progressTextComplete]}>
-                {checkInCount}/3
-              </Text>
-            </View>
-          </View>
 
-          {/* Completion Message */}
-          {isComplete && (
-            <View style={styles.completeMessage}>
-              <Ionicons name="checkmark-circle" size={24} color={Theme.colors.success} />
-              <Text style={styles.completeMessageText}>
-                ✅ Gratitude complete for today
-              </Text>
-            </View>
-          )}
+              {/* Helper Section */}
+              <GratitudeHelperSection />
 
-          {/* Entry Input */}
-          <View style={styles.inputContainer}>
-            <TextInput
-              style={styles.textInput}
-              multiline
-              numberOfLines={8}
-              placeholder="I am so grateful for..."
-              placeholderTextColor={Theme.colors.textTertiary}
-              value={entry}
-              onChangeText={setEntry}
-              textAlignVertical="top"
-              editable={!isSaving}
-            />
-            {entry.length > 0 && (
-              <View style={styles.characterCount}>
-                <Text style={styles.characterCountText}>
-                  {entry.length} characters
+              {/* Date Row with Progress */}
+              <View style={styles.dateRow}>
+                <View style={styles.dateContainer}>
+                  <Ionicons name="calendar" size={20} color={Theme.colors.accent} />
+                  <View style={styles.dateTextContainer}>
+                    <Text style={styles.dateText}>{formatDate()}</Text>
+                  </View>
+                </View>
+                <View style={[styles.progressPill, isComplete && styles.progressPillComplete]}>
+                  <Text style={[styles.progressText, isComplete && styles.progressTextComplete]}>
+                    {checkInCount}/{REQUIRED_DAILY_GRATITUDE_CHECKINS}
+                  </Text>
+                </View>
+              </View>
+
+              {/* Completion Message */}
+              {isComplete && (
+                <View style={styles.completeMessage}>
+                  <Ionicons name="checkmark-circle" size={24} color={Theme.colors.success} />
+                  <Text style={styles.completeMessageText}>
+                    Gratitude complete for today
+                  </Text>
+                </View>
+              )}
+
+              {/* Entry Input */}
+              <View style={styles.inputContainer}>
+                <TextInput
+                  style={styles.textInput}
+                  multiline
+                  numberOfLines={8}
+                  placeholder="I am so grateful for..."
+                  placeholderTextColor={Theme.colors.textTertiary}
+                  value={entry}
+                  onChangeText={setEntry}
+                  textAlignVertical="top"
+                  editable={!isSaving}
+                />
+                {entry.length > 0 && (
+                  <View style={styles.characterCount}>
+                    <Text style={styles.characterCountText}>
+                      {entry.length} characters
+                    </Text>
+                  </View>
+                )}
+              </View>
+
+              {/* Save Button */}
+              <PrimaryButton
+                title={isComplete ? "Save Extra Entry" : "Save Check-in"}
+                icon="save"
+                onPress={handleSave}
+                disabled={!entry.trim() || isSaving}
+                fullWidth
+              />
+
+              {/* Saved Check-ins */}
+              {checkIns.length > 0 && (
+                <View style={styles.checkInsSection}>
+                  <Text style={styles.checkInsTitle}>Today's Check-ins</Text>
+                </View>
+              )}
+            </>
+          }
+          ListFooterComponent={
+            <>
+              {/* Inspiration Quote */}
+              <View style={styles.affirmationBox}>
+                <Ionicons name="sparkles" size={20} color={Theme.colors.accent} />
+                <Text style={styles.affirmationText}>
+                  "What you appreciate, appreciates. Gratitude is the gateway to abundance."
                 </Text>
               </View>
-            )}
-          </View>
 
-          {/* Save Button */}
-          <PrimaryButton
-            title={isComplete ? "Save Extra Entry" : "Save Check-in"}
-            icon="save"
-            onPress={handleSave}
-            disabled={!entry.trim() || isSaving}
-            fullWidth
-          />
-
-          {/* Saved Check-ins */}
-          {checkIns.length > 0 && (
-            <View style={styles.checkInsSection}>
-              <Text style={styles.checkInsTitle}>Today's Check-ins</Text>
-              {checkIns.map((checkIn) => (
-                <GratitudeCheckInCard key={checkIn.id} checkIn={checkIn} />
-              ))}
-            </View>
-          )}
-
-          {/* Inspiration Quote */}
-          <View style={styles.affirmationBox}>
-            <Ionicons name="sparkles" size={20} color={Theme.colors.accent} />
-            <Text style={styles.affirmationText}>
-              "What you appreciate, appreciates. Gratitude is the gateway to abundance."
-            </Text>
-          </View>
-
-          <View style={{ height: Theme.spacing.xxxl }} />
-        </ScrollView>
+              <View style={{ height: Theme.spacing.xxxl }} />
+            </>
+          }
+        />
       </KeyboardAvoidingView>
     </Screen>
   );

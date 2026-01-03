@@ -3,7 +3,7 @@ import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
+  FlatList,
   Switch,
   TouchableOpacity,
   Platform,
@@ -21,8 +21,9 @@ import {
   cancelAllNotifications,
   areNotificationsSupported,
 } from '../utils/notifications';
+import { NotificationSettingsScreenProps } from '../types/navigation';
 
-export default function NotificationSettingsScreen({ navigation }: any) {
+export default function NotificationSettingsScreen({ navigation }: NotificationSettingsScreenProps) {
   const notificationsSupported = areNotificationsSupported();
   const [settings, setSettings] = useState<NotificationSettings>({
     enabled: true,
@@ -48,7 +49,6 @@ export default function NotificationSettingsScreen({ navigation }: any) {
   const saveSettings = async (newSettings: NotificationSettings) => {
     setSettings(newSettings);
     await saveNotificationSettings(newSettings);
-    console.log('✅ Notification settings saved');
   };
 
   const toggleNotifications = async (enabled: boolean) => {
@@ -56,7 +56,7 @@ export default function NotificationSettingsScreen({ navigation }: any) {
       // Re-enable notifications
       await saveSettings({ ...settings, enabled: true });
       Alert.alert(
-        '🔔 Notifications Enabled',
+        'Notifications Enabled',
         `You'll receive 3 daily journal reminders + ${settings.affirmationFrequency} affirmations to help you stay on track with your manifestation journey!`
       );
     } else {
@@ -64,7 +64,7 @@ export default function NotificationSettingsScreen({ navigation }: any) {
       await cancelAllNotifications();
       await saveSettings({ ...settings, enabled: false });
       Alert.alert(
-        '🔕 Notifications Disabled',
+        'Notifications Disabled',
         'You won\'t receive daily reminders. You can re-enable them anytime.'
       );
     }
@@ -167,7 +167,13 @@ export default function NotificationSettingsScreen({ navigation }: any) {
 
   return (
     <Screen>
-      <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+      <FlatList
+        style={styles.container}
+        showsVerticalScrollIndicator={false}
+        data={[]}
+        renderItem={() => null}
+        ListHeaderComponent={
+          <>
         {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity
@@ -334,9 +340,9 @@ export default function NotificationSettingsScreen({ navigation }: any) {
 
             <View style={[styles.frequencyInfo, { marginTop: Theme.spacing.md }]}>
               <Text style={styles.frequencyInfoText}>
-                {settings.affirmationFrequency === 3 && '✨ 3 peaceful affirmations spread throughout the day'}
-                {settings.affirmationFrequency === 6 && '✨ 6 uplifting affirmations for consistent inspiration'}
-                {settings.affirmationFrequency === 9 && '✨ 9 powerful affirmations for deep immersion'}
+                {settings.affirmationFrequency === 3 && '3 peaceful affirmations spread throughout the day'}
+                {settings.affirmationFrequency === 6 && '6 uplifting affirmations for consistent inspiration'}
+                {settings.affirmationFrequency === 9 && '9 powerful affirmations for deep immersion'}
               </Text>
             </View>
           </View>
@@ -410,8 +416,8 @@ export default function NotificationSettingsScreen({ navigation }: any) {
             onPress={async () => {
               await scheduleNotifications(settings);
               Alert.alert(
-                '✅ Notifications Scheduled',
-                `Your daily reminders are set for:\n\n🌅 Morning: ${formatTimeDisplay(settings.morningTime)}\n☀️ Afternoon: ${formatTimeDisplay(settings.afternoonTime)}\n🌙 Evening: ${formatTimeDisplay(settings.eveningTime)}\n\n✨ Plus ${settings.affirmationFrequency} daily affirmations throughout the day`
+                'Notifications Scheduled',
+                `Your daily reminders are set for:\n\nMorning: ${formatTimeDisplay(settings.morningTime)}\nAfternoon: ${formatTimeDisplay(settings.afternoonTime)}\nEvening: ${formatTimeDisplay(settings.eveningTime)}\n\nPlus ${settings.affirmationFrequency} daily affirmations throughout the day`
               );
             }}
             accessible={true}
@@ -424,7 +430,9 @@ export default function NotificationSettingsScreen({ navigation }: any) {
         )}
 
         <View style={{ height: 100 }} />
-      </ScrollView>
+          </>
+        }
+      />
     </Screen>
   );
 }

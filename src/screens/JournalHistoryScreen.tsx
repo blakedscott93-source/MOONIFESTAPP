@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
+  SectionList,
   TouchableOpacity,
   TextInput,
   Alert,
@@ -15,6 +15,7 @@ import { AppHeader } from '../components/AppHeader';
 import { UnifiedCard } from '../components/UnifiedCard';
 import { Theme } from '../utils/theme';
 import { GratitudeCheckIn, getLocalDayKey } from '../utils/dayRollover';
+import { JournalHistoryScreenProps } from '../types/navigation';
 
 interface GroupedCheckIns {
   date: string;
@@ -22,33 +23,11 @@ interface GroupedCheckIns {
   checkIns: GratitudeCheckIn[];
 }
 
-export default function JournalHistoryScreen({ navigation }: any) {
+export default function JournalHistoryScreen({ navigation }: JournalHistoryScreenProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [allCheckIns, setAllCheckIns] = useState<GratitudeCheckIn[]>([]);
-  const [groupedCheckIns, setGroupedCheckIns] = useState<GroupedCheckIns[]>([]);
-  const [filteredGroups, setFilteredGroups] = useState<GroupedCheckIns[]>([]);
 
-  useEffect(() => {
-    loadAllCheckIns();
-  }, []);
-
-  useEffect(() => {
-    if (searchQuery.trim()) {
-      const filtered = groupedCheckIns
-        .map(group => ({
-          ...group,
-          checkIns: group.checkIns.filter(ci =>
-            ci.text.toLowerCase().includes(searchQuery.toLowerCase())
-          ),
-        }))
-        .filter(group => group.checkIns.length > 0);
-      setFilteredGroups(filtered);
-    } else {
-      setFilteredGroups(groupedCheckIns);
-    }
-  }, [searchQuery, groupedCheckIns]);
-
-  const loadAllCheckIns = async () => {
+  const loadAllCheckIns = useCallback(async () => {
     try {
       const data = await AsyncStorage.getItem('@gratitude_check_ins');
       if (data) {
@@ -56,37 +35,18 @@ export default function JournalHistoryScreen({ navigation }: any) {
         // Sort by date descending (newest first)
         checkIns.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
         setAllCheckIns(checkIns);
-
-        // Group by date
-        const grouped = groupCheckInsByDate(checkIns);
-        setGroupedCheckIns(grouped);
-        setFilteredGroups(grouped);
       }
     } catch (error) {
       console.error('Error loading check-ins:', error);
       Alert.alert('Error', 'Failed to load journal history');
     }
-  };
+  }, []);
 
-  const groupCheckInsByDate = (checkIns: GratitudeCheckIn[]): GroupedCheckIns[] => {
-    const groups: { [key: string]: GratitudeCheckIn[] } = {};
+  useEffect(() => {
+    loadAllCheckIns();
+  }, [loadAllCheckIns]);
 
-    checkIns.forEach(checkIn => {
-      const date = checkIn.localDayKey;
-      if (!groups[date]) {
-        groups[date] = [];
-      }
-      groups[date].push(checkIn);
-    });
-
-    return Object.entries(groups).map(([date, checkIns]) => ({
-      date,
-      displayDate: formatDateHeader(date),
-      checkIns,
-    }));
-  };
-
-  const formatDateHeader = (dateKey: string): string => {
+  const formatDateHeader = useCallback((dateKey: string): string => {
     const [year, month, day] = dateKey.split('-').map(Number);
     const date = new Date(year, month - 1, day);
     const today = new Date();
@@ -108,7 +68,25 @@ export default function JournalHistoryScreen({ navigation }: any) {
         year: date.getFullYear() !== today.getFullYear() ? 'numeric' : undefined,
       });
     }
-  };
+  }, []);
+
+  const groupCheckInsByDate = useCallback((checkIns: GratitudeCheckIn[]): GroupedCheckIns[] => {
+    const groups: { [key: string]: GratitudeCheckIn[] } = {};
+
+    checkIns.forEach(checkIn => {
+      const date = checkIn.localDayKey;
+      if (!groups[date]) {
+        groups[date] = [];
+      }
+      groups[date].push(checkIn);
+    });
+
+    return Object.entries(groups).map(([date, grouped]) => ({
+      date,
+      displayDate: formatDateHeader(date),
+      checkIns: grouped,
+    }));
+  }, [formatDateHeader]);
 
   const formatTime = (timestamp: string): string => {
     const date = new Date(timestamp);
@@ -119,10 +97,32 @@ export default function JournalHistoryScreen({ navigation }: any) {
     });
   };
 
-  const getTotalCheckIns = () => allCheckIns.length;
-  const getTotalDays = () => groupedCheckIns.length;
+  const groupedCheckIns = useMemo(
+    () => groupCheckInsByDate(allCheckIns),
+    [allCheckIns, groupCheckInsByDate]
+  );
 
-  const deleteCheckIn = async (checkInId: string) => {
+  const filteredGroups = useMemo(() => {
+    if (!searchQuery.trim()) {
+      return groupedCheckIns;
+    }
+    const query = searchQuery.toLowerCase();
+    return groupedCheckIns
+      .map(group => ({
+        ...group,
+        checkIns: group.checkIns.filter(ci => ci.text.toLowerCase().includes(query)),
+      }))
+      .filter(group => group.checkIns.length > 0);
+  }, [groupedCheckIns, searchQuery]);
+
+  const totalCheckIns = allCheckIns.length;
+  const totalDays = groupedCheckIns.length;
+  const sections = useMemo(
+    () => filteredGroups.map(group => ({ ...group, data: group.checkIns })),
+    [filteredGroups]
+  );
+
+  const deleteCheckIn = useCallback(async (checkInId: string) => {
     Alert.alert(
       'Delete Entry',
       'Are you sure you want to delete this gratitude entry?',
@@ -145,13 +145,13 @@ export default function JournalHistoryScreen({ navigation }: any) {
         },
       ]
     );
-  };
+  }, [allCheckIns, loadAllCheckIns]);
 
   return (
     <Screen style={styles.container}>
       <AppHeader
         title="Journal History"
-        subtitle={`${getTotalCheckIns()} entries across ${getTotalDays()} days`}
+        subtitle={`${totalCheckIns} entries across ${totalDays} days`}
         leftIcon={{
           name: 'chevron-back',
           onPress: () => navigation.goBack(),
@@ -163,17 +163,17 @@ export default function JournalHistoryScreen({ navigation }: any) {
       <View style={styles.statsRow}>
         <View style={styles.statCard}>
           <Ionicons name="calendar" size={24} color={Theme.colors.accent} />
-          <Text style={styles.statValue}>{getTotalDays()}</Text>
+          <Text style={styles.statValue}>{totalDays}</Text>
           <Text style={styles.statLabel}>Days</Text>
         </View>
         <View style={styles.statCard}>
           <Ionicons name="heart" size={24} color={Theme.colors.pink} />
-          <Text style={styles.statValue}>{getTotalCheckIns()}</Text>
+          <Text style={styles.statValue}>{totalCheckIns}</Text>
           <Text style={styles.statLabel}>Entries</Text>
         </View>
         <View style={styles.statCard}>
           <Ionicons name="flame" size={24} color={Theme.colors.gold} />
-          <Text style={styles.statValue}>{Math.round(getTotalCheckIns() / Math.max(getTotalDays(), 1) * 10) / 10}</Text>
+          <Text style={styles.statValue}>{Math.round(totalCheckIns / Math.max(totalDays, 1) * 10) / 10}</Text>
           <Text style={styles.statLabel}>Avg/Day</Text>
         </View>
       </View>
@@ -196,12 +196,45 @@ export default function JournalHistoryScreen({ navigation }: any) {
       </View>
 
       {/* Entries List */}
-      <ScrollView
+      <SectionList
         style={styles.scrollView}
-        showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
-      >
-        {filteredGroups.length === 0 ? (
+        sections={sections}
+        keyExtractor={(item) => item.id}
+        stickySectionHeadersEnabled={false}
+        renderSectionHeader={({ section }) => (
+          <View style={styles.dayGroup}>
+            <View style={styles.dateHeader}>
+              <Text style={styles.dateHeaderText}>{section.displayDate}</Text>
+              <View style={styles.dateHeaderBadge}>
+                <Text style={styles.dateHeaderBadgeText}>{section.checkIns.length}</Text>
+              </View>
+            </View>
+          </View>
+        )}
+        renderItem={({ item }) => (
+          <TouchableOpacity
+            style={styles.entryCard}
+            activeOpacity={0.7}
+            onLongPress={() => deleteCheckIn(item.id)}
+          >
+            <View style={styles.entryHeader}>
+              <View style={styles.entryHeaderLeft}>
+                <Ionicons name="checkmark-circle" size={20} color={Theme.colors.success} />
+                <Text style={styles.entryTime}>{formatTime(item.createdAt)}</Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => deleteCheckIn(item.id)}
+                style={styles.deleteButton}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Ionicons name="trash-outline" size={18} color={Theme.colors.error} />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.entryText}>{item.text}</Text>
+          </TouchableOpacity>
+        )}
+        ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <Ionicons name="book-outline" size={60} color={Theme.colors.textTertiary} />
             <Text style={styles.emptyTitle}>
@@ -213,45 +246,10 @@ export default function JournalHistoryScreen({ navigation }: any) {
                 : 'Start writing gratitude entries to see them here'}
             </Text>
           </View>
-        ) : (
-          filteredGroups.map((group, groupIndex) => (
-            <View key={group.date} style={styles.dayGroup}>
-              <View style={styles.dateHeader}>
-                <Text style={styles.dateHeaderText}>{group.displayDate}</Text>
-                <View style={styles.dateHeaderBadge}>
-                  <Text style={styles.dateHeaderBadgeText}>{group.checkIns.length}</Text>
-                </View>
-              </View>
-
-              {group.checkIns.map((checkIn, index) => (
-                <TouchableOpacity
-                  key={checkIn.id}
-                  style={styles.entryCard}
-                  activeOpacity={0.7}
-                  onLongPress={() => deleteCheckIn(checkIn.id)}
-                >
-                  <View style={styles.entryHeader}>
-                    <View style={styles.entryHeaderLeft}>
-                      <Ionicons name="checkmark-circle" size={20} color={Theme.colors.success} />
-                      <Text style={styles.entryTime}>{formatTime(checkIn.createdAt)}</Text>
-                    </View>
-                    <TouchableOpacity
-                      onPress={() => deleteCheckIn(checkIn.id)}
-                      style={styles.deleteButton}
-                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                    >
-                      <Ionicons name="trash-outline" size={18} color={Theme.colors.error} />
-                    </TouchableOpacity>
-                  </View>
-                  <Text style={styles.entryText}>{checkIn.text}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          ))
-        )}
-
-        <View style={{ height: Theme.spacing.xxxl }} />
-      </ScrollView>
+        }
+        ListFooterComponent={<View style={{ height: Theme.spacing.xxxl }} />}
+        showsVerticalScrollIndicator={false}
+      />
     </Screen>
   );
 }

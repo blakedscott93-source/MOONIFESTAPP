@@ -22,7 +22,6 @@ try {
     });
   }
 } catch (error) {
-  console.log('Notifications not supported in this environment:', error);
 }
 
 export interface NotificationSettings {
@@ -47,7 +46,6 @@ const STORAGE_KEY = '@notification_settings';
 export async function registerForPushNotifications(): Promise<boolean> {
   // Skip if notifications aren't supported (Expo Go on Android SDK 53+)
   if (notificationsUnsupported) {
-    console.log('📱 Push notifications are not supported in Expo Go on Android. Use a development build for full notification support.');
     return false;
   }
 
@@ -70,13 +68,11 @@ export async function registerForPushNotifications(): Promise<boolean> {
     }
 
     if (finalStatus !== 'granted') {
-      console.log('Failed to get push token for push notification!');
       return false;
     }
 
     return true;
   } catch (error) {
-    console.log('Error registering for push notifications:', error);
     return false;
   }
 }
@@ -121,7 +117,6 @@ export async function getNotificationSettings(): Promise<NotificationSettings> {
 
       // Save personalized defaults for future use
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(personalizedSettings));
-      console.log('✨ Applied personalized notification defaults based on onboarding quiz');
 
       return personalizedSettings;
     }
@@ -143,16 +138,16 @@ export async function saveNotificationSettings(settings: NotificationSettings): 
   }
 }
 
-// Manifestation prompts for notifications (journal reminders)
+// Gratitude prompts for notifications (journal reminders)
 const MANIFESTATION_PROMPTS = [
-  "✨ Time to manifest! What are you grateful for today?",
-  "🌟 Your daily check-in awaits. What's bringing you joy?",
-  "💜 Pause and reflect. What abundance are you experiencing?",
-  "🎯 Manifestation time! Express gratitude for what you have.",
-  "🌙 Take a moment to appreciate the beauty around you.",
-  "⭐ Your future self will thank you. Journal your gratitude now.",
-  "💫 Energy flows where attention goes. What are you thankful for?",
-  "🔮 The universe is listening. Share your gratitude.",
+  'Gratitude check-in: what are you thankful for today?',
+  'Pause and reflect: what brought you joy today?',
+  'Take a moment to appreciate something small right now.',
+  'What is one thing you are grateful for in this moment?',
+  'Name someone you appreciate today and why.',
+  'What went well today that you can feel thankful for?',
+  'A calm reminder: share your gratitude before the day ends.',
+  'Your daily gratitude check-in is ready when you are.',
 ];
 
 // Daily affirmations for relaxation and inspiration (like I AM app)
@@ -219,7 +214,6 @@ function parseTime(timeStr: string): { hour: number; minute: number } {
 export async function scheduleNotifications(settings: NotificationSettings): Promise<void> {
   // Skip if notifications aren't supported (Expo Go on Android SDK 53+)
   if (notificationsUnsupported) {
-    console.log('📱 Notification scheduling skipped - not supported in Expo Go on Android.');
     return;
   }
 
@@ -227,7 +221,6 @@ export async function scheduleNotifications(settings: NotificationSettings): Pro
     // Cancel all existing notifications first
     await Notifications.cancelAllScheduledNotificationsAsync();
   } catch (error) {
-    console.log('Error cancelling notifications:', error);
     return;
   }
 
@@ -342,7 +335,6 @@ export async function scheduleNotifications(settings: NotificationSettings): Pro
     });
   }
 
-  console.log(`✅ Notifications scheduled successfully (3 journal reminders + ${settings.affirmationFrequency} daily affirmations)`);
 }
 
 // Cancel all notifications
@@ -352,7 +344,6 @@ export async function cancelAllNotifications(): Promise<void> {
   try {
     await Notifications.cancelAllScheduledNotificationsAsync();
   } catch (error) {
-    console.log('Error cancelling notifications:', error);
   }
 }
 
@@ -363,7 +354,6 @@ export async function getScheduledNotifications(): Promise<Notifications.Notific
   try {
     return await Notifications.getAllScheduledNotificationsAsync();
   } catch (error) {
-    console.log('Error getting scheduled notifications:', error);
     return [];
   }
 }
@@ -376,7 +366,7 @@ export async function scheduleStreakReminder(): Promise<void> {
     await Notifications.scheduleNotificationAsync({
       content: {
         title: '🔥 Don\'t Break Your Streak!',
-        body: 'You haven\'t completed today\'s gratitude check-ins yet. Keep your momentum going!',
+        body: 'You haven\'t completed today\'s gratitude check-in yet. Keep your momentum going!',
         sound: true,
         priority: Notifications.AndroidNotificationPriority.MAX,
         data: { type: 'streak_reminder' },
@@ -390,7 +380,6 @@ export async function scheduleStreakReminder(): Promise<void> {
       },
     });
   } catch (error) {
-    console.log('Error scheduling streak reminder:', error);
   }
 }
 
@@ -404,7 +393,6 @@ export function setupNotificationListeners(navigation: any) {
   try {
     // Handle notification received while app is foregrounded
     const foregroundSubscription = Notifications.addNotificationReceivedListener(notification => {
-      console.log('Notification received in foreground:', notification);
     });
 
     // Handle notification tap
@@ -424,7 +412,6 @@ export function setupNotificationListeners(navigation: any) {
       responseSubscription.remove();
     };
   } catch (error) {
-    console.log('Error setting up notification listeners:', error);
     return () => {};
   }
 }
@@ -433,3 +420,4 @@ export function setupNotificationListeners(navigation: any) {
 export function areNotificationsSupported(): boolean {
   return !notificationsUnsupported;
 }
+

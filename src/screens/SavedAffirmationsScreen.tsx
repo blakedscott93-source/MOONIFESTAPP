@@ -15,8 +15,9 @@ import { UnifiedCard } from '../components/UnifiedCard';
 import { Theme } from '../utils/theme';
 import { SavedAffirmation, getSavedAffirmations, removeSavedAffirmation } from '../utils/savedAffirmations';
 import { useToast } from '../context/ToastContext';
+import { SavedAffirmationsScreenProps } from '../types/navigation';
 
-export default function SavedAffirmationsScreen({ navigation }: any) {
+export default function SavedAffirmationsScreen({ navigation }: SavedAffirmationsScreenProps) {
   const { showSuccess, showError } = useToast();
   const [affirmations, setAffirmations] = useState<SavedAffirmation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -273,4 +274,5 @@ const styles = StyleSheet.create({
     lineHeight: 22,
   },
 });
+
 

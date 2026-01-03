@@ -1,60 +1,66 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen } from '../components/Screen';
 import { AppHeader } from '../components/AppHeader';
 import { Theme, TOUCH_TARGET_MIN } from '../utils/theme';
+import { ToolsScreenProps } from '../types/navigation';
 
-export default function ToolsScreen({ navigation }: any) {
-  const tools = [
+type ToolItem = {
+  title: string;
+  description: string;
+  icon: string;
+  color: string;
+  onPress?: () => void;
+};
+
+export default function ToolsScreen({ navigation }: ToolsScreenProps) {
+  const tools: ToolItem[] = [
     {
       title: 'Manifestation Guide',
       description: 'Chat with your AI guide',
       icon: 'chatbubbles',
       color: '#FFD700',
-      screen: 'ChatbotScreen',
+      onPress: () => navigation.navigate('ChatbotScreen'),
     },
     {
       title: 'Vision Board',
       description: 'Create your digital vision board',
       icon: 'images',
       color: '#FF6B9D',
-      screen: 'VisionBoardScreen',
+      onPress: () => navigation.navigate('MainTabs', { screen: 'Vision' }),
     },
     {
       title: 'Meditation Library',
       description: 'Guided meditations & frequencies',
       icon: 'headset',
       color: '#8B7DD8',
-      screen: null,
     },
     {
       title: 'Affirmation Templates',
       description: 'Pre-written powerful affirmations',
       icon: 'text',
       color: '#4ECDC4',
-      screen: null,
     },
     {
       title: 'Manifestation Tracker',
       description: 'Track your manifestations',
       icon: 'sparkles',
       color: '#FFD700',
-      screen: null,
     },
     {
       title: 'Community',
       description: 'Connect with fellow manifestors',
       icon: 'people',
       color: '#FF6B35',
-      screen: 'CommunityScreen',
+      onPress: () => navigation.navigate('CommunityScreen'),
     },
     {
       title: 'Settings',
       description: 'Customize your experience',
       icon: 'settings',
       color: '#AAA',
-      screen: 'SettingsScreen',
+      onPress: () => navigation.navigate('SettingsScreen'),
     },
   ];
 
@@ -69,19 +75,19 @@ export default function ToolsScreen({ navigation }: any) {
           accessibilityLabel: 'Go back',
         }}
       />
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-
-      <View style={styles.toolsGrid}>
-        {tools.map((tool, index) => (
+      <FlatList
+        style={styles.scrollView}
+        showsVerticalScrollIndicator={false}
+        data={tools}
+        numColumns={2}
+        keyExtractor={(item) => item.title}
+        columnWrapperStyle={styles.toolsRow}
+        contentContainerStyle={styles.toolsGrid}
+        renderItem={({ item: tool }) => (
           <TouchableOpacity
-            key={index}
             style={styles.toolCard}
             onPress={() => {
-              if (tool.screen) {
-                navigation.navigate(tool.screen);
-              } else {
-                // Coming soon
-              }
+              tool.onPress?.();
             }}
           >
             <View style={[styles.toolIcon, { backgroundColor: tool.color + '20' }]}>
@@ -89,23 +95,23 @@ export default function ToolsScreen({ navigation }: any) {
             </View>
             <Text style={styles.toolTitle}>{tool.title}</Text>
             <Text style={styles.toolDescription}>{tool.description}</Text>
-            {!tool.screen && (
+            {!tool.onPress && (
               <Text style={styles.comingSoon}>Coming Soon</Text>
             )}
           </TouchableOpacity>
-        ))}
-      </View>
-
-      <View style={styles.infoCard}>
-        <Ionicons name="information-circle" size={24} color="#8B7DD8" />
-        <View style={styles.infoContent}>
-          <Text style={styles.infoTitle}>Premium Features</Text>
-          <Text style={styles.infoText}>
-            Unlock unlimited meditations, vision boards, and community access with Moonifest Premium
-          </Text>
-        </View>
-      </View>
-      </ScrollView>
+        )}
+        ListFooterComponent={
+          <View style={styles.infoCard}>
+            <Ionicons name="information-circle" size={24} color="#8B7DD8" />
+            <View style={styles.infoContent}>
+              <Text style={styles.infoTitle}>Premium Features</Text>
+              <Text style={styles.infoText}>
+                Unlock unlimited meditations, vision boards, and community access with Moonifest Premium
+              </Text>
+            </View>
+          </View>
+        }
+      />
     </Screen>
   );
 }
@@ -120,12 +126,14 @@ const styles = StyleSheet.create({
   },
   toolsGrid: {
     padding: Theme.spacing.lg,
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+    gap: Theme.spacing.md,
+  },
+  toolsRow: {
+    justifyContent: 'space-between',
     gap: Theme.spacing.md,
   },
   toolCard: {
-    width: '47%',
+    flex: 1,
     backgroundColor: Theme.colors.surface,
     borderRadius: Theme.radius.lg,
     padding: Theme.spacing.lg,
