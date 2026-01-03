@@ -14,6 +14,7 @@ import { Platform } from 'react-native';
 const PREMIUM_STORAGE_KEY = '@is_premium_user';
 const PREMIUM_EXPIRY_KEY = '@premium_expiry_date';
 const SUBSCRIPTION_TYPE_KEY = '@subscription_type';
+const REVENUECAT_ENTITLEMENT_ID = 'premium';
 
 export type SubscriptionType = 'monthly' | 'yearly' | 'lifetime' | 'trial' | null;
 export type PaymentProvider = 'revenuecat' | 'stripe' | 'local' | null;
@@ -26,8 +27,21 @@ export interface PremiumStatus {
   daysRemaining: number | null;
 }
 
+// Safely import env variables with fallback (web / missing .env)
+let env: any = null;
+try {
+  env = require('@env');
+} catch (error) {
+  env = null;
+}
+
+function getEnvValue(key: string): string | undefined {
+  return env?.[key] ?? (process.env as any)?.[key];
+}
+
 // Optional RevenueCat import
 let Purchases: any = null;
+let revenueCatConfigured = false;
 try {
   Purchases = require('react-native-purchases').default;
 } catch (error) {
@@ -51,21 +65,35 @@ try {
  */
 export async function initializePremium(): Promise<void> {
   // Check if RevenueCat is configured
-  const revenueCatApiKey = process.env.EXPO_PUBLIC_REVENUECAT_API_KEY;
-  
-  if (Purchases && revenueCatApiKey) {
+  const revenueCatApiKey = getRevenueCatApiKey();
+
+  if (Purchases && revenueCatApiKey && (Platform.OS === 'ios' || Platform.OS === 'android')) {
     try {
+      // Enable debug logs in dev when supported
+      if (__DEV__) {
+        try {
+          if (typeof Purchases.setDebugLogsEnabled === 'function') {
+            Purchases.setDebugLogsEnabled(true);
+          } else if (Purchases.LOG_LEVEL && typeof Purchases.setLogLevel === 'function') {
+            Purchases.setLogLevel(Purchases.LOG_LEVEL.DEBUG);
+          }
+        } catch {
+          // Ignore logging configuration errors
+        }
+      }
+
       await Purchases.configure({
         apiKey: revenueCatApiKey,
         appUserID: await getOrCreateUserId(),
       });
+      revenueCatConfigured = true;
     } catch (error) {
       console.error('RevenueCat initialization failed:', error);
     }
   }
 
   // Check if Stripe is configured
-  const stripePublishableKey = process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY;
+  const stripePublishableKey = getEnvValue('EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY');
   if (initStripe && stripePublishableKey) {
     try {
       await initStripe({
@@ -93,6 +121,58 @@ async function getOrCreateUserId(): Promise<string> {
   return userId;
 }
 
+function getRevenueCatApiKey(): string | undefined {
+  // Prefer per-platform keys, with a legacy single-key fallback.
+  const iosKey = getEnvValue('EXPO_PUBLIC_REVENUECAT_IOS_API_KEY');
+  const androidKey = getEnvValue('EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY');
+  const fallbackKey = getEnvValue('EXPO_PUBLIC_REVENUECAT_API_KEY');
+
+  if (Platform.OS === 'ios') return iosKey || fallbackKey;
+  if (Platform.OS === 'android') return androidKey || fallbackKey;
+  return undefined;
+}
+
+async function ensureRevenueCatConfigured(): Promise<boolean> {
+  if (!Purchases) return false;
+  if (Platform.OS !== 'ios' && Platform.OS !== 'android') return false;
+
+  const apiKey = getRevenueCatApiKey();
+  if (!apiKey) return false;
+  if (revenueCatConfigured) return true;
+
+  try {
+    await Purchases.configure({
+      apiKey,
+      appUserID: await getOrCreateUserId(),
+    });
+    revenueCatConfigured = true;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function getCustomerInfoSafe(): Promise<any | null> {
+  if (!Purchases) return null;
+
+  try {
+    await ensureRevenueCatConfigured();
+    if (typeof Purchases.getCustomerInfo === 'function') {
+      return await Purchases.getCustomerInfo();
+    }
+    if (typeof Purchases.getPurchaserInfo === 'function') {
+      return await Purchases.getPurchaserInfo();
+    }
+    return null;
+  } catch (error) {
+    return null;
+  }
+}
+
+function isRevenueCatPremium(customerInfo: any): boolean {
+  return !!customerInfo?.entitlements?.active?.[REVENUECAT_ENTITLEMENT_ID];
+}
+
 /**
  * Check if user has premium subscription
  * Checks RevenueCat first, then Stripe, then local storage
@@ -101,8 +181,9 @@ export async function isPremiumUser(): Promise<boolean> {
   // Check RevenueCat
   if (Purchases) {
     try {
-      const purchaserInfo = await Purchases.getCustomerInfo();
-      const isPremium = purchaserInfo.entitlements.active['premium'] !== undefined;
+      await ensureRevenueCatConfigured();
+      const customerInfo = await getCustomerInfoSafe();
+      const isPremium = isRevenueCatPremium(customerInfo);
       if (isPremium) {
         await syncPremiumStatus(true, 'revenuecat');
         return true;
@@ -145,8 +226,8 @@ export async function getPremiumStatus(): Promise<PremiumStatus> {
   let provider: PaymentProvider = 'local';
   if (Purchases) {
     try {
-      const purchaserInfo = await Purchases.getCustomerInfo();
-      if (purchaserInfo.entitlements.active['premium']) {
+      const customerInfo = await getCustomerInfoSafe();
+      if (isRevenueCatPremium(customerInfo)) {
         provider = 'revenuecat';
       }
     } catch (error) {
@@ -216,11 +297,20 @@ export async function purchasePremiumRevenueCat(
     throw new Error('RevenueCat not installed. Run: npm install react-native-purchases');
   }
 
+  const configured = await ensureRevenueCatConfigured();
+  if (!configured) {
+    throw new Error('RevenueCat API key not configured. Set EXPO_PUBLIC_REVENUECAT_IOS_API_KEY and/or EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY in .env.');
+  }
+
   try {
     const offerings = await Purchases.getOfferings();
-    const offering = offeringId 
-      ? offerings.offering(offeringId)
-      : offerings.current;
+    const offering =
+      (offeringId
+        ? (offerings?.all?.[offeringId] ??
+            (typeof offerings?.offering === 'function' ? offerings.offering(offeringId) : null))
+        : null) ||
+      offerings?.current ||
+      null;
 
     if (!offering || !offering.availablePackages.length) {
       throw new Error('No offerings available');
@@ -229,12 +319,18 @@ export async function purchasePremiumRevenueCat(
     // Prefer the requested plan if available, fallback to first package
     const targetPackageType = plan === 'yearly' ? 'ANNUAL' : 'MONTHLY';
     const matchedPackage = offering.availablePackages.find(
-      (pkg: any) => pkg.packageType === targetPackageType
+      (pkg: any) => String(pkg.packageType || '').toUpperCase().includes(targetPackageType)
     );
     const packageToPurchase = matchedPackage || offering.availablePackages[0];
-    const { customerInfo } = await Purchases.purchasePackage(packageToPurchase);
-    
-    const isPremium = customerInfo.entitlements.active['premium'] !== undefined;
+    const purchaseResult = await Purchases.purchasePackage(packageToPurchase);
+
+    const customerInfo =
+      purchaseResult?.customerInfo ??
+      purchaseResult?.purchaserInfo ??
+      purchaseResult ??
+      null;
+
+    const isPremium = isRevenueCatPremium(customerInfo);
     await syncPremiumStatus(isPremium, 'revenuecat');
     
     return isPremium;
@@ -256,8 +352,10 @@ export async function restorePurchases(): Promise<boolean> {
   }
 
   try {
-    const customerInfo = await Purchases.restorePurchases();
-    const isPremium = customerInfo.entitlements.active['premium'] !== undefined;
+    await ensureRevenueCatConfigured();
+    const restoreResult = await Purchases.restorePurchases();
+    const customerInfo = restoreResult?.customerInfo ?? restoreResult?.purchaserInfo ?? restoreResult ?? null;
+    const isPremium = isRevenueCatPremium(customerInfo);
     await syncPremiumStatus(isPremium, 'revenuecat');
     return isPremium;
   } catch (error) {

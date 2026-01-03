@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Theme, TOUCH_TARGET_MIN } from '../utils/theme';
 
@@ -26,6 +26,9 @@ export const ChipRow: React.FC<ChipRowProps> = ({
     <ScrollView
       horizontal
       showsHorizontalScrollIndicator={false}
+      nestedScrollEnabled
+      directionalLockEnabled
+      keyboardShouldPersistTaps="handled"
       contentContainerStyle={[styles.container, style]}
       style={styles.scrollView}
     >

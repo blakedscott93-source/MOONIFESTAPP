@@ -14,22 +14,11 @@ import { AppHeader } from '../components/AppHeader';
 import { Theme } from '../utils/theme';
 import { useApp } from '../context/AppContext';
 import { AudioPlayer, MEDITATION_AUDIO, MeditationAudioId } from '../utils/audioPlayer';
+import { MEDITATION_SESSIONS } from '../data/meditations';
 import { MeditationScreenProps } from '../types/navigation';
 import { useScreenTracking } from '../hooks/useScreenTracking';
 import { trackEvent } from '../utils/analytics';
 import { useTabBarInset } from '../hooks/useTabBarInset';
-
-const MEDITATION_SESSIONS = [
-  { id: 'morning-1', label: 'Morning Clarity', category: 'morning' },
-  { id: 'morning-2', label: 'Energize Day', category: 'morning' },
-  { id: 'morning-3', label: 'Focus Intention', category: 'morning' },
-  { id: 'midday-1', label: 'Midday Reset', category: 'midday' },
-  { id: 'midday-2', label: 'Stress Relief', category: 'midday' },
-  { id: 'midday-3', label: 'Productivity Boost', category: 'midday' },
-  { id: 'sleep-1', label: 'Deep Sleep', category: 'sleep' },
-  { id: 'sleep-2', label: 'Peaceful Rest', category: 'sleep' },
-  { id: 'sleep-3', label: 'Dream Journey', category: 'sleep' },
-];
 
 export default function MeditationScreen({ navigation, route }: MeditationScreenProps) {
   useScreenTracking('Meditation', { meditation_id: route.params?.meditation?.id });
@@ -45,15 +34,29 @@ export default function MeditationScreen({ navigation, route }: MeditationScreen
   };
 
   const currentPeriod = getCurrentPeriod();
+  const defaultCategory = currentPeriod;
 
-  // Filter sessions based on time of day
-  const availableSessions = MEDITATION_SESSIONS.filter(
-    session => session.category === currentPeriod
-  );
+  const isMeditationAudioId = (id: unknown): id is MeditationAudioId => {
+    return typeof id === 'string' && Object.prototype.hasOwnProperty.call(MEDITATION_AUDIO, id);
+  };
 
-  // Default to first session of current period
-  const defaultSessionId = availableSessions[0]?.id || 'morning-1';
-  const sessionId = (route.params?.meditation?.id as MeditationAudioId) || defaultSessionId;
+  const requestedSessionId = route.params?.meditation?.id;
+  const requestedCategory = route.params?.meditation?.category;
+  const resolvedRequestedSession = isMeditationAudioId(requestedSessionId) ? requestedSessionId : undefined;
+  const resolvedRequestedCategory =
+    requestedCategory === 'morning' || requestedCategory === 'midday' || requestedCategory === 'sleep'
+      ? requestedCategory
+      : undefined;
+
+  const initialCategory =
+    resolvedRequestedCategory ||
+    (resolvedRequestedSession
+      ? (MEDITATION_SESSIONS.find((s) => s.id === resolvedRequestedSession)?.type ?? defaultCategory)
+      : defaultCategory);
+
+  const availableSessions = MEDITATION_SESSIONS.filter((session) => session.type === initialCategory);
+  const defaultSessionId = (availableSessions[0]?.id as MeditationAudioId | undefined) || ('morning-1' as MeditationAudioId);
+  const sessionId = resolvedRequestedSession || defaultSessionId;
 
   const [selectedSession, setSelectedSession] = useState<MeditationAudioId>(sessionId);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -62,23 +65,31 @@ export default function MeditationScreen({ navigation, route }: MeditationScreen
   const [isPaused, setIsPaused] = useState(false);
 
   const audioPlayerRef = useRef(new AudioPlayer());
+  const selectedSessionRef = useRef<MeditationAudioId>(selectedSession);
   const breathAnimation = useRef(new Animated.Value(0)).current;
   const pulseAnimation = useRef(new Animated.Value(1)).current;
 
-  const handleComplete = useCallback(async () => {
+  useEffect(() => {
+    selectedSessionRef.current = selectedSession;
+  }, [selectedSession]);
+
+  const handleComplete = useCallback(async (finalDurationMillis?: number) => {
     setIsPlaying(false);
     setIsPaused(false);
     await audioPlayerRef.current.stop();
     await completeMeditation();
     await addGlowPoints(30, 'Completed meditation session');
+    const completedSessionId = selectedSessionRef.current;
+    const completedCategory =
+      MEDITATION_SESSIONS.find((s) => s.id === completedSessionId)?.type ?? initialCategory;
     trackEvent('meditation_completed', { 
-      meditation_id: selectedSession,
-      category: currentPeriod,
-      duration_seconds: Math.floor(duration / 1000)
+      meditation_id: completedSessionId,
+      category: completedCategory,
+      duration_seconds: Math.floor((finalDurationMillis ?? 0) / 1000),
     });
     // Show completion message
     navigation.goBack();
-  }, [addGlowPoints, completeMeditation, currentPeriod, duration, navigation, selectedSession]);
+  }, [addGlowPoints, completeMeditation, initialCategory, navigation]);
 
   // Load audio when component mounts or session changes
   useEffect(() => {
@@ -88,6 +99,8 @@ export default function MeditationScreen({ navigation, route }: MeditationScreen
     const loadAudio = async () => {
       try {
         const audioPath = MEDITATION_AUDIO[selectedSession];
+        setCurrentPosition(0);
+        setDuration(0);
         await audioPlayer.loadAudio(audioPath);
 
         if (!isActive) {
@@ -102,7 +115,7 @@ export default function MeditationScreen({ navigation, route }: MeditationScreen
 
             // Handle completion
             if (status.didJustFinish) {
-              handleComplete();
+              handleComplete(status.durationMillis || 0);
             }
           }
         });
@@ -238,12 +251,12 @@ export default function MeditationScreen({ navigation, route }: MeditationScreen
             {/* Session Selection */}
             <View style={styles.durationContainer}>
               <Text style={styles.sectionTitle}>
-                {currentPeriod === 'morning' && 'Morning Meditations'}
-                {currentPeriod === 'midday' && 'Midday Meditations'}
-                {currentPeriod === 'sleep' && 'Evening Meditations'}
+                {initialCategory === 'morning' && 'Morning Meditations'}
+                {initialCategory === 'midday' && 'Midday Meditations'}
+                {initialCategory === 'sleep' && 'Evening Meditations'}
               </Text>
               <Text style={styles.sectionSubtitle}>
-                Perfect for {currentPeriod === 'morning' ? 'starting your day' : currentPeriod === 'midday' ? 'a refreshing break' : 'winding down'}
+                Perfect for {initialCategory === 'morning' ? 'starting your day' : initialCategory === 'midday' ? 'a refreshing break' : 'winding down'}
               </Text>
               <View style={styles.sessionGrid}>
                 {availableSessions.map((session) => (
@@ -262,7 +275,7 @@ export default function MeditationScreen({ navigation, route }: MeditationScreen
                         selectedSession === session.id && styles.durationTextActive,
                       ]}
                     >
-                      {session.label}
+                      {session.title}
                     </Text>
                   </TouchableOpacity>
                 ))}
@@ -414,10 +427,6 @@ const styles = StyleSheet.create({
     ...Theme.typography.body,
     color: Theme.colors.textSecondary,
     marginBottom: Theme.spacing.md,
-  },
-  durationGrid: {
-    flexDirection: 'row',
-    gap: Theme.spacing.md,
   },
   sessionGrid: {
     flexDirection: 'row',

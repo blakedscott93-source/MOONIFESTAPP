@@ -1046,7 +1046,7 @@ const styles = StyleSheet.create({
   dayLabelCompleted: {
     color: tokens.colors.textSecondary,
   },
-  promptHeader: {
+  promptHeaderLegacy: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -1420,7 +1420,7 @@ const styles = StyleSheet.create({
     outlineWidth: 0,
     outlineColor: 'transparent',
     boxShadow: 'none',
-  },
+  } as any,
   characterCountBadge: {
     position: 'absolute',
     bottom: tokens.spacing.md,

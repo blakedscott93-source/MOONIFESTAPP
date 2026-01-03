@@ -19,6 +19,26 @@ import { SettingsScreenProps } from '../types/navigation';
 import { useScreenTracking } from '../hooks/useScreenTracking';
 import { SkeletonLoader, SkeletonCard } from '../components/SkeletonLoader';
 
+type SettingsItem =
+  | {
+      icon: string;
+      label: string;
+      type: 'navigate';
+      onPress: () => void;
+    }
+  | {
+      icon: string;
+      label: string;
+      type: 'custom';
+      onPress: () => void;
+      renderRight?: () => React.ReactNode;
+    };
+
+type SettingsSection = {
+  title: string;
+  items: SettingsItem[];
+};
+
 export default function SettingsScreen({ navigation }: SettingsScreenProps) {
   useScreenTracking('Settings');
   const { themeMode, setThemeMode, isDark } = useTheme();
@@ -39,14 +59,14 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
     { value: 'auto' as const, label: 'Auto (System)', icon: 'phone-portrait' },
   ];
 
-  const settingsSections = [
+  const settingsSections: SettingsSection[] = [
     {
       title: 'Notifications',
       items: [
         {
           icon: 'notifications',
           label: 'Notification Settings',
-          type: 'navigate' as const,
+          type: 'navigate',
           onPress: () => navigation.navigate('MainTabs', { screen: '45 NOW', params: { screen: 'NotificationSettings' } }),
         },
       ],
@@ -57,13 +77,13 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
         {
           icon: 'trophy',
           label: 'Achievements',
-          type: 'navigate' as const,
+          type: 'navigate',
           onPress: () => navigation.navigate('AchievementsScreen'),
         },
         {
           icon: 'analytics',
           label: 'Mood & Progress Insights',
-          type: 'navigate' as const,
+          type: 'navigate',
           onPress: () => navigation.navigate('MoodInsightsScreen'),
         },
       ],
@@ -74,19 +94,19 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
         {
           icon: 'library',
           label: 'Affirmation Library',
-          type: 'navigate' as const,
+          type: 'navigate',
           onPress: () => navigation.navigate('MainTabs', { screen: 'Affirmations', params: { screen: 'AffirmationLibrary' } }),
         },
         {
           icon: 'images',
           label: 'Vision Board',
-          type: 'navigate' as const,
+          type: 'navigate',
           onPress: () => navigation.navigate('MainTabs', { screen: 'Vision' }),
         },
         {
           icon: 'bookmarks',
           label: 'Saved Affirmations',
-          type: 'navigate' as const,
+          type: 'navigate',
           onPress: () => navigation.navigate('SavedAffirmationsScreen'),
         },
       ],
@@ -97,7 +117,7 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
         {
           icon: 'download',
           label: 'Export My Data',
-          type: 'navigate' as const,
+          type: 'navigate',
           onPress: async () => {
             try {
               const { shareExportedData, getDataSummary } = await import('../utils/dataExport');
@@ -138,13 +158,13 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
         {
           icon: 'help-circle',
           label: 'Help & FAQ',
-          type: 'navigate' as const,
+          type: 'navigate',
           onPress: () => navigation.navigate('HelpFAQScreen'),
         },
         {
           icon: 'mail',
           label: 'Contact Support',
-          type: 'navigate' as const,
+          type: 'navigate',
           onPress: async () => {
             await openSupportEmail();
           },
@@ -152,7 +172,7 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
         {
           icon: 'star',
           label: 'Rate the App',
-          type: 'navigate' as const,
+          type: 'navigate',
           onPress: async () => {
             try {
               const isAvailable = await StoreReview.isAvailableAsync();
@@ -182,13 +202,13 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
         {
           icon: 'document-text',
           label: 'Privacy Policy',
-          type: 'navigate' as const,
+          type: 'navigate',
           onPress: () => navigation.navigate('PrivacyPolicyScreen'),
         },
         {
           icon: 'document-text',
           label: 'Terms of Service',
-          type: 'navigate' as const,
+          type: 'navigate',
           onPress: () => navigation.navigate('TermsOfServiceScreen'),
         },
       ],

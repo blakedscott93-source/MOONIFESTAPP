@@ -14,6 +14,7 @@ import { ErrorBoundary } from './src/components/ErrorBoundary';
 import { WebPhoneWrapper } from './src/components/WebPhoneWrapper';
 import { trackAppSession } from './src/utils/appRating';
 import { initSentry } from './src/utils/sentry';
+import { initializePremium } from './src/utils/premium';
 import { useFonts, Sora_400Regular, Sora_600SemiBold, Sora_700Bold } from '@expo-google-fonts/sora';
 
 // Initialize Sentry error tracking (wrapped in try-catch to prevent crashes)
@@ -44,6 +45,16 @@ function AppContent() {
     } catch (error) {
       console.error('Error in trackAppSession:', error);
     }
+  }, []);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        await initializePremium();
+      } catch (error) {
+        console.error('Error initializing premium:', error);
+      }
+    })();
   }, []);
 
   const navigationTheme = {

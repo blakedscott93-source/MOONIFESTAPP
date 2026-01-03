@@ -766,13 +766,15 @@ const styles = StyleSheet.create({
     minHeight: 44,
     backgroundColor: 'transparent',
     borderWidth: 0,
-    ...(Platform.OS === 'web' && {
-      outlineStyle: 'none',
-      outlineWidth: 0,
-      outline: 'none',
-      border: 'none',
-      minWidth: 0,
-    }),
+    ...(Platform.OS === 'web'
+      ? ({
+          outlineStyle: 'none',
+          outlineWidth: 0,
+          outline: 'none',
+          border: 'none',
+          minWidth: 0,
+        } as any)
+      : null),
   },
   taskInputCompleted: {
     textDecorationLine: 'line-through',

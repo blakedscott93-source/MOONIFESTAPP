@@ -162,12 +162,6 @@ export default function VoiceJournalScreen({ navigation }: VoiceJournalScreenPro
   ).current;
 
   useEffect(() => {
-    loadTodayData();
-    startEntranceAnimations();
-    startIdleAnimations();
-  }, [loadTodayData, startEntranceAnimations, startIdleAnimations]);
-
-  useEffect(() => {
     isRecordingRef.current = isRecording;
   }, [isRecording]);
 
@@ -334,6 +328,12 @@ export default function VoiceJournalScreen({ navigation }: VoiceJournalScreenPro
       ])
     ).start();
   }, [glowRingOpacity, pulseAnim]);
+
+  useEffect(() => {
+    loadTodayData();
+    startEntranceAnimations();
+    startIdleAnimations();
+  }, [loadTodayData, startEntranceAnimations, startIdleAnimations]);
 
 
   // Waveform animation

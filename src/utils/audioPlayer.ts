@@ -24,6 +24,13 @@ export class AudioPlayer {
         volume: 1.0,
       });
 
+      // Ensure frequent progress callbacks for UI timers/progress bars
+      try {
+        await sound.setProgressUpdateIntervalAsync(250);
+      } catch {
+        // Non-fatal: some platforms/versions may not support this
+      }
+
       this.sound = sound;
       this.isLoaded = true;
     } catch (error) {

@@ -42,6 +42,8 @@ Make sure you have these installed before running the app:
 
 **⚠️ Note:** Voice recording and notifications work ONLY on physical devices, not in browser!
 
+**Subscriptions note:** RevenueCat purchases require a native dev build (use `npx expo run:android` / `npx expo run:ios` or EAS). They will not work in Expo Go.
+
 ---
 
 ### Option 2: Android Emulator

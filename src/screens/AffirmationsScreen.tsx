@@ -5,6 +5,8 @@ import {
   StyleSheet,
   FlatList,
   TouchableOpacity,
+  Alert,
+  ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -227,7 +229,11 @@ export default function AffirmationsScreen({ navigation }: AffirmationsMainScree
 
   const handleCardPress = (card: MediaCardData) => {
     if (card.locked) {
-      // Show upsell/lock flow if exists
+      Alert.alert(
+        'Moonifest Premium',
+        'This session is part of Premium.',
+        [{ text: 'OK' }]
+      );
       return;
     }
     if (activeTab === 'affirmations') {
@@ -246,8 +252,17 @@ export default function AffirmationsScreen({ navigation }: AffirmationsMainScree
         },
       });
     } else {
-      // Navigate to meditation screen
-      navigation.getParent()?.getParent()?.navigate('MeditationScreen' as never);
+      const meditation = MEDITATION_SESSIONS.find((m) => m.id === card.id);
+      const rootNavigation = navigation.getParent()?.getParent() as any;
+      rootNavigation?.navigate('MeditationScreen', meditation ? {
+        meditation: {
+          id: meditation.id,
+          title: meditation.title,
+          description: meditation.subtitle,
+          duration: meditation.duration,
+          category: meditation.type,
+        },
+      } : undefined);
     }
   };
 
@@ -380,14 +395,18 @@ export default function AffirmationsScreen({ navigation }: AffirmationsMainScree
             </TouchableOpacity>
           )}
         </View>
-        <FlatList
+        <ScrollView
           horizontal
-          data={data}
-          keyExtractor={(item) => item.id}
-          renderItem={renderHorizontalCard}
           showsHorizontalScrollIndicator={false}
+          nestedScrollEnabled
+          keyboardShouldPersistTaps="handled"
+          directionalLockEnabled
           contentContainerStyle={styles.horizontalList}
-        />
+        >
+          {data.map((item, index) => (
+            <View key={item.id}>{renderHorizontalCard({ item, index })}</View>
+          ))}
+        </ScrollView>
       </View>
     );
   };
@@ -589,6 +608,9 @@ export default function AffirmationsScreen({ navigation }: AffirmationsMainScree
           ListHeaderComponent={renderAffirmationsHeader}
           contentContainerStyle={styles.affirmationsContent}
           showsVerticalScrollIndicator={false}
+          nestedScrollEnabled
+          keyboardShouldPersistTaps="handled"
+          scrollEventThrottle={16}
           ListFooterComponent={<View style={{ height: 140 }} />}
         />
       ) : (
@@ -599,6 +621,9 @@ export default function AffirmationsScreen({ navigation }: AffirmationsMainScree
           ListHeaderComponent={renderMeditationsHeader}
           contentContainerStyle={styles.affirmationsContent}
           showsVerticalScrollIndicator={false}
+          nestedScrollEnabled
+          keyboardShouldPersistTaps="handled"
+          scrollEventThrottle={16}
           ListFooterComponent={<View style={{ height: 140 }} />}
         />
       )}

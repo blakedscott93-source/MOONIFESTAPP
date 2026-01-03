@@ -33,13 +33,28 @@ cp .env.example .env
 2. Create a new project (React Native)
 3. Copy the **DSN** → `EXPO_PUBLIC_SENTRY_DSN`
 
-### 5. Verify Setup
+### 5. Configure RevenueCat (Recommended - subscriptions)
+
+1. Go to [https://app.revenuecat.com](https://app.revenuecat.com)
+2. Create/select your project
+3. Navigate to **Project Settings → API Keys**
+4. Copy the **Public SDK Key** for each platform into your `.env`:
+   - iOS → `EXPO_PUBLIC_REVENUECAT_IOS_API_KEY`
+   - Android → `EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY`
+
+Important:
+- Your RevenueCat entitlement identifier is expected to be `premium` (see `src/utils/premium.ts`).
+- These SDK keys are meant to live in the client app (they're not secret like Stripe secret keys).
+
+### 6. Verify Setup
 
 Your `.env` file should look like this:
 
 ```env
 EXPO_PUBLIC_SUPABASE_URL=https://xxxxx.supabase.co
 EXPO_PUBLIC_SUPABASE_ANON_KEY=eyJhbGc...
+EXPO_PUBLIC_REVENUECAT_IOS_API_KEY=appl_...
+EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY=goog_...
 EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_test_...
 EXPO_PUBLIC_SENTRY_DSN=https://...@sentry.io/...
 ```

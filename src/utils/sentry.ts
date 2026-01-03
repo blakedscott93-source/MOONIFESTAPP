@@ -4,7 +4,7 @@ import * as Sentry from '@sentry/react-native';
 let SENTRY_DSN: string | undefined;
 try {
   const env = require('@env');
-  SENTRY_DSN = env.SENTRY_DSN;
+  SENTRY_DSN = env.EXPO_PUBLIC_SENTRY_DSN || env.SENTRY_DSN;
 } catch (error) {
   // @env might not be available on web or if .env file doesn't exist
   SENTRY_DSN = undefined;

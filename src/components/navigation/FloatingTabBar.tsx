@@ -629,7 +629,10 @@ export const FloatingTabBar: React.FC<FloatingTabBarProps> = ({
                       })
                     : null;
 
-                  const label = options.tabBarLabel || route.name;
+                  const label =
+                    typeof options.tabBarLabel === 'string'
+                      ? options.tabBarLabel
+                      : (options.title ?? route.name);
 
                   return (
                     <RNAnimated.View
@@ -642,7 +645,7 @@ export const FloatingTabBar: React.FC<FloatingTabBarProps> = ({
                         accessibilityRole="button"
                         accessibilityState={isFocused ? { selected: true } : {}}
                         accessibilityLabel={options.tabBarAccessibilityLabel || label}
-                        testID={options.tabBarTestID}
+                        testID={(options as any).tabBarTestID}
                         onPress={onPress}
                         onPressIn={handlePressIn}
                         onPressOut={handlePressOut}
