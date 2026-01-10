@@ -48,8 +48,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: Theme.spacing.lg,
-    paddingTop: Theme.spacing.xxxl + Theme.spacing.md,
-    paddingBottom: Theme.spacing.xl,
+    paddingTop: Theme.spacing.md,
+    paddingBottom: Theme.spacing.md,
   },
   iconButton: {
     width: TOUCH_TARGET_MIN,

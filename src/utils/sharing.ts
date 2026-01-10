@@ -43,7 +43,7 @@ export async function shareAchievement(
   achievementDescription: string,
   glowPoints: number
 ): Promise<boolean> {
-  const message = `🏆 Achievement Unlocked!\n\n${achievementTitle}\n${achievementDescription}\n\n+${glowPoints} Glow Points earned!\n\nJoin me on Moonifest - manifest your dreams! ✨`;
+  const message = `🏆 Achievement Unlocked!\n\n${achievementTitle}\n${achievementDescription}\n\n+${glowPoints} Glow Points earned!\n\nJoin me on Vortex - manifest your dreams! ✨`;
 
   return shareText({
     title: 'Achievement Unlocked! 🏆',
@@ -55,7 +55,7 @@ export async function shareAchievement(
  * Share streak milestone
  */
 export async function shareStreak(streakDays: number): Promise<boolean> {
-  const message = `🔥 ${streakDays} Day Streak!\n\nI've maintained my manifestation practice for ${streakDays} days straight on Moonifest!\n\nConsistency is the key to manifesting your dreams. ✨`;
+  const message = `🔥 ${streakDays} Day Streak!\n\nI've maintained my manifestation practice for ${streakDays} days straight on Vortex!\n\nConsistency is the key to manifesting your dreams. ✨`;
 
   return shareText({
     title: `${streakDays} Day Streak! 🔥`,
@@ -77,7 +77,7 @@ export async function shareVisionBoard(
       quality: 0.9,
     });
 
-    const message = `✨ My Vision Board\n\nI have ${visionCount} visions that I'm manifesting on Moonifest!\n\nWhat are you manifesting? Join me! 💫`;
+    const message = `✨ My Vision Board\n\nI have ${visionCount} visions that I'm manifesting on Vortex!\n\nWhat are you manifesting? Join me! 💫`;
 
     // Check if sharing is available
     const isAvailable = await Sharing.isAvailableAsync();
@@ -110,8 +110,8 @@ export async function shareJournalEntry(
   shareFullEntry: boolean = false
 ): Promise<boolean> {
   const message = shareFullEntry
-    ? `✨ My Gratitude Journal Entry\n\n${entry}\n\nI'm practicing gratitude daily on Moonifest. Join me! 💜`
-    : `✨ I just completed my daily gratitude practice on Moonifest!\n\nGratitude transforms everything. What are you grateful for today? 💜`;
+    ? `✨ My Gratitude Journal Entry\n\n${entry}\n\nI'm practicing gratitude daily on Vortex. Join me! 💜`
+    : `✨ I just completed my daily gratitude practice on Vortex!\n\nGratitude transforms everything. What are you grateful for today? 💜`;
 
   return shareText({
     title: 'My Gratitude Practice ✨',
@@ -128,7 +128,7 @@ export async function shareProgress(stats: {
   achievements: number;
   glowPoints: number;
 }): Promise<boolean> {
-  const message = `✨ My Moonifest Journey\n\n🔥 ${stats.streak} day streak\n📅 ${stats.totalDays} total days\n🏆 ${stats.achievements} achievements unlocked\n⭐ ${stats.glowPoints} Glow Points earned\n\nManifesting my dreams one day at a time! 💫`;
+  const message = `✨ My Vortex Journey\n\n🔥 ${stats.streak} day streak\n📅 ${stats.totalDays} total days\n🏆 ${stats.achievements} achievements unlocked\n⭐ ${stats.glowPoints} Glow Points earned\n\nManifesting my dreams one day at a time! 💫`;
 
   return shareText({
     title: 'My Manifestation Journey ✨',
@@ -140,10 +140,10 @@ export async function shareProgress(stats: {
  * Share app invitation
  */
 export async function shareAppInvitation(): Promise<boolean> {
-  const message = `✨ Transform your life with Moonifest\n\nI've been using Moonifest to:\n• Practice daily gratitude\n• Set and achieve meaningful goals\n• Build positive habits\n• Manifest my dreams\n\nJoin me on this incredible journey! 💫`;
+  const message = `✨ Transform your life with Vortex\n\nI've been using Vortex to:\n• Practice daily gratitude\n• Set and achieve meaningful goals\n• Build positive habits\n• Manifest my dreams\n\nJoin me on this incredible journey! 💫`;
 
   return shareText({
-    title: 'Try Moonifest! ✨',
+    title: 'Try Vortex! ✨',
     message,
     // App store URLs will be added when published
     // url: Platform.OS === 'ios' 

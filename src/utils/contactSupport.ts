@@ -6,7 +6,7 @@
 import { Linking, Platform, Alert } from 'react-native';
 
 const SUPPORT_EMAIL = 'support@moonifest.app';
-const SUPPORT_SUBJECT = 'Moonifest Support Request';
+const SUPPORT_SUBJECT = 'Vortex Support Request';
 
 /**
  * Open email client with pre-filled support email
@@ -15,7 +15,7 @@ export async function openSupportEmail(): Promise<boolean> {
   try {
     const emailUrl = `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(SUPPORT_SUBJECT)}`;
     const canOpen = await Linking.canOpenURL(emailUrl);
-    
+
     if (canOpen) {
       await Linking.openURL(emailUrl);
       return true;

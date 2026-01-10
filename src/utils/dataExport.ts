@@ -45,7 +45,7 @@ export async function exportAllData(): Promise<string | null> {
     };
 
     const jsonString = JSON.stringify(data, null, 2);
-    const fileName = `moonifest-export-${new Date().toISOString().split('T')[0]}.json`;
+    const fileName = `vortex-export-${new Date().toISOString().split('T')[0]}.json`;
     const documentDir = (FileSystem as any).documentDirectory || '';
     const fileUri = `${documentDir}${fileName}`;
 
@@ -73,7 +73,7 @@ export async function shareExportedData(): Promise<boolean> {
     const isAvailable = await Sharing.isAvailableAsync();
     if (isAvailable) {
       await Sharing.shareAsync(fileUri, {
-        dialogTitle: 'Export Moonifest Data',
+        dialogTitle: 'Export Vortex Data',
         mimeType: 'application/json',
       });
       return true;

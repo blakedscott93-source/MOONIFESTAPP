@@ -8,6 +8,7 @@ import {
   TextInput,
   Alert,
 } from 'react-native';
+import { Audio } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Screen } from '../components/Screen';
@@ -41,6 +42,50 @@ export default function JournalHistoryScreen({ navigation }: JournalHistoryScree
       Alert.alert('Error', 'Failed to load journal history');
     }
   }, []);
+
+  const [sound, setSound] = useState<Audio.Sound | null>(null);
+  const [activePlayingId, setActivePlayingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (sound) {
+        sound.unloadAsync();
+      }
+    };
+  }, [sound]);
+
+  const handlePlayAudio = async (uri: string, id: string) => {
+    try {
+      if (activePlayingId === id && sound) {
+        await sound.stopAsync();
+        setActivePlayingId(null);
+        return;
+      }
+
+      if (sound) {
+        await sound.unloadAsync();
+      }
+
+      const { sound: newSound } = await Audio.Sound.createAsync(
+        { uri },
+        { shouldPlay: true }
+      );
+
+      setSound(newSound);
+      setActivePlayingId(id);
+
+      newSound.setOnPlaybackStatusUpdate((status) => {
+        if (status.isLoaded) {
+          if (status.didJustFinish) {
+            setActivePlayingId(null);
+          }
+        }
+      });
+    } catch (error) {
+      console.error('Error playing audio:', error);
+      Alert.alert('Error', 'Could not play recording');
+    }
+  };
 
   useEffect(() => {
     loadAllCheckIns();
@@ -232,6 +277,21 @@ export default function JournalHistoryScreen({ navigation }: JournalHistoryScree
               </TouchableOpacity>
             </View>
             <Text style={styles.entryText}>{item.text}</Text>
+            {item.audioUri && (
+              <TouchableOpacity
+                style={styles.playButton}
+                onPress={() => handlePlayAudio(item.audioUri!, item.id)}
+              >
+                <Ionicons
+                  name={activePlayingId === item.id ? "stop-circle" : "play-circle"}
+                  size={32}
+                  color={Theme.colors.accent}
+                />
+                <Text style={styles.playButtonText}>
+                  {activePlayingId === item.id ? "Stop Recording" : "Play Recording"}
+                </Text>
+              </TouchableOpacity>
+            )}
           </TouchableOpacity>
         )}
         ListEmptyComponent={
@@ -250,7 +310,7 @@ export default function JournalHistoryScreen({ navigation }: JournalHistoryScree
         ListFooterComponent={<View style={{ height: Theme.spacing.xxxl }} />}
         showsVerticalScrollIndicator={false}
       />
-    </Screen>
+    </Screen >
   );
 }
 
@@ -382,5 +442,19 @@ const styles = StyleSheet.create({
     ...Theme.typography.body,
     color: Theme.colors.textPrimary,
     lineHeight: 22,
+  },
+  playButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: Theme.spacing.md,
+    gap: Theme.spacing.sm,
+    backgroundColor: Theme.colors.accent + '10',
+    padding: Theme.spacing.sm,
+    borderRadius: Theme.radius.md,
+    alignSelf: 'flex-start',
+  },
+  playButtonText: {
+    ...Theme.typography.bodyBold,
+    color: Theme.colors.accent,
   },
 });

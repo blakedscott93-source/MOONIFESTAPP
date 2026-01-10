@@ -36,19 +36,19 @@ export const JournalFAB: React.FC<JournalFABProps> = ({
   const insets = useSafeAreaInsets();
   const { isDark } = useTheme();
   const tabBarInset = useTabBarInset();
-  
+
   // Position FAB above footer using tabBarInset hook for accurate calculation
   // tabBarInset already includes: height + bottomOffset + safe area + breathing room
   // Add FAB spacing on top
   const bottomPosition = tabBarInset + FAB_SPACING_ABOVE_TAB;
-  
+
   // Press feedback animations (native driver)
   const pressScale = useRef(new Animated.Value(1)).current;
   const pressOpacity = useRef(new Animated.Value(1)).current;
-  
+
   // Expand/collapse animation (0 = collapsed, 1 = expanded)
   const expandProgress = useRef(new Animated.Value(1)).current;
-  
+
   // Text opacity and slide animations (native driver)
   const textOpacity = useRef(new Animated.Value(1)).current;
   const textTranslateX = useRef(new Animated.Value(0)).current;
@@ -56,7 +56,7 @@ export const JournalFAB: React.FC<JournalFABProps> = ({
   // Handle expand/collapse with smooth spring animation
   useEffect(() => {
     const targetProgress = isScrolling ? 0 : 1;
-    
+
     Animated.parallel([
       // Width animation (JS driver required)
       Animated.spring(expandProgress, {
@@ -66,17 +66,17 @@ export const JournalFAB: React.FC<JournalFABProps> = ({
         friction: 9,
         overshootClamping: false,
       }),
-      // Text fade (native driver)
+      // Text fade (JS driver)
       Animated.timing(textOpacity, {
         toValue: targetProgress,
         duration: isScrolling ? 120 : 200,
         delay: isScrolling ? 0 : 80,
-        useNativeDriver: true,
+        useNativeDriver: false,
       }),
-      // Text slide (native driver) - slides in from left
+      // Text slide (JS driver)
       Animated.spring(textTranslateX, {
         toValue: isScrolling ? -20 : 0,
-        useNativeDriver: true,
+        useNativeDriver: false,
         tension: 150,
         friction: 10,
         delay: isScrolling ? 0 : 50,
@@ -90,14 +90,14 @@ export const JournalFAB: React.FC<JournalFABProps> = ({
     Animated.parallel([
       Animated.spring(pressScale, {
         toValue: 0.96,
-        useNativeDriver: true,
+        useNativeDriver: false,
         tension: 400,
         friction: 25,
       }),
       Animated.timing(pressOpacity, {
         toValue: 0.9,
         duration: 100,
-        useNativeDriver: true,
+        useNativeDriver: false,
       }),
     ]).start();
   };
@@ -106,14 +106,14 @@ export const JournalFAB: React.FC<JournalFABProps> = ({
     Animated.parallel([
       Animated.spring(pressScale, {
         toValue: 1,
-        useNativeDriver: true,
+        useNativeDriver: false,
         tension: 400,
         friction: 25,
       }),
       Animated.timing(pressOpacity, {
         toValue: 1,
         duration: 150,
-        useNativeDriver: true,
+        useNativeDriver: false,
       }),
     ]).start();
   };
@@ -136,11 +136,11 @@ export const JournalFAB: React.FC<JournalFABProps> = ({
   );
 
   // Glass background color
-  const glassBg = isDark 
-    ? `rgba(20, 20, 24, ${GLASS_BG_OPACITY_DARK})` 
+  const glassBg = isDark
+    ? `rgba(20, 20, 24, ${GLASS_BG_OPACITY_DARK})`
     : `rgba(255, 255, 255, ${GLASS_BG_OPACITY_LIGHT})`;
-  const glassBorder = isDark 
-    ? 'rgba(255, 255, 255, 0.25)' 
+  const glassBorder = isDark
+    ? 'rgba(255, 255, 255, 0.25)'
     : 'rgba(255, 255, 255, 0.55)';
 
   return (
@@ -194,7 +194,7 @@ export const JournalFAB: React.FC<JournalFABProps> = ({
                     <View style={styles.iconContainer}>
                       <Ionicons name="add" size={24} color={tokens.colors.primary} />
                     </View>
-                    
+
                     {/* Text - fades and slides in/out smoothly */}
                     <Animated.View
                       style={[
@@ -216,10 +216,10 @@ export const JournalFAB: React.FC<JournalFABProps> = ({
             ) : (
               // Fallback for Android/Web - simulated glass
               <View style={[styles.glassOverlay, { backgroundColor: glassBg, borderColor: glassBorder }]}>
-                  <View style={styles.contentContainer}>
-                    <View style={styles.iconContainer}>
-                      <Ionicons name="add" size={24} color={tokens.colors.primary} />
-                    </View>
+                <View style={styles.contentContainer}>
+                  <View style={styles.iconContainer}>
+                    <Ionicons name="add" size={24} color={tokens.colors.primary} />
+                  </View>
                   <Animated.View
                     style={[
                       styles.textContainer,
@@ -248,8 +248,8 @@ const styles = StyleSheet.create({
   container: {
     position: 'absolute',
     right: tokens.spacing.lg,
-    zIndex: 1001, // Above footer (footer is 1000)
-    elevation: 1001, // Android elevation above footer
+    zIndex: 2000, // Above footer (footer is 1000)
+    elevation: 2000, // Android elevation above footer
     height: FAB_HEIGHT,
   },
   buttonWrapper: {

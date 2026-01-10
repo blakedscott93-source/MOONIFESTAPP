@@ -22,6 +22,7 @@ import { Theme } from '../utils/theme';
 import { useTheme } from '../theme/ThemeProvider';
 import { AffirmationsMainScreenProps } from '../types/navigation';
 import { useScreenTracking } from '../hooks/useScreenTracking';
+import { usePremium } from '../hooks/usePremium';
 
 type TabType = 'affirmations' | 'meditations';
 type MeditationType = 'morning' | 'midday' | 'sleep' | 'all';
@@ -115,6 +116,9 @@ export default function AffirmationsScreen({ navigation }: AffirmationsMainScree
     { id: 'sleep', label: 'Sleep', icon: 'moon' },
   ];
 
+  // Check premium status
+  const { isPremium } = usePremium();
+
   // Filtered affirmations
   const filteredAffirmations = useMemo(() => {
     let sessions = GUIDED_SESSIONS;
@@ -123,17 +127,20 @@ export default function AffirmationsScreen({ navigation }: AffirmationsMainScree
     }
     return sessions.map(session => {
       const category = AFFIRMATION_CATEGORIES.find(c => c.id === session.categoryId);
+      // If user is premium, nothing is locked. Otherwise, respect the session's lock status.
+      const isLocked = isPremium ? false : session.locked;
+
       return {
         id: session.id,
         title: session.title,
         subtitle: session.subtitle,
         gradient: category?.gradient || ['#E9D5FF', '#F0E8FF'],
         icon: category?.icon as keyof typeof Ionicons.glyphMap,
-        locked: session.locked,
+        locked: isLocked,
         playButton: false,
       } as MediaCardData;
     });
-  }, [selectedCategory]);
+  }, [selectedCategory, isPremium]);
 
   const heroAffirmation: MediaCardData = useMemo(() => {
     const first = filteredAffirmations[0];
@@ -175,11 +182,11 @@ export default function AffirmationsScreen({ navigation }: AffirmationsMainScree
       subtitle: session.subtitle,
       gradient: session.gradient,
       icon: session.icon as keyof typeof Ionicons.glyphMap,
-      locked: session.locked,
+      locked: isPremium ? false : session.locked,
       playButton: true,
       type: session.type,
     }));
-  }, []);
+  }, [isPremium]);
 
   const filteredMeditations = useMemo(() => {
     if (selectedMeditationType === 'all') {
@@ -230,9 +237,12 @@ export default function AffirmationsScreen({ navigation }: AffirmationsMainScree
   const handleCardPress = (card: MediaCardData) => {
     if (card.locked) {
       Alert.alert(
-        'Moonifest Premium',
-        'This session is part of Premium.',
-        [{ text: 'OK' }]
+        'Vortex Premium',
+        'Unlock this session with Vortex Premium',
+        [
+          { text: 'Upgrade', onPress: () => (navigation as any).navigate('Premium', { fromSettings: true }) },
+          { text: 'Cancel', style: 'cancel' }
+        ]
       );
       return;
     }
@@ -251,10 +261,11 @@ export default function AffirmationsScreen({ navigation }: AffirmationsMainScree
           affirmations: session.affirmations,
         },
       });
+
     } else {
       const meditation = MEDITATION_SESSIONS.find((m) => m.id === card.id);
-      const rootNavigation = navigation.getParent()?.getParent() as any;
-      rootNavigation?.navigate('MeditationScreen', meditation ? {
+      // Use 'any' cast to allow navigation to root screens not in this stack's param list
+      (navigation as any).navigate('MeditationScreen', meditation ? {
         meditation: {
           id: meditation.id,
           title: meditation.title,

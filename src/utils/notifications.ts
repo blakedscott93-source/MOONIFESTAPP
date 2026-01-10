@@ -37,7 +37,7 @@ const DEFAULT_SETTINGS: NotificationSettings = {
   morningTime: '09:00',
   afternoonTime: '14:00',
   eveningTime: '20:00',
-  affirmationFrequency: 3, // Default to 3 daily affirmations
+  affirmationFrequency: 6, // Default to 6 daily affirmations
 };
 
 const STORAGE_KEY = '@notification_settings';
@@ -91,7 +91,7 @@ export async function getNotificationSettings(): Promise<NotificationSettings> {
       const { dailyTime, experience } = JSON.parse(onboardingData);
 
       // Adjust affirmation frequency based on experience level
-      let affirmationFrequency: 3 | 6 | 9 = 3; // Default for beginners
+      let affirmationFrequency: 3 | 6 | 9 = 6; // Default for beginners
       if (experience === 'intermediate') {
         affirmationFrequency = 6;
       } else if (experience === 'advanced') {
@@ -340,7 +340,7 @@ export async function scheduleNotifications(settings: NotificationSettings): Pro
 // Cancel all notifications
 export async function cancelAllNotifications(): Promise<void> {
   if (notificationsUnsupported) return;
-  
+
   try {
     await Notifications.cancelAllScheduledNotificationsAsync();
   } catch (error) {
@@ -350,7 +350,7 @@ export async function cancelAllNotifications(): Promise<void> {
 // Get all scheduled notifications (for debugging)
 export async function getScheduledNotifications(): Promise<Notifications.NotificationRequest[]> {
   if (notificationsUnsupported) return [];
-  
+
   try {
     return await Notifications.getAllScheduledNotificationsAsync();
   } catch (error) {
@@ -361,7 +361,7 @@ export async function getScheduledNotifications(): Promise<Notifications.Notific
 // Schedule streak reminder (fired at midnight if user hasn't completed today's tasks)
 export async function scheduleStreakReminder(): Promise<void> {
   if (notificationsUnsupported) return;
-  
+
   try {
     await Notifications.scheduleNotificationAsync({
       content: {
@@ -387,7 +387,7 @@ export async function scheduleStreakReminder(): Promise<void> {
 export function setupNotificationListeners(navigation: any) {
   // Skip if notifications aren't supported (Expo Go on Android SDK 53+)
   if (notificationsUnsupported) {
-    return () => {}; // Return empty cleanup function
+    return () => { }; // Return empty cleanup function
   }
 
   try {
@@ -412,7 +412,7 @@ export function setupNotificationListeners(navigation: any) {
       responseSubscription.remove();
     };
   } catch (error) {
-    return () => {};
+    return () => { };
   }
 }
 

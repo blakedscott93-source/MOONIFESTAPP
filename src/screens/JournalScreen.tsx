@@ -18,15 +18,16 @@ import { PrimaryButton } from '../components/Buttons';
 import { Theme } from '../utils/theme';
 import { GratitudeCheckIn } from '../utils/dayRollover';
 import { REQUIRED_DAILY_GRATITUDE_CHECKINS } from '../utils/constants';
+import { showInterstitial } from '../utils/ads';
 
 export default function JournalScreen() {
-  const { 
-    getTodayCheckIns, 
-    getTodayCheckInCount, 
+  const {
+    getTodayCheckIns,
+    getTodayCheckInCount,
     isTodayGratitudeComplete,
     addGratitudeCheckIn,
   } = useApp();
-  
+
   const [entry, setEntry] = useState('');
   const [checkIns, setCheckIns] = useState<GratitudeCheckIn[]>([]);
   const [checkInCount, setCheckInCount] = useState(0);
@@ -38,7 +39,7 @@ export default function JournalScreen() {
     const todayCheckIns = await getTodayCheckIns();
     const count = await getTodayCheckInCount();
     const complete = await isTodayGratitudeComplete();
-    
+
     setCheckIns(todayCheckIns);
     setCheckInCount(count);
     setIsComplete(complete);
@@ -72,6 +73,9 @@ export default function JournalScreen() {
       await addGratitudeCheckIn(entry);
       setEntry('');
       await loadTodayData(); // Reload to get updated count and check-ins
+
+      // Show interstitial ad if applicable
+      await showInterstitial();
     } catch (error) {
       Alert.alert('Error', 'Failed to save check-in. Please try again.');
       console.error('Error saving check-in:', error);

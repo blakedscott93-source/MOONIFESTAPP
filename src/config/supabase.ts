@@ -13,7 +13,7 @@
  */
 
 import { Platform } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import SecureStorageAdapter from '../utils/secureStorage';
 
 // Optional Supabase import - only used if package is installed
 let createClient: any = null;
@@ -33,8 +33,8 @@ const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
 
 // Check if Supabase is configured
 export const isSupabaseConfigured = !!(
-  SUPABASE_URL && 
-  SUPABASE_ANON_KEY && 
+  SUPABASE_URL &&
+  SUPABASE_ANON_KEY &&
   SUPABASE_URL.startsWith('http')
 );
 
@@ -55,7 +55,7 @@ export function createSupabaseClient(): any {
   try {
     const client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
       auth: {
-        storage: AsyncStorage,
+        storage: SecureStorageAdapter,
         autoRefreshToken: true,
         persistSession: true,
         detectSessionInUrl: Platform.OS === 'web',
@@ -83,6 +83,30 @@ export function getSupabaseClient(): any {
 export interface Database {
   public: {
     Tables: {
+      profiles: {
+        Row: {
+          id: string;
+          email?: string | null;
+          full_name?: string | null;
+          marketing_opt_in?: boolean | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id: string;
+          email?: string | null;
+          full_name?: string | null;
+          marketing_opt_in?: boolean | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          email?: string | null;
+          full_name?: string | null;
+          marketing_opt_in?: boolean | null;
+          updated_at?: string;
+        };
+      };
       user_data: {
         Row: {
           id: string;

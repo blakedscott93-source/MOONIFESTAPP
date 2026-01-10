@@ -5,20 +5,29 @@ import { UnifiedCard } from './UnifiedCard';
 import { Theme, TOUCH_TARGET_MIN } from '../utils/theme';
 
 interface JournalEntry {
+  id: string; // Added id for unique key
   date: string;
   preview: string;
+  text?: string;
+  audioUri?: string;
 }
 
 interface JournalEntriesListProps {
   entries: JournalEntry[];
-  onEntryPress: (date: string) => void;
+  onEntryPress: (entry: JournalEntry) => void; // Pass full entry
+  onEntryLongPress?: (entry: JournalEntry) => void;
   searchText?: string;
+  playingEntryId?: string | null;
+  onPlayEntry?: (entry: JournalEntry) => void;
 }
 
 export const JournalEntriesList: React.FC<JournalEntriesListProps> = React.memo(({
   entries,
   onEntryPress,
+  onEntryLongPress,
   searchText = '',
+  playingEntryId,
+  onPlayEntry,
 }) => {
   const filteredEntries = useMemo(() => {
     if (!searchText.trim()) return entries;
@@ -33,10 +42,10 @@ export const JournalEntriesList: React.FC<JournalEntriesListProps> = React.memo(
     const isoDateMatch = /^\d{4}-\d{2}-\d{2}$/.test(dateString);
     const date = isoDateMatch
       ? new Date(
-          Number(dateString.slice(0, 4)),
-          Number(dateString.slice(5, 7)) - 1,
-          Number(dateString.slice(8, 10))
-        )
+        Number(dateString.slice(0, 4)),
+        Number(dateString.slice(5, 7)) - 1,
+        Number(dateString.slice(8, 10))
+      )
       : new Date(dateString);
 
     const toLocalDay = (value: Date) => new Date(value.getFullYear(), value.getMonth(), value.getDate());
@@ -71,24 +80,49 @@ export const JournalEntriesList: React.FC<JournalEntriesListProps> = React.memo(
   return (
     <View style={styles.container}>
       <Text style={styles.sectionTitle}>Recent Entries</Text>
-      {filteredEntries.map((entry, index) => (
-        <UnifiedCard
-          key={entry.date}
-          delay={300 + index * 50}
-          onPress={() => onEntryPress(entry.date)}
-        >
-          <View style={styles.entryHeader}>
-            <View style={styles.entryDateContainer}>
-              <Ionicons name="calendar-outline" size={16} color={Theme.colors.accent} />
-              <Text style={styles.entryDate}>{formatDate(entry.date)}</Text>
+      {filteredEntries.map((entry, index) => {
+        const isPlaying = playingEntryId === entry.id;
+
+        return (
+          <UnifiedCard
+            key={entry.id || entry.date} // Use id if available, fallback to date
+            delay={300 + index * 50}
+            onPress={() => onEntryPress(entry)}
+            onLongPress={() => onEntryLongPress?.(entry)}
+          >
+            <View style={styles.entryHeader}>
+              <View style={styles.entryDateContainer}>
+                <Ionicons name="calendar-outline" size={16} color={Theme.colors.accent} />
+                <Text style={styles.entryDate}>{formatDate(entry.date)}</Text>
+              </View>
+              {entry.audioUri ? (
+                <TouchableOpacity
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    onPlayEntry?.(entry);
+                  }}
+                  style={[styles.playButton, isPlaying && styles.playButtonActive]}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <Ionicons
+                    name={isPlaying ? "pause" : "play"}
+                    size={16}
+                    color={isPlaying ? "#FFFFFF" : Theme.colors.accent}
+                  />
+                  <Text style={[styles.playButtonText, isPlaying && styles.playButtonTextActive]}>
+                    {isPlaying ? "Playing" : "Play Audio"}
+                  </Text>
+                </TouchableOpacity>
+              ) : (
+                <Ionicons name="chevron-forward" size={18} color={Theme.colors.textTertiary} />
+              )}
             </View>
-            <Ionicons name="chevron-forward" size={18} color={Theme.colors.textTertiary} />
-          </View>
-          <Text style={styles.entryPreview} numberOfLines={2}>
-            {entry.preview}
-          </Text>
-        </UnifiedCard>
-      ))}
+            <Text style={styles.entryPreview} numberOfLines={isPlaying ? undefined : 2}>
+              {entry.preview}
+            </Text>
+          </UnifiedCard>
+        );
+      })}
     </View>
   );
 });
@@ -137,5 +171,24 @@ const styles = StyleSheet.create({
   emptySearchSubtext: {
     ...Theme.typography.caption,
     color: Theme.colors.textSecondary,
+  },
+  playButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 16,
+    backgroundColor: Theme.colors.surfaceSecondary,
+  },
+  playButtonActive: {
+    backgroundColor: Theme.colors.accent,
+  },
+  playButtonText: {
+    ...Theme.typography.captionBold,
+    color: Theme.colors.accent,
+  },
+  playButtonTextActive: {
+    color: '#FFFFFF',
   },
 });

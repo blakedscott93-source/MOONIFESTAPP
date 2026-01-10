@@ -115,7 +115,7 @@ export async function promptForRating(context: {
 }): Promise<boolean> {
   try {
     const { shouldPrompt, reason } = await shouldPromptForRating(context);
-    
+
     if (!shouldPrompt) {
       return false;
     }
@@ -123,13 +123,13 @@ export async function promptForRating(context: {
     // Check if it's an optimal time of day (optional, but recommended)
     const currentHour = new Date().getHours();
     const isOptimalTime = OPTIMAL_HOURS.includes(currentHour);
-    
+
     // Still prompt even if not optimal time, but log it
     if (!isOptimalTime) {
     }
 
     const isAvailable = await StoreReview.isAvailableAsync();
-    
+
     if (isAvailable) {
       // Record that we've prompted
       await AsyncStorage.setItem(STORAGE_KEYS.LAST_RATING_PROMPT, Date.now().toString());
@@ -144,8 +144,8 @@ export async function promptForRating(context: {
     } else {
       // Fallback: Show custom prompt
       Alert.alert(
-        'Love Moonifest? ⭐',
-        'Your feedback means the world to us! If you\'re enjoying Moonifest, please consider leaving us a review. It helps us improve and reach more people on their manifestation journey.',
+        'Love Vortex? ⭐',
+        'Your feedback means the world to us! If you\'re enjoying Vortex, please consider leaving us a review. It helps us improve and reach more people on their manifestation journey.',
         [
           {
             text: 'Not Now',
@@ -155,7 +155,7 @@ export async function promptForRating(context: {
             },
           },
           {
-            text: 'Rate Moonifest',
+            text: 'Rate Vortex',
             onPress: async () => {
               // Mark as rated (even if they didn't complete, they showed intent)
               await AsyncStorage.setItem(STORAGE_KEYS.USER_RATED, 'true');

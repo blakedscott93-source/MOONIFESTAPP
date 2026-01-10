@@ -1,35 +1,80 @@
 {
   "expo": {
-    "name": "Moonifest-mobile",
-    "slug": "Moonifest-mobile",
+    "name": "Vortex",
+    "slug": "moonifest",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/Splash Icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#000000"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.moonifest.app",
+      "buildNumber": "1",
+      "usesAppleSignIn": true,
+      "infoPlist": {
+        "NSUserNotificationsUsageDescription": "We'll send you daily affirmations and reminders to help you stay consistent with your manifestation journey.",
+        "NSCameraUsageDescription": "We need access to your camera so you can take photos for your vision board.",
+        "NSPhotoLibraryUsageDescription": "We need access to your photos so you can add images to your vision board.",
+        "NSPhotoLibraryAddUsageDescription": "We need access to save images to your photo library.",
+        "NSMicrophoneUsageDescription": "We need access to your microphone so you can record voice journal entries.",
+        "NSUserTrackingUsageDescription": "This identifier will be used to deliver personalized ads to you.",
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#000000"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.anonymous.Moonifestmobile"
+      "package": "com.moonifest.app",
+      "versionCode": 1,
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
       "@react-native-community/datetimepicker",
-      "@sentry/react-native"
-    ]
+      "@sentry/react-native",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "The app accesses your photos to let you add them to your vision board.",
+          "cameraPermission": "The app accesses your camera to let you take photos for your vision board."
+        }
+      ],
+      [
+        "expo-av",
+        {
+          "microphonePermission": "The app accesses your microphone to let you record voice journal entries."
+        }
+      ],
+      [
+        "react-native-google-mobile-ads",
+        {
+          "android_app_id": "ca-app-pub-3940256099942544~3347511713",
+          "ios_app_id": "ca-app-pub-3940256099942544~1458002511",
+          "userTrackingPermission": "This identifier will be used to deliver personalized ads to you."
+        }
+      ],
+      "expo-secure-store"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "1bdeb614-b666-471f-8950-549ee5851f11"
+      }
+    },
+    "owner": "moonlair"
   }
 }

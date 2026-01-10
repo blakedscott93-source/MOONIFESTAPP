@@ -56,10 +56,13 @@ export type FortyFiveHardStackParamList = {
 };
 
 export type RootStackParamList = {
+  OnboardingQuiz: undefined;
+  OnboardingPaywall: { answers?: any; archetype?: string; userGenerated?: boolean } | undefined;
   MainTabs: NavigatorScreenParams<MainTabParamList>;
   ChatbotScreen: undefined;
   AchievementsScreen: undefined;
   SettingsScreen: undefined;
+  AuthScreen: { nextScreen?: keyof RootStackParamList } | undefined;
   MeditationScreen: {
     meditation?: {
       id: string;
@@ -112,6 +115,7 @@ export type NotificationSettingsScreenProps = StackScreenProps<FortyFiveHardStac
 export type ChatbotScreenProps = StackScreenProps<RootStackParamList, 'ChatbotScreen'>;
 export type AchievementsScreenProps = StackScreenProps<RootStackParamList, 'AchievementsScreen'>;
 export type SettingsScreenProps = StackScreenProps<RootStackParamList, 'SettingsScreen'>;
+export type AuthScreenProps = StackScreenProps<RootStackParamList, 'AuthScreen'>;
 export type MeditationScreenProps = StackScreenProps<RootStackParamList, 'MeditationScreen'>;
 export type TasksScreenProps = StackScreenProps<RootStackParamList, 'TasksScreen'>;
 export type ProgressScreenProps = StackScreenProps<RootStackParamList, 'ProgressScreen'>;
@@ -129,7 +133,7 @@ export type TermsOfServiceScreenProps = StackScreenProps<RootStackParamList, 'Te
 
 declare global {
   namespace ReactNavigation {
-    interface RootParamList extends RootStackParamList {}
+    interface RootParamList extends RootStackParamList { }
   }
 }
 

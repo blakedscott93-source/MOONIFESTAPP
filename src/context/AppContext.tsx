@@ -11,6 +11,7 @@ import {
   recordMissedDay,
   checkDayRollover,
   DayRolloverResult,
+  deleteGratitudeCheckIn as deleteCheckInFromStorage,
 } from '../utils/dayRolloverManager';
 import {
   registerForPushNotifications,
@@ -46,7 +47,7 @@ interface AppContextType {
   startChallenge: () => Promise<void>;
   resetChallenge: () => Promise<void>;
   // New gratitude check-in methods
-  addGratitudeCheckIn: (text: string) => Promise<GratitudeCheckIn>;
+  addGratitudeCheckIn: (text: string, audioUri?: string) => Promise<GratitudeCheckIn>;
   getTodayCheckIns: () => Promise<GratitudeCheckIn[]>;
   getTodayCheckInCount: () => Promise<number>;
   isTodayGratitudeComplete: () => Promise<boolean>;
@@ -68,6 +69,11 @@ interface AppContextType {
   // Vision Board
   markVisionImageAdded: () => Promise<void>;
   hasVisionImageAddedToday: () => boolean;
+  getAllCheckIns: () => Promise<GratitudeCheckIn[]>;
+  resetGratitude: () => Promise<void>;
+  resetMeditation: () => Promise<void>;
+  resetVisionImage: () => Promise<void>;
+  deleteGratitudeCheckIn: (id: string) => Promise<void>;
 }
 
 const defaultAppState: AppState = {
@@ -153,7 +159,7 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   if (__DEV__) {
   }
-  
+
   const [appState, setAppState] = useState<AppState>(defaultAppState);
   const [glowPoints, setGlowPoints] = useState<number>(0);
   const [userGoals, setUserGoals] = useState<ManifestationGoal[]>([]);
@@ -200,7 +206,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         console.error('Error saving app state:', error);
       });
     }, DEBOUNCE_DELAY);
-    
+
     return () => {
       if (saveAppStateTimeoutRef.current) {
         clearTimeout(saveAppStateTimeoutRef.current);
@@ -218,7 +224,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         console.error('Error saving glow points:', error);
       });
     }, DEBOUNCE_DELAY);
-    
+
     return () => {
       if (saveGlowPointsTimeoutRef.current) {
         clearTimeout(saveGlowPointsTimeoutRef.current);
@@ -306,7 +312,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       // Check if day is complete after update (using sync version)
       const isComplete = checkDayCompleteSync(updatedProgress);
       const finalProgress = { ...updatedProgress, isComplete };
-      
+
       const newState = {
         ...prev,
         dailyProgress: {
@@ -314,7 +320,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           [today]: finalProgress,
         },
       };
-      
+
       // If day just became complete, recalculate streaks and total days
       if (isComplete && !currentProgress.isComplete) {
         const { currentStreak, totalDays } = calculateStreaks(newState.dailyProgress);
@@ -324,7 +330,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           totalDays,
         };
       }
-      
+
       return newState;
     });
   }, []);
@@ -372,7 +378,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   }, []);
 
   // Gratitude check-in methods
-  const addGratitudeCheckIn = async (text: string): Promise<GratitudeCheckIn> => {
+  const addGratitudeCheckIn = async (text: string, audioUri?: string): Promise<GratitudeCheckIn> => {
     const localDayKey = getLocalDayKey();
     const timezoneId = getDeviceTimezone();
     const checkIn: GratitudeCheckIn = {
@@ -381,6 +387,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       text: text.trim(),
       createdAt: new Date().toISOString(),
       timezoneId,
+      audioUri,
     };
 
     const checkIns = await getGratitudeCheckIns();
@@ -402,24 +409,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const today = getTodayString();
       setAppState((prev) => {
         const todayProgress = prev.dailyProgress[today] || getTodayProgress();
-        // Find or create gratitude task
-        const tasks = todayProgress.tasks || [];
-        let gratitudeTask = tasks.find(t => t.text.toLowerCase().includes('gratitude') || t.id === 'gratitude-task');
-        
-        if (!gratitudeTask) {
-          // Create gratitude task if it doesn't exist
-          gratitudeTask = {
-            id: 'gratitude-task',
-            text: `Gratitude Journal (${REQUIRED_DAILY_GRATITUDE_CHECKINS} ${gratitudeLabel})`,
-            completed: true,
-            isMustDo: true,
-            createdAt: new Date().toISOString(),
-          };
-          tasks.push(gratitudeTask);
-        } else {
-          // Mark existing task as complete
-          gratitudeTask.completed = true;
-        }
 
         return {
           ...prev,
@@ -427,7 +416,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             ...prev.dailyProgress,
             [today]: {
               ...todayProgress,
-              tasks,
               gratitudeEntry: 'COMPLETE',
             },
           },
@@ -606,6 +594,44 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return todayProgress.visionImageAddedToday === true;
   };
 
+  // Reset Gratitude
+  const resetGratitude = async (): Promise<void> => {
+    updateTodayProgress((progress) => ({
+      ...progress,
+      gratitudeEntry: '',
+    }));
+  };
+
+  // Reset Meditation
+  const resetMeditation = async (): Promise<void> => {
+    updateTodayProgress((progress) => ({
+      ...progress,
+      meditationCompleted: false,
+    }));
+  };
+
+  // Reset Vision Image
+  const resetVisionImage = async (): Promise<void> => {
+    updateTodayProgress((progress) => ({
+      ...progress,
+      visionImageAddedToday: false,
+    }));
+  };
+
+  const deleteGratitudeCheckIn = async (id: string): Promise<void> => {
+    try {
+      await deleteCheckInFromStorage(id);
+
+      // If we deleted today's entry, we might need to update today's progress
+      // But since we track "count", getting the count again is safer
+      // The caller handles reloading data, but we could do it here too if needed.
+      // For now, simple pass-through is fine.
+    } catch (error) {
+      console.error('Error deleting check-in:', error);
+      throw error;
+    }
+  };
+
   return (
     <AppContext.Provider
       value={{
@@ -636,6 +662,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         trackGoalActivity,
         markVisionImageAdded,
         hasVisionImageAddedToday,
+        getAllCheckIns: getGratitudeCheckIns,
+        resetGratitude,
+        resetMeditation,
+        resetVisionImage,
+        deleteGratitudeCheckIn,
       }}
     >
       {children}

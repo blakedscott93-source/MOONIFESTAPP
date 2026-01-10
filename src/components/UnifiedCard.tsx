@@ -6,6 +6,7 @@ import { lightHaptic } from '../utils/haptics';
 interface UnifiedCardProps {
   children: React.ReactNode;
   onPress?: () => void;
+  onLongPress?: () => void;
   style?: ViewStyle;
   delay?: number;
   testID?: string;
@@ -24,6 +25,7 @@ interface UnifiedCardProps {
 export const UnifiedCard: React.FC<UnifiedCardProps> = ({
   children,
   onPress,
+  onLongPress,
   style,
   delay = 0,
   testID,
@@ -58,7 +60,7 @@ export const UnifiedCard: React.FC<UnifiedCardProps> = ({
   }, [delay]);
 
   const handlePressIn = useCallback(() => {
-    if (!pressable || !onPress) return;
+    if (!pressable || (!onPress && !onLongPress)) return;
 
     // Scale down slightly
     Animated.spring(scaleAnim, {
@@ -67,10 +69,10 @@ export const UnifiedCard: React.FC<UnifiedCardProps> = ({
       friction: 10,
       useNativeDriver: true,
     }).start();
-  }, [pressable, onPress]);
+  }, [pressable, onPress, onLongPress]);
 
   const handlePressOut = useCallback(() => {
-    if (!pressable || !onPress) return;
+    if (!pressable || (!onPress && !onLongPress)) return;
 
     // Spring back
     Animated.spring(scaleAnim, {
@@ -79,7 +81,7 @@ export const UnifiedCard: React.FC<UnifiedCardProps> = ({
       friction: 8,
       useNativeDriver: true,
     }).start();
-  }, [pressable, onPress]);
+  }, [pressable, onPress, onLongPress]);
 
   const handlePress = useCallback(() => {
     if (!noHaptic && onPress) {
@@ -87,6 +89,13 @@ export const UnifiedCard: React.FC<UnifiedCardProps> = ({
     }
     onPress?.();
   }, [noHaptic, onPress]);
+
+  const handleLongPress = useCallback(() => {
+    if (!noHaptic && onLongPress) {
+      lightHaptic();
+    }
+    onLongPress?.();
+  }, [noHaptic, onLongPress]);
 
   // Get variant-specific styles
   const getVariantStyle = () => {
@@ -123,10 +132,11 @@ export const UnifiedCard: React.FC<UnifiedCardProps> = ({
     </Animated.View>
   );
 
-  if (onPress) {
+  if (onPress || onLongPress) {
     return (
       <Pressable
         onPress={handlePress}
+        onLongPress={handleLongPress}
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
         testID={testID}
@@ -182,10 +192,10 @@ export const CompactCard: React.FC<CompactCardProps> = ({
   };
 
   const content = (
-    <Animated.View 
+    <Animated.View
       style={[
-        styles.compactCard, 
-        style, 
+        styles.compactCard,
+        style,
         { transform: [{ scale: scaleAnim }] }
       ]}
     >

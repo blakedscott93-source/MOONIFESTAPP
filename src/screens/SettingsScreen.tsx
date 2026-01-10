@@ -17,22 +17,27 @@ import { getColors } from '../utils/themeColors';
 import { openSupportEmail } from '../utils/contactSupport';
 import { SettingsScreenProps } from '../types/navigation';
 import { useScreenTracking } from '../hooks/useScreenTracking';
+import { PremiumGate } from '../components/PremiumGate';
+import { isPremiumUser, restorePurchases } from '../utils/premium';
+import { useFocusEffect } from '@react-navigation/native';
+import { useCallback } from 'react';
 import { SkeletonLoader, SkeletonCard } from '../components/SkeletonLoader';
+import { useApp } from '../context/AppContext';
 
 type SettingsItem =
   | {
-      icon: string;
-      label: string;
-      type: 'navigate';
-      onPress: () => void;
-    }
+    icon: string;
+    label: string;
+    type: 'navigate';
+    onPress: () => void;
+  }
   | {
-      icon: string;
-      label: string;
-      type: 'custom';
-      onPress: () => void;
-      renderRight?: () => React.ReactNode;
-    };
+    icon: string;
+    label: string;
+    type: 'custom';
+    onPress: () => void;
+    renderRight?: () => React.ReactNode;
+  };
 
 type SettingsSection = {
   title: string;
@@ -42,16 +47,35 @@ type SettingsSection = {
 export default function SettingsScreen({ navigation }: SettingsScreenProps) {
   useScreenTracking('Settings');
   const { themeMode, setThemeMode, isDark } = useTheme();
+  const { resetChallenge } = useApp();
   const colors = getColors(isDark);
   const [isLoading, setIsLoading] = useState(true);
+  const [isPremium, setIsPremium] = useState(false);
+  const [showPremiumGate, setShowPremiumGate] = useState(false);
 
-  useEffect(() => {
-    const loadSettings = async () => {
-      setIsLoading(true);
-      setIsLoading(false);
-    };
-    loadSettings();
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      checkPremiumStatus();
+    }, [])
+  );
+
+  const checkPremiumStatus = async () => {
+    const premium = await isPremiumUser();
+    setIsPremium(premium);
+    setIsLoading(false);
+  };
+
+  const handleRestore = async () => {
+    setIsLoading(true);
+    const success = await restorePurchases();
+    if (success) {
+      setIsPremium(true);
+      Alert.alert('Success', 'Premiums restored successfully!');
+    } else {
+      Alert.alert('Notice', 'No active subscriptions found to restore.');
+    }
+    setIsLoading(false);
+  };
 
   const themeOptions = [
     { value: 'light' as const, label: 'Light', icon: 'sunny' },
@@ -60,6 +84,28 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
   ];
 
   const settingsSections: SettingsSection[] = [
+    {
+      title: 'Premium',
+      items: [
+        ...(isPremium ? [] : [{
+          icon: 'sparkles',
+          label: 'Unlock Premium',
+          type: 'custom' as const,
+          onPress: () => setShowPremiumGate(true),
+          renderRight: () => (
+            <View style={{ backgroundColor: colors.accent, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4 }}>
+              <Text style={{ color: '#FFF', fontSize: 12, fontWeight: '700' }}>UPGRADE</Text>
+            </View>
+          )
+        }]),
+        {
+          icon: 'refresh',
+          label: 'Restore Purchases',
+          type: 'custom' as const,
+          onPress: handleRestore,
+        }
+      ]
+    },
     {
       title: 'Notifications',
       items: [
@@ -115,6 +161,12 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
       title: 'Account & Data',
       items: [
         {
+          icon: 'person-circle',
+          label: 'Account & Cloud Sync',
+          type: 'navigate',
+          onPress: () => navigation.navigate('AuthScreen'),
+        },
+        {
           icon: 'download',
           label: 'Export My Data',
           type: 'navigate',
@@ -122,10 +174,10 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
             try {
               const { shareExportedData, getDataSummary } = await import('../utils/dataExport');
               const summary = await getDataSummary();
-              
+
               Alert.alert(
                 'Export Your Data',
-                `Export all your Moonifest data including:\n\n- ${summary.streak} day streak\n- ${summary.totalDays} total days\n- ${summary.glowPoints} glow points\n- ${summary.moodEntries} mood entries\n- ${summary.gratitudeCheckIns} gratitude check-ins\n- ${summary.visionBoardItems} vision board items\n- ${summary.achievements} achievements\n\nYour data will be exported as a JSON file.`,
+                `Export all your Vortex data including:\n\n- ${summary.streak} day streak\n- ${summary.totalDays} total days\n- ${summary.glowPoints} glow points\n- ${summary.moodEntries} mood entries\n- ${summary.gratitudeCheckIns} gratitude check-ins\n- ${summary.visionBoardItems} vision board items\n- ${summary.achievements} achievements\n\nYour data will be exported as a JSON file.`,
                 [
                   { text: 'Cancel', style: 'cancel' },
                   {
@@ -180,18 +232,45 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
                 await StoreReview.requestReview();
               } else {
                 Alert.alert(
-                  'Rate Moonifest',
-                  'Thank you for using Moonifest! If you love the app, please leave us a review on the App Store or Play Store.',
+                  'Rate Vortex',
+                  'Thank you for using Vortex! If you love the app, please leave us a review on the App Store or Play Store.',
                   [{ text: 'OK' }]
                 );
               }
             } catch (error) {
               Alert.alert(
-                'Rate Moonifest',
-                'Thank you for using Moonifest! Please leave us a review on the App Store or Play Store.',
+                'Rate Vortex',
+                'Thank you for using Vortex! Please leave us a review on the App Store or Play Store.',
                 [{ text: 'OK' }]
               );
             }
+          },
+        },
+      ],
+    },
+    {
+      title: '45 NOW Challenge',
+      items: [
+        {
+          icon: 'refresh-circle',
+          label: 'Restart Challenge',
+          type: 'custom' as const,
+          onPress: () => {
+            Alert.alert(
+              'Restart 45 NOW Challenge?',
+              'This will reset your streak, total days, and all daily progress. Your journal entries and vision board will be kept.\n\nAre you sure you want to start fresh?',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Restart',
+                  style: 'destructive',
+                  onPress: async () => {
+                    await resetChallenge();
+                    Alert.alert('Challenge Reset', 'Your 45 NOW Challenge has been reset. Good luck on your new journey!');
+                  },
+                },
+              ]
+            );
           },
         },
       ],
@@ -316,7 +395,7 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
             {/* App Version */}
             <View style={styles.versionContainer}>
               <Text style={[styles.versionText, { color: colors.textTertiary }]}>
-                Moonifest v1.0.0
+                Vortex v1.0.0
               </Text>
               <Text style={[styles.versionText, { color: colors.textTertiary }]}>
                 Made with love for manifestation
@@ -326,6 +405,16 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
             <View style={{ height: 100 }} />
           </>
         }
+      />
+      <PremiumGate
+        visible={showPremiumGate}
+        onClose={() => setShowPremiumGate(false)}
+        onUpgrade={() => {
+          checkPremiumStatus();
+          setShowPremiumGate(false);
+        }}
+        featureName="Premium"
+        featureDescription="Unlock all features and remove ads."
       />
     </Screen>
   );

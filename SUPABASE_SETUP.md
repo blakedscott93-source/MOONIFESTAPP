@@ -65,10 +65,21 @@ CREATE TABLE IF NOT EXISTS gratitude_checkins (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Profiles table (email + name + marketing opt-in)
+CREATE TABLE IF NOT EXISTS profiles (
+  id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  email TEXT,
+  full_name TEXT,
+  marketing_opt_in BOOLEAN DEFAULT false,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- Enable Row Level Security (RLS)
 ALTER TABLE user_data ENABLE ROW LEVEL SECURITY;
 ALTER TABLE mood_entries ENABLE ROW LEVEL SECURITY;
 ALTER TABLE gratitude_checkins ENABLE ROW LEVEL SECURITY;
+ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 
 -- Create policies (users can only access their own data)
 CREATE POLICY "Users can view own data" ON user_data
@@ -103,6 +114,15 @@ CREATE POLICY "Users can update own gratitude checkins" ON gratitude_checkins
 
 CREATE POLICY "Users can delete own gratitude checkins" ON gratitude_checkins
   FOR DELETE USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can view own profile" ON profiles
+  FOR SELECT USING (auth.uid() = id);
+
+CREATE POLICY "Users can insert own profile" ON profiles
+  FOR INSERT WITH CHECK (auth.uid() = id);
+
+CREATE POLICY "Users can update own profile" ON profiles
+  FOR UPDATE USING (auth.uid() = id);
 ```
 
 ### 5. Enable Authentication (Optional)
@@ -112,6 +132,12 @@ If you want users to sign in for multi-device sync:
 1. Go to Authentication > Providers in Supabase
 2. Enable email/password or social providers
 3. Update `src/config/supabase.ts` to handle sign in/sign up
+
+For Apple Sign In:
+
+1. In Apple Developer, create a Services ID and a Sign In with Apple key (.p8)
+2. In Supabase Auth Providers, enable Apple and enter your Team ID, Services ID, Key ID, and .p8 key
+3. In `app.json`, keep `"usesAppleSignIn": true`
 
 ### 6. Test the Setup
 

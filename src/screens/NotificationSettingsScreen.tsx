@@ -30,7 +30,7 @@ export default function NotificationSettingsScreen({ navigation }: NotificationS
     morningTime: '09:00',
     afternoonTime: '14:00',
     eveningTime: '20:00',
-    affirmationFrequency: 3,
+    affirmationFrequency: 6,
   });
 
   const [showMorningPicker, setShowMorningPicker] = useState(false);
@@ -174,262 +174,262 @@ export default function NotificationSettingsScreen({ navigation }: NotificationS
         renderItem={() => null}
         ListHeaderComponent={
           <>
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity
-            onPress={() => navigation.goBack()}
-            style={styles.backButton}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            accessible={true}
-            accessibilityLabel="Go back"
-            accessibilityRole="button"
-          >
-            <Ionicons name="chevron-back" size={24} color={Theme.colors.textPrimary} />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Notification Settings</Text>
-          <View style={{ width: TOUCH_TARGET_MIN }} />
-        </View>
-
-        {/* Expo Go Warning Banner */}
-        {!notificationsSupported && (
-          <View style={styles.warningBanner}>
-            <Ionicons name="warning" size={20} color="#FF9500" />
-            <View style={styles.warningBannerContent}>
-              <Text style={styles.warningBannerTitle}>Notifications Unavailable</Text>
-              <Text style={styles.warningBannerText}>
-                Push notifications are not supported in Expo Go on Android. Create a development build to enable notifications.
-              </Text>
+            {/* Header */}
+            <View style={styles.header}>
+              <TouchableOpacity
+                onPress={() => navigation.goBack()}
+                style={styles.backButton}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                accessible={true}
+                accessibilityLabel="Go back"
+                accessibilityRole="button"
+              >
+                <Ionicons name="chevron-back" size={24} color={Theme.colors.textPrimary} />
+              </TouchableOpacity>
+              <Text style={styles.headerTitle}>Notification Settings</Text>
+              <View style={{ width: TOUCH_TARGET_MIN }} />
             </View>
-          </View>
-        )}
 
-        {/* Main Toggle Card */}
-        <View style={[styles.card, !notificationsSupported && styles.cardDisabled]}>
-          <View style={styles.toggleContainer}>
-            <View style={styles.toggleLeft}>
-              <View style={[styles.iconCircle, { backgroundColor: Theme.colors.accent + '20' }]}>
-                <Ionicons name="notifications" size={24} color={notificationsSupported ? Theme.colors.accent : Theme.colors.textTertiary} />
-              </View>
-              <View>
-                <Text style={[styles.toggleLabel, !notificationsSupported && styles.textDisabled]}>Daily Reminders</Text>
-                <Text style={styles.toggleSubtext}>
-                  {!notificationsSupported ? 'Not available in Expo Go' : settings.enabled ? '3 reminders per day' : 'Currently disabled'}
-                </Text>
-              </View>
-            </View>
-            <Switch
-              value={settings.enabled && notificationsSupported}
-              onValueChange={toggleNotifications}
-              trackColor={{ false: Theme.colors.border, true: Theme.colors.accent + '40' }}
-              thumbColor={settings.enabled && notificationsSupported ? Theme.colors.accent : Theme.colors.surfaceSecondary}
-              ios_backgroundColor={Theme.colors.border}
-              disabled={!notificationsSupported}
-            />
-          </View>
-        </View>
-
-        {/* Info Banner */}
-        <View style={styles.infoBanner}>
-          <Ionicons name="information-circle" size={20} color={Theme.colors.accent} />
-          <Text style={styles.infoBannerText}>
-            Daily reminders help you stay consistent with your gratitude practice and build a lasting manifestation habit.
-          </Text>
-        </View>
-
-        {/* Affirmation Frequency */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Daily Affirmations</Text>
-          <View style={styles.card}>
-            <View style={styles.frequencyHeader}>
-              <View style={styles.frequencyHeaderLeft}>
-                <View style={[styles.iconCircle, { backgroundColor: Theme.colors.accent + '20' }]}>
-                  <Ionicons name="sparkles" size={22} color={Theme.colors.accent} />
-                </View>
-                <View>
-                  <Text style={styles.toggleLabel}>Affirmation Frequency</Text>
-                  <Text style={styles.toggleSubtext}>Silent relaxation reminders</Text>
+            {/* Expo Go Warning Banner */}
+            {!notificationsSupported && (
+              <View style={styles.warningBanner}>
+                <Ionicons name="warning" size={20} color="#FF9500" />
+                <View style={styles.warningBannerContent}>
+                  <Text style={styles.warningBannerTitle}>Notifications Unavailable</Text>
+                  <Text style={styles.warningBannerText}>
+                    Push notifications are not supported in Expo Go on Android. Create a development build to enable notifications.
+                  </Text>
                 </View>
               </View>
+            )}
+
+            {/* Main Toggle Card */}
+            <View style={[styles.card, !notificationsSupported && styles.cardDisabled]}>
+              <View style={styles.toggleContainer}>
+                <View style={styles.toggleLeft}>
+                  <View style={[styles.iconCircle, { backgroundColor: Theme.colors.accent + '20' }]}>
+                    <Ionicons name="notifications" size={24} color={notificationsSupported ? Theme.colors.accent : Theme.colors.textTertiary} />
+                  </View>
+                  <View>
+                    <Text style={[styles.toggleLabel, !notificationsSupported && styles.textDisabled]}>Daily Reminders</Text>
+                    <Text style={styles.toggleSubtext}>
+                      {!notificationsSupported ? 'Not available in Expo Go' : settings.enabled ? `${settings.affirmationFrequency} affirmations + 3 check-ins daily` : 'Currently disabled'}
+                    </Text>
+                  </View>
+                </View>
+                <Switch
+                  value={settings.enabled && notificationsSupported}
+                  onValueChange={toggleNotifications}
+                  trackColor={{ false: Theme.colors.border, true: Theme.colors.accent + '40' }}
+                  thumbColor={settings.enabled && notificationsSupported ? Theme.colors.accent : Theme.colors.surfaceSecondary}
+                  ios_backgroundColor={Theme.colors.border}
+                  disabled={!notificationsSupported}
+                />
+              </View>
             </View>
 
-            <View style={styles.frequencyOptions}>
+            {/* Info Banner */}
+            <View style={styles.infoBanner}>
+              <Ionicons name="information-circle" size={20} color={Theme.colors.accent} />
+              <Text style={styles.infoBannerText}>
+                Daily reminders help you stay consistent with your gratitude practice and build a lasting manifestation habit.
+              </Text>
+            </View>
+
+            {/* Affirmation Frequency */}
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Daily Affirmations</Text>
+              <View style={styles.card}>
+                <View style={styles.frequencyHeader}>
+                  <View style={styles.frequencyHeaderLeft}>
+                    <View style={[styles.iconCircle, { backgroundColor: Theme.colors.accent + '20' }]}>
+                      <Ionicons name="sparkles" size={22} color={Theme.colors.accent} />
+                    </View>
+                    <View>
+                      <Text style={styles.toggleLabel}>Affirmation Frequency</Text>
+                      <Text style={styles.toggleSubtext}>Silent relaxation reminders</Text>
+                    </View>
+                  </View>
+                </View>
+
+                <View style={styles.frequencyOptions}>
+                  <TouchableOpacity
+                    style={[
+                      styles.frequencyOption,
+                      settings.affirmationFrequency === 3 && styles.frequencyOptionActive,
+                      !settings.enabled && styles.frequencyOptionDisabled,
+                    ]}
+                    onPress={() => settings.enabled && saveSettings({ ...settings, affirmationFrequency: 3 })}
+                    disabled={!settings.enabled}
+                    accessible={true}
+                    accessibilityLabel="3 daily affirmations"
+                    accessibilityRole="button"
+                  >
+                    <Text style={[
+                      styles.frequencyOptionNumber,
+                      settings.affirmationFrequency === 3 && styles.frequencyOptionNumberActive,
+                      !settings.enabled && styles.frequencyOptionTextDisabled,
+                    ]}>
+                      3
+                    </Text>
+                    <Text style={[
+                      styles.frequencyOptionLabel,
+                      settings.affirmationFrequency === 3 && styles.frequencyOptionLabelActive,
+                      !settings.enabled && styles.frequencyOptionTextDisabled,
+                    ]}>
+                      Gentle
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.frequencyOption,
+                      settings.affirmationFrequency === 6 && styles.frequencyOptionActive,
+                      !settings.enabled && styles.frequencyOptionDisabled,
+                    ]}
+                    onPress={() => settings.enabled && saveSettings({ ...settings, affirmationFrequency: 6 })}
+                    disabled={!settings.enabled}
+                    accessible={true}
+                    accessibilityLabel="6 daily affirmations"
+                    accessibilityRole="button"
+                  >
+                    <Text style={[
+                      styles.frequencyOptionNumber,
+                      settings.affirmationFrequency === 6 && styles.frequencyOptionNumberActive,
+                      !settings.enabled && styles.frequencyOptionTextDisabled,
+                    ]}>
+                      6
+                    </Text>
+                    <Text style={[
+                      styles.frequencyOptionLabel,
+                      settings.affirmationFrequency === 6 && styles.frequencyOptionLabelActive,
+                      !settings.enabled && styles.frequencyOptionTextDisabled,
+                    ]}>
+                      Balanced
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.frequencyOption,
+                      settings.affirmationFrequency === 9 && styles.frequencyOptionActive,
+                      !settings.enabled && styles.frequencyOptionDisabled,
+                    ]}
+                    onPress={() => settings.enabled && saveSettings({ ...settings, affirmationFrequency: 9 })}
+                    disabled={!settings.enabled}
+                    accessible={true}
+                    accessibilityLabel="9 daily affirmations"
+                    accessibilityRole="button"
+                  >
+                    <Text style={[
+                      styles.frequencyOptionNumber,
+                      settings.affirmationFrequency === 9 && styles.frequencyOptionNumberActive,
+                      !settings.enabled && styles.frequencyOptionTextDisabled,
+                    ]}>
+                      9
+                    </Text>
+                    <Text style={[
+                      styles.frequencyOptionLabel,
+                      settings.affirmationFrequency === 9 && styles.frequencyOptionLabelActive,
+                      !settings.enabled && styles.frequencyOptionTextDisabled,
+                    ]}>
+                      Immersive
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                <View style={[styles.frequencyInfo, { marginTop: Theme.spacing.md }]}>
+                  <Text style={styles.frequencyInfoText}>
+                    {settings.affirmationFrequency === 3 && '3 peaceful affirmations spread throughout the day'}
+                    {settings.affirmationFrequency === 6 && '6 uplifting affirmations for consistent inspiration'}
+                    {settings.affirmationFrequency === 9 && '9 powerful affirmations for deep immersion'}
+                  </Text>
+                </View>
+              </View>
+            </View>
+
+            {/* Time Settings */}
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Reminder Times</Text>
+              <View style={styles.card}>
+                {renderTimePicker(
+                  'Morning',
+                  settings.morningTime,
+                  showMorningPicker,
+                  setShowMorningPicker,
+                  'morning',
+                  'sunny',
+                  '#FFB800'
+                )}
+                <View style={styles.divider} />
+                {renderTimePicker(
+                  'Afternoon',
+                  settings.afternoonTime,
+                  showAfternoonPicker,
+                  setShowAfternoonPicker,
+                  'afternoon',
+                  'partly-sunny',
+                  '#FF8C00'
+                )}
+                <View style={styles.divider} />
+                {renderTimePicker(
+                  'Evening',
+                  settings.eveningTime,
+                  showEveningPicker,
+                  setShowEveningPicker,
+                  'evening',
+                  'moon',
+                  '#8B7DD8'
+                )}
+              </View>
+            </View>
+
+            {/* Tips Section */}
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Tips for Success</Text>
+              <View style={styles.card}>
+                <View style={styles.tipItem}>
+                  <View style={[styles.tipDot, { backgroundColor: '#7FFF00' }]} />
+                  <Text style={styles.tipText}>
+                    Choose times when you're typically available and reflective
+                  </Text>
+                </View>
+                <View style={styles.tipItem}>
+                  <View style={[styles.tipDot, { backgroundColor: '#00D9A3' }]} />
+                  <Text style={styles.tipText}>
+                    Morning reminders are great for setting daily intentions
+                  </Text>
+                </View>
+                <View style={styles.tipItem}>
+                  <View style={[styles.tipDot, { backgroundColor: '#C77DFF' }]} />
+                  <Text style={styles.tipText}>
+                    Evening reflections help you appreciate the day's blessings
+                  </Text>
+                </View>
+              </View>
+            </View>
+
+            {/* Test Notification Button */}
+            {settings.enabled && (
               <TouchableOpacity
-                style={[
-                  styles.frequencyOption,
-                  settings.affirmationFrequency === 3 && styles.frequencyOptionActive,
-                  !settings.enabled && styles.frequencyOptionDisabled,
-                ]}
-                onPress={() => settings.enabled && saveSettings({ ...settings, affirmationFrequency: 3 })}
-                disabled={!settings.enabled}
+                style={styles.testButton}
+                onPress={async () => {
+                  await scheduleNotifications(settings);
+                  Alert.alert(
+                    'Notifications Scheduled',
+                    `Your daily reminders are set for:\n\nMorning: ${formatTimeDisplay(settings.morningTime)}\nAfternoon: ${formatTimeDisplay(settings.afternoonTime)}\nEvening: ${formatTimeDisplay(settings.eveningTime)}\n\nPlus ${settings.affirmationFrequency} daily affirmations throughout the day`
+                  );
+                }}
                 accessible={true}
-                accessibilityLabel="3 daily affirmations"
+                accessibilityLabel="Test notification settings"
                 accessibilityRole="button"
               >
-                <Text style={[
-                  styles.frequencyOptionNumber,
-                  settings.affirmationFrequency === 3 && styles.frequencyOptionNumberActive,
-                  !settings.enabled && styles.frequencyOptionTextDisabled,
-                ]}>
-                  3
-                </Text>
-                <Text style={[
-                  styles.frequencyOptionLabel,
-                  settings.affirmationFrequency === 3 && styles.frequencyOptionLabelActive,
-                  !settings.enabled && styles.frequencyOptionTextDisabled,
-                ]}>
-                  Gentle
-                </Text>
+                <Ionicons name="checkmark-circle" size={20} color={Theme.colors.accent} />
+                <Text style={styles.testButtonText}>Save & Apply Settings</Text>
               </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.frequencyOption,
-                  settings.affirmationFrequency === 6 && styles.frequencyOptionActive,
-                  !settings.enabled && styles.frequencyOptionDisabled,
-                ]}
-                onPress={() => settings.enabled && saveSettings({ ...settings, affirmationFrequency: 6 })}
-                disabled={!settings.enabled}
-                accessible={true}
-                accessibilityLabel="6 daily affirmations"
-                accessibilityRole="button"
-              >
-                <Text style={[
-                  styles.frequencyOptionNumber,
-                  settings.affirmationFrequency === 6 && styles.frequencyOptionNumberActive,
-                  !settings.enabled && styles.frequencyOptionTextDisabled,
-                ]}>
-                  6
-                </Text>
-                <Text style={[
-                  styles.frequencyOptionLabel,
-                  settings.affirmationFrequency === 6 && styles.frequencyOptionLabelActive,
-                  !settings.enabled && styles.frequencyOptionTextDisabled,
-                ]}>
-                  Balanced
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.frequencyOption,
-                  settings.affirmationFrequency === 9 && styles.frequencyOptionActive,
-                  !settings.enabled && styles.frequencyOptionDisabled,
-                ]}
-                onPress={() => settings.enabled && saveSettings({ ...settings, affirmationFrequency: 9 })}
-                disabled={!settings.enabled}
-                accessible={true}
-                accessibilityLabel="9 daily affirmations"
-                accessibilityRole="button"
-              >
-                <Text style={[
-                  styles.frequencyOptionNumber,
-                  settings.affirmationFrequency === 9 && styles.frequencyOptionNumberActive,
-                  !settings.enabled && styles.frequencyOptionTextDisabled,
-                ]}>
-                  9
-                </Text>
-                <Text style={[
-                  styles.frequencyOptionLabel,
-                  settings.affirmationFrequency === 9 && styles.frequencyOptionLabelActive,
-                  !settings.enabled && styles.frequencyOptionTextDisabled,
-                ]}>
-                  Immersive
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            <View style={[styles.frequencyInfo, { marginTop: Theme.spacing.md }]}>
-              <Text style={styles.frequencyInfoText}>
-                {settings.affirmationFrequency === 3 && '3 peaceful affirmations spread throughout the day'}
-                {settings.affirmationFrequency === 6 && '6 uplifting affirmations for consistent inspiration'}
-                {settings.affirmationFrequency === 9 && '9 powerful affirmations for deep immersion'}
-              </Text>
-            </View>
-          </View>
-        </View>
-
-        {/* Time Settings */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Reminder Times</Text>
-          <View style={styles.card}>
-            {renderTimePicker(
-              'Morning',
-              settings.morningTime,
-              showMorningPicker,
-              setShowMorningPicker,
-              'morning',
-              'sunny',
-              '#FFB800'
             )}
-            <View style={styles.divider} />
-            {renderTimePicker(
-              'Afternoon',
-              settings.afternoonTime,
-              showAfternoonPicker,
-              setShowAfternoonPicker,
-              'afternoon',
-              'partly-sunny',
-              '#FF8C00'
-            )}
-            <View style={styles.divider} />
-            {renderTimePicker(
-              'Evening',
-              settings.eveningTime,
-              showEveningPicker,
-              setShowEveningPicker,
-              'evening',
-              'moon',
-              '#8B7DD8'
-            )}
-          </View>
-        </View>
 
-        {/* Tips Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Tips for Success</Text>
-          <View style={styles.card}>
-            <View style={styles.tipItem}>
-              <View style={[styles.tipDot, { backgroundColor: '#7FFF00' }]} />
-              <Text style={styles.tipText}>
-                Choose times when you're typically available and reflective
-              </Text>
-            </View>
-            <View style={styles.tipItem}>
-              <View style={[styles.tipDot, { backgroundColor: '#00D9A3' }]} />
-              <Text style={styles.tipText}>
-                Morning reminders are great for setting daily intentions
-              </Text>
-            </View>
-            <View style={styles.tipItem}>
-              <View style={[styles.tipDot, { backgroundColor: '#C77DFF' }]} />
-              <Text style={styles.tipText}>
-                Evening reflections help you appreciate the day's blessings
-              </Text>
-            </View>
-          </View>
-        </View>
-
-        {/* Test Notification Button */}
-        {settings.enabled && (
-          <TouchableOpacity
-            style={styles.testButton}
-            onPress={async () => {
-              await scheduleNotifications(settings);
-              Alert.alert(
-                'Notifications Scheduled',
-                `Your daily reminders are set for:\n\nMorning: ${formatTimeDisplay(settings.morningTime)}\nAfternoon: ${formatTimeDisplay(settings.afternoonTime)}\nEvening: ${formatTimeDisplay(settings.eveningTime)}\n\nPlus ${settings.affirmationFrequency} daily affirmations throughout the day`
-              );
-            }}
-            accessible={true}
-            accessibilityLabel="Test notification settings"
-            accessibilityRole="button"
-          >
-            <Ionicons name="checkmark-circle" size={20} color={Theme.colors.accent} />
-            <Text style={styles.testButtonText}>Save & Apply Settings</Text>
-          </TouchableOpacity>
-        )}
-
-        <View style={{ height: 100 }} />
+            <View style={{ height: 100 }} />
           </>
         }
       />

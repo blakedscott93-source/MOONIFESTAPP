@@ -15,9 +15,9 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Screen } from '../components/Screen';
 import { Theme, TOUCH_TARGET_MIN } from '../utils/theme';
 import { useNavigation } from '@react-navigation/native';
-import { 
-  getAIResponse, 
-  isOpenAIConfigured, 
+import {
+  getAIResponse,
+  isOpenAIConfigured,
   formatConversationHistory,
   ChatResponse,
 } from '../utils/openaiChat';
@@ -32,7 +32,7 @@ interface Message {
 
 const CHATBOT_RESPONSES: { [key: string]: { text: string; options?: string[] } } = {
   welcome: {
-    text: "✨ Welcome to your Moonifest Guide! I'm here to help you master manifestation and make the most of your 45 NOW journey.\n\nWhat would you like to know?",
+    text: "✨ Welcome to your Vortex Guide! I'm here to help you master manifestation and make the most of your 45 NOW journey.\n\nWhat would you like to know?",
     options: [
       'What is manifestation?',
       'How does the 369 method work?',
@@ -192,7 +192,7 @@ export default function ChatbotScreen() {
         // Use AI-powered response
         const conversationHistory = formatConversationHistory(messages);
         const aiResponse: ChatResponse = await getAIResponse(currentInput, conversationHistory);
-        
+
         if (aiResponse.error) {
           // Fallback to rule-based if AI fails
           responseText = getRuleBasedResponse(currentInput);
@@ -316,7 +316,7 @@ export default function ChatbotScreen() {
               </LinearGradient>
             </View>
             <View>
-              <Text style={styles.headerTitle}>Moonifest Guide</Text>
+              <Text style={styles.headerTitle}>Vortex Guide</Text>
               <Text style={styles.headerSubtitle}>
                 {aiEnabled ? 'AI-powered assistant ✨' : 'Your manifestation assistant'}
               </Text>
@@ -348,8 +348,8 @@ export default function ChatbotScreen() {
             onChangeText={setInputText}
             onSubmitEditing={handleSendMessage}
           />
-          <TouchableOpacity 
-            style={[styles.sendButton, (isLoading || !inputText.trim()) && styles.sendButtonDisabled]} 
+          <TouchableOpacity
+            style={[styles.sendButton, (isLoading || !inputText.trim()) && styles.sendButtonDisabled]}
             onPress={handleSendMessage}
             disabled={isLoading || !inputText.trim()}
             activeOpacity={0.7}

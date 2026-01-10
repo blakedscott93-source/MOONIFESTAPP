@@ -13,7 +13,11 @@ import {
   Platform,
   Keyboard,
   DimensionValue,
+  Modal,
+  ActivityIndicator,
+  ScrollView,
 } from 'react-native';
+import { Audio } from 'expo-av';
 import { useApp } from '../context/AppContext';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -35,6 +39,7 @@ import { successHaptic, lightHaptic } from '../utils/haptics';
 import { JournalMainScreenProps } from '../types/navigation';
 import { useScreenTracking } from '../hooks/useScreenTracking';
 import { trackEvent } from '../utils/analytics';
+import { useVoiceRecorder } from '../hooks/useVoiceRecorder';
 
 const TOUCH_TARGET_MIN = 44; // Minimum touch target size for accessibility
 const AnimatedFlatList = Animated.createAnimatedComponent(FlatList);
@@ -63,6 +68,8 @@ export default function GratitudeJournalScreen({ navigation }: JournalMainScreen
     handleMissedDay,
     resetChallenge,
     addGratitudeCheckIn,
+    getAllCheckIns,
+    deleteGratitudeCheckIn,
   } = useApp();
   const tabBarInset = useTabBarInset();
   // Memoize todayProgress
@@ -71,7 +78,6 @@ export default function GratitudeJournalScreen({ navigation }: JournalMainScreen
   const todayPromptIndex = new Date().getDay();
   const [currentPromptIndex, setCurrentPromptIndex] = useState(todayPromptIndex);
   const todayPrompt = DAILY_PROMPTS[currentPromptIndex];
-  const [searchText, setSearchText] = useState('');
   const [showFAB, setShowFAB] = useState(false);
   const [checkInCount, setCheckInCount] = useState(0);
   const [isTodayComplete, setIsTodayComplete] = useState(false);
@@ -80,14 +86,33 @@ export default function GratitudeJournalScreen({ navigation }: JournalMainScreen
   const [incompleteDay, setIncompleteDay] = useState<IncompleteDayInfo | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isScrolling, setIsScrolling] = useState(false);
-  const [isRecording, setIsRecording] = useState(false);
+  // isRecording removed in favor of hook
   const [showTextInput, setShowTextInput] = useState(false);
   const [textEntry, setTextEntry] = useState('');
-  const [recordingDuration, setRecordingDuration] = useState(0);
+  // recordingDuration removed in favor of hook
+
+
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
-  
+  const [selectedEntry, setSelectedEntry] = useState<any>(null);
+  const [showEntryModal, setShowEntryModal] = useState(false);
+  const [sound, setSound] = useState<Audio.Sound | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [playingEntryId, setPlayingEntryId] = useState<string | null>(null);
+
   const scrollY = useRef(new Animated.Value(0)).current;
+  const {
+    isRecording,
+    startRecording,
+    stopRecording,
+    recordingDuration,
+  } = useVoiceRecorder();
+
   const fabOpacity = useRef(new Animated.Value(0)).current;
+  const fabTranslateY = fabOpacity.interpolate({
+    inputRange: [0, 1],
+    outputRange: [100, 0],
+    extrapolate: 'clamp',
+  });
   const streakScale = useRef(new Animated.Value(0.95)).current;
   const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const focusTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -95,9 +120,6 @@ export default function GratitudeJournalScreen({ navigation }: JournalMainScreen
   const keyboardHeight = useRef(new Animated.Value(0)).current;
   const recordButtonScale = useRef(new RNAnimated.Value(1)).current;
   const pulseAnim = useRef(new RNAnimated.Value(1)).current;
-  const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const recordingStartTime = useRef<number>(0);
-  const isRecordingRef = useRef(false);
   const MIN_RECORDING_DURATION = 30000; // 30 seconds minimum
 
   const checkDayRollover = useCallback(async () => {
@@ -114,7 +136,7 @@ export default function GratitudeJournalScreen({ navigation }: JournalMainScreen
       const count = await getTodayCheckInCount();
       const complete = await isTodayGratitudeComplete();
       const checkIns = await getTodayCheckIns();
-      
+
       setCheckInCount(count);
       setIsTodayComplete(complete);
       setTodayCheckIns(checkIns);
@@ -138,8 +160,8 @@ export default function GratitudeJournalScreen({ navigation }: JournalMainScreen
   const entryCount = useMemo(
     () =>
       Object.keys(appState.dailyProgress || {}).filter(
-        date => appState.dailyProgress[date]?.gratitudeEntry?.trim() && 
-                appState.dailyProgress[date]?.gratitudeEntry !== 'COMPLETE'
+        date => appState.dailyProgress[date]?.gratitudeEntry?.trim() &&
+          appState.dailyProgress[date]?.gratitudeEntry !== 'COMPLETE'
       ).length,
     [appState.dailyProgress]
   );
@@ -147,56 +169,38 @@ export default function GratitudeJournalScreen({ navigation }: JournalMainScreen
   const hasEntries = entryCount > 0 || todayCheckIns.length > 0;
   const hasTodayEntry = isTodayComplete || checkInCount > 0;
 
-  // Get recent entries for list (with search filtering)
-  const recentEntries = useMemo(() => {
-    if (!hasEntries) return [];
-    
-    const todayKey = new Date().toISOString().split('T')[0];
-    let entries: Array<{ date: string; preview: string }> = [];
-    
-    // Get entries from old format (dailyProgress.gratitudeEntry)
-    const oldEntries = Object.keys(appState.dailyProgress || {})
-      .filter(date => {
-        const entry = appState.dailyProgress[date]?.gratitudeEntry;
-        return entry?.trim() && entry !== 'COMPLETE' && date !== todayKey;
-      })
-      .map(date => ({
-        date,
-        preview: appState.dailyProgress[date].gratitudeEntry.split('|||')[0].trim(),
-      }));
-    
-    entries = [...oldEntries];
-    
-    // Add today's check-ins to entries (prefer check-ins over old format for today)
-    if (todayCheckIns.length > 0) {
-      const todayCheckInPreviews = todayCheckIns.map(checkIn => ({
-        date: todayKey,
+  // Get recent entries via async call to support audio/rich data
+  const [recentEntries, setRecentEntries] = useState<any[]>([]);
+
+  const loadRecentEntries = useCallback(async () => {
+    try {
+      const allCheckIns = await getAllCheckIns();
+
+      // Transform to display format
+      let entries = allCheckIns.map(checkIn => ({
+        id: checkIn.id,
+        date: checkIn.localDayKey,
         preview: checkIn.text,
+        text: checkIn.text,
+        audioUri: checkIn.audioUri,
+        createdAt: checkIn.createdAt,
       }));
-      entries = [...todayCheckInPreviews, ...entries];
-    } else if (appState.dailyProgress[todayKey]?.gratitudeEntry?.trim() && 
-               appState.dailyProgress[todayKey]?.gratitudeEntry !== 'COMPLETE') {
-      // Fallback to old format if no check-ins for today
-      entries.unshift({
-        date: todayKey,
-        preview: appState.dailyProgress[todayKey].gratitudeEntry.split('|||')[0].trim(),
-      });
+
+      // Sort by creation time (most recent first) and limit to 10
+      const sorted = entries.sort((a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      ).slice(0, 10);
+
+      setRecentEntries(sorted);
+    } catch (error) {
+      console.error('Error loading recent entries:', error);
     }
-    
-    // Filter by search text if provided
-    if (searchText.trim().length > 0) {
-      const searchLower = searchText.toLowerCase().trim();
-      entries = entries.filter(entry => 
-        entry.preview.toLowerCase().includes(searchLower) ||
-        entry.date.includes(searchLower)
-      );
-    }
-    
-    // Sort by date (most recent first) and limit to 10
-    return entries
-      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-      .slice(0, 10);
-  }, [appState.dailyProgress, hasEntries, todayCheckIns, searchText]);
+  }, [getAllCheckIns]);
+
+  // Load entries on mount and when updates likely occurred
+  useEffect(() => {
+    loadRecentEntries();
+  }, [loadRecentEntries, appState.dailyProgress, todayCheckIns]);
 
   // Animate streak ring on mount
   useEffect(() => {
@@ -216,20 +220,20 @@ export default function GratitudeJournalScreen({ navigation }: JournalMainScreen
       useNativeDriver: false,
       listener: (event: any) => {
         const offsetY = event.nativeEvent.contentOffset.y;
-        
+
         // Track scrolling state
         setIsScrolling(true);
-        
+
         // Clear existing timeout
         if (scrollTimeoutRef.current) {
           clearTimeout(scrollTimeoutRef.current);
         }
-        
+
         // Set timeout to detect when scrolling stops (slightly longer for smoother transitions)
         scrollTimeoutRef.current = setTimeout(() => {
           setIsScrolling(false);
         }, 200);
-        
+
         // Show/hide FAB based on scroll position
         if (offsetY > 180 && !showFAB) {
           setShowFAB(true);
@@ -249,7 +253,7 @@ export default function GratitudeJournalScreen({ navigation }: JournalMainScreen
       },
     }
   );
-  
+
   // Cleanup timeout on unmount
   useEffect(() => {
     return () => {
@@ -260,30 +264,52 @@ export default function GratitudeJournalScreen({ navigation }: JournalMainScreen
         clearTimeout(focusTimeoutRef.current);
         focusTimeoutRef.current = null;
       }
+      pulseAnim.stopAnimation();
+      recordButtonScale.stopAnimation();
     };
   }, []);
 
+  // Update animations based on recording state
   useEffect(() => {
-    isRecordingRef.current = isRecording;
-  }, [isRecording]);
+    if (isRecording) {
+      // Start animations
+      RNAnimated.loop(
+        RNAnimated.sequence([
+          RNAnimated.timing(pulseAnim, {
+            toValue: 0.3,
+            duration: 800,
+            useNativeDriver: true,
+          }),
+          RNAnimated.timing(pulseAnim, {
+            toValue: 1,
+            duration: 800,
+            useNativeDriver: true,
+          }),
+        ])
+      ).start();
 
-  useEffect(() => {
-    return () => {
-      if (recordingTimerRef.current) {
-        clearInterval(recordingTimerRef.current);
-        recordingTimerRef.current = null;
-      }
+      RNAnimated.loop(
+        RNAnimated.sequence([
+          RNAnimated.timing(recordButtonScale, {
+            toValue: 1.1,
+            duration: 800,
+            useNativeDriver: true,
+          }),
+          RNAnimated.timing(recordButtonScale, {
+            toValue: 1,
+            duration: 800,
+            useNativeDriver: true,
+          }),
+        ])
+      ).start();
+    } else {
+      // Stop animations
       pulseAnim.stopAnimation();
       recordButtonScale.stopAnimation();
       pulseAnim.setValue(1);
       recordButtonScale.setValue(1);
-      if (isRecordingRef.current) {
-        import('../utils/voiceRecording')
-          .then(({ cancelRecording }) => cancelRecording())
-          .catch(() => null);
-      }
-    };
-  }, []);
+    }
+  }, [isRecording]);
 
   // Get days of week for streak display
   const getDaysOfWeek = useMemo(() => {
@@ -309,103 +335,23 @@ export default function GratitudeJournalScreen({ navigation }: JournalMainScreen
   );
 
   const handleStartRecording = async () => {
-    try {
-      const { startRecording: startRec, requestMicrophonePermission } = await import('../utils/voiceRecording');
-
-      const hasPermission = await requestMicrophonePermission();
-
-      if (!hasPermission) {
-        Alert.alert('Microphone Access', 'Please enable microphone access to record voice journal entries.');
-        return;
-      }
-
-      await startRec();
-
-      setIsRecording(true);
-      recordingStartTime.current = Date.now();
-      setRecordingDuration(0);
-
-      // Start pulsing animation for REC indicator
-      RNAnimated.loop(
-        RNAnimated.sequence([
-          RNAnimated.timing(pulseAnim, {
-            toValue: 0.3,
-            duration: 800,
-            useNativeDriver: true,
-          }),
-          RNAnimated.timing(pulseAnim, {
-            toValue: 1,
-            duration: 800,
-            useNativeDriver: true,
-          }),
-        ])
-      ).start();
-
-      // Update duration every 500ms
-      recordingTimerRef.current = setInterval(() => {
-        const elapsed = Date.now() - recordingStartTime.current;
-        setRecordingDuration(elapsed);
-      }, 500);
-
-      RNAnimated.loop(
-        RNAnimated.sequence([
-          RNAnimated.timing(recordButtonScale, {
-            toValue: 1.1,
-            duration: 800,
-            useNativeDriver: true,
-          }),
-          RNAnimated.timing(recordButtonScale, {
-            toValue: 1,
-            duration: 800,
-            useNativeDriver: true,
-          }),
-        ])
-      ).start();
-    } catch (error) {
-      console.error('Error starting recording:', error);
-      Alert.alert('Error', 'Failed to start recording. Please try again.');
-    }
+    await startRecording();
   };
 
   const handleStopRecording = async () => {
-    try {
-      // Check minimum duration
-      const elapsed = Date.now() - recordingStartTime.current;
-      if (elapsed < MIN_RECORDING_DURATION) {
-        const remaining = Math.ceil((MIN_RECORDING_DURATION - elapsed) / 1000);
-        Alert.alert(
-          'Recording Too Short',
-          `Please record for at least 30 seconds. ${remaining} more seconds needed.`
-        );
-        return;
-      }
+    // Check minimum duration
+    if (recordingDuration < MIN_RECORDING_DURATION) {
+      const remaining = Math.ceil((MIN_RECORDING_DURATION - recordingDuration) / 1000);
+      Alert.alert(
+        'Recording Too Short',
+        `Please record for at least 30 seconds. ${remaining} more seconds needed.`
+      );
+      return;
+    }
 
-      // Clear the timer
-      if (recordingTimerRef.current) {
-        clearInterval(recordingTimerRef.current);
-        recordingTimerRef.current = null;
-      }
-
-      const { stopRecording } = await import('../utils/voiceRecording');
-      const uri = await stopRecording();
-      setIsRecording(false);
-      setRecordingDuration(0);
-      recordButtonScale.stopAnimation();
-      recordButtonScale.setValue(1);
-      pulseAnim.stopAnimation();
-      pulseAnim.setValue(1);
-
-      if (uri) {
-        await handleSaveRecording(uri);
-      }
-    } catch (error) {
-      console.error('Error stopping recording:', error);
-      setIsRecording(false);
-      setRecordingDuration(0);
-      if (recordingTimerRef.current) {
-        clearInterval(recordingTimerRef.current);
-        recordingTimerRef.current = null;
-      }
+    const uri = await stopRecording();
+    if (uri) {
+      await handleSaveRecording(uri);
     }
   };
 
@@ -415,11 +361,11 @@ export default function GratitudeJournalScreen({ navigation }: JournalMainScreen
       const text = `Voice journal (${duration}s): ${todayPrompt}`;
 
       // Save the journal entry
-      await addGratitudeCheckIn(text);
-      trackEvent('gratitude_check_in_completed', { 
-        method: 'voice', 
+      await addGratitudeCheckIn(text, uri);
+      trackEvent('gratitude_check_in_completed', {
+        method: 'voice',
         duration_seconds: duration,
-        check_in_count: checkInCount + 1 
+        check_in_count: checkInCount + 1
       });
 
       // Reload data to show the new entry
@@ -440,10 +386,10 @@ export default function GratitudeJournalScreen({ navigation }: JournalMainScreen
     try {
       // Save the journal entry
       await addGratitudeCheckIn(textEntry.trim());
-      trackEvent('gratitude_check_in_completed', { 
-        method: 'text', 
+      trackEvent('gratitude_check_in_completed', {
+        method: 'text',
         check_in_count: checkInCount + 1,
-        text_length: textEntry.trim().length 
+        text_length: textEntry.trim().length
       });
 
       // Reload data to show the new entry
@@ -513,9 +459,109 @@ export default function GratitudeJournalScreen({ navigation }: JournalMainScreen
     setCurrentPromptIndex(nextIndex);
   };
 
-  const handleEntryPress = (date: string) => {
-    // Could open a modal to view/edit entry
+  const handleEntryPress = (entry: any) => {
+    setSelectedEntry(entry);
+    setShowEntryModal(true);
   };
+
+  const handlePlayEntry = async (entry: any) => {
+    if (!entry.audioUri) return;
+
+    try {
+      // If pressing play on the same entry that's already playing, stop it
+      if (playingEntryId === entry.id) {
+        if (sound) {
+          await sound.stopAsync();
+          await sound.unloadAsync();
+        }
+        setSound(null);
+        setPlayingEntryId(null);
+        setIsPlaying(false);
+        return;
+      }
+
+      // If playing a different entry, unload previous
+      if (sound) {
+        await sound.unloadAsync();
+      }
+
+      const { sound: newSound } = await Audio.Sound.createAsync(
+        { uri: entry.audioUri },
+        { shouldPlay: true }
+      );
+
+      setSound(newSound);
+      setPlayingEntryId(entry.id);
+      setIsPlaying(true);
+
+      newSound.setOnPlaybackStatusUpdate((status) => {
+        if (status.isLoaded) {
+          setIsPlaying(status.isPlaying);
+          if (status.didJustFinish) {
+            setPlayingEntryId(null);
+            setIsPlaying(false);
+            newSound.unloadAsync();
+          }
+        }
+      });
+    } catch (error) {
+      console.error('Error playing inline sound:', error);
+      Alert.alert('Error', 'Could not play recording');
+    }
+  };
+
+  const playRecording = async () => {
+    if (!selectedEntry?.audioUri) return;
+
+    try {
+      if (sound) {
+        if (isPlaying) {
+          await sound.pauseAsync();
+          setIsPlaying(false);
+        } else {
+          await sound.playAsync();
+          setIsPlaying(true);
+        }
+      } else {
+        const { sound: newSound } = await Audio.Sound.createAsync(
+          { uri: selectedEntry.audioUri },
+          { shouldPlay: true }
+        );
+        setSound(newSound);
+        setIsPlaying(true);
+
+        newSound.setOnPlaybackStatusUpdate((status) => {
+          if (status.isLoaded) {
+            setIsPlaying(status.isPlaying);
+            if (status.didJustFinish) {
+              setIsPlaying(false);
+              newSound.setPositionAsync(0);
+            }
+          }
+        });
+      }
+    } catch (error) {
+      console.error('Error playing sound:', error);
+      Alert.alert('Error', 'Could not play recording');
+    }
+  };
+
+  // Unload sound when modal closes or entry changes
+  useEffect(() => {
+    return () => {
+      if (sound) {
+        sound.unloadAsync();
+      }
+    };
+  }, [sound]);
+
+  useEffect(() => {
+    if (!showEntryModal && sound) {
+      sound.unloadAsync();
+      setSound(null);
+      setIsPlaying(false);
+    }
+  }, [showEntryModal]);
 
   const handleMarkYesterdayComplete = async () => {
     await markYesterdayComplete();
@@ -537,10 +583,35 @@ export default function GratitudeJournalScreen({ navigation }: JournalMainScreen
     setIncompleteDay(null);
   };
 
-  const fabTranslateY = fabOpacity.interpolate({
-    inputRange: [0, 1],
-    outputRange: [100, 0],
-  });
+
+
+
+
+  const handleDeleteEntry = async (entry: any) => {
+    lightHaptic();
+    Alert.alert(
+      "Delete Entry",
+      "Are you sure you want to delete this journal entry?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await deleteGratitudeCheckIn(entry.id);
+              successHaptic();
+              // Reload data
+              await loadRecentEntries();
+              await loadTodayData();
+            } catch (error) {
+              Alert.alert("Error", "Failed to delete entry");
+            }
+          }
+        }
+      ]
+    );
+  };
 
   return (
     <Screen
@@ -584,332 +655,311 @@ export default function GratitudeJournalScreen({ navigation }: JournalMainScreen
         scrollEventThrottle={16}
         ListHeaderComponent={
           <>
-        {/* Loading State */}
-        {isLoading && (
-          <View style={styles.loadingContainer}>
-            <SkeletonCard style={{ marginBottom: tokens.spacing.lg }} />
-            <SkeletonCard style={{ marginBottom: tokens.spacing.lg }} />
-            <SkeletonLoader width="100%" height={200} borderRadius={tokens.radii.lg} />
-          </View>
-        )}
-
-        {!isLoading && (
-          <>
-            {/* PRIMARY CTA - Modern, Focused Journal Interface */}
-            <GlassCard style={styles.primaryCTACard}>
-              {/* Header with prompt */}
-              <View style={styles.promptHeader}>
-                <View style={styles.promptTopRow}>
-                  <View style={styles.promptEmojiContainer}>
-                    <Ionicons name="sparkles" size={22} color={tokens.colors.accent} />
-                  </View>
-                  <TouchableOpacity
-                    onPress={handleChangePrompt}
-                    style={styles.changePromptLink}
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    accessibilityLabel="Change prompt"
-                    accessibilityRole="button"
-                  >
-                    <Ionicons name="sync" size={16} color={tokens.colors.accent} />
-                    <Text style={[styles.changePromptText, { color: tokens.colors.accent }]}>
-                      Change prompt
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-                <View style={styles.promptCtaCard}>
-                  <Text style={[styles.primaryCTAPrompt, { color: tokens.colors.textPrimary }]}>
-                    {todayPrompt}
-                  </Text>
-                  <Text style={[styles.promptSubtext, { color: tokens.colors.textSecondary }]}>
-                    Share what you are grateful for and why it matters today.
-                  </Text>
-                </View>
-                {isTodayComplete && (
-                  <View style={styles.completeCheckBadge}>
-                    <Ionicons name="checkmark-circle" size={16} color={tokens.colors.success} />
-                    <Text style={[styles.completeCheckText, { color: tokens.colors.success }]}>
-                      Done for today
-                    </Text>
-                  </View>
-                )}
+            {/* Loading State */}
+            {isLoading && (
+              <View style={styles.loadingContainer}>
+                <SkeletonCard style={{ marginBottom: tokens.spacing.lg }} />
+                <SkeletonCard style={{ marginBottom: tokens.spacing.lg }} />
+                <SkeletonLoader width="100%" height={200} borderRadius={tokens.radii.lg} />
               </View>
+            )}
 
-              {/* Voice Recording Interface - Simplified, Bigger Hit Target */}
-              {!showTextInput && (
-                <View style={styles.recordingInterface}>
-                  {/* Recording Indicator */}
-                  {isRecording && (
-                    <RNAnimated.View style={[styles.recIndicator, { opacity: pulseAnim }]}>
-                      <View style={styles.recDot} />
-                      <Text style={styles.recText}>Recording</Text>
-                    </RNAnimated.View>
-                  )}
-                  <TouchableOpacity
-                    onPress={isRecording ? handleStopRecording : handleStartRecording}
-                    onPressIn={() => {
-                      RNAnimated.spring(recordButtonScale, {
-                        toValue: 0.95,
-                        useNativeDriver: true,
-                      }).start();
-                    }}
-                    onPressOut={() => {
-                      if (!isRecording) {
-                        RNAnimated.spring(recordButtonScale, {
-                          toValue: 1,
-                          useNativeDriver: true,
-                        }).start();
-                      }
-                    }}
-                    style={styles.recordButton}
-                    activeOpacity={0.9}
-                  >
-                    <RNAnimated.View
-                      style={[
-                        styles.recordButtonInner,
-                        {
-                          backgroundColor: isRecording ? tokens.colors.error : tokens.colors.accent,
-                          transform: [{ scale: recordButtonScale }],
-                        },
-                      ]}
-                    >
-                      <Ionicons
-                        name={isRecording ? 'stop' : 'mic'}
-                        size={36}
-                        color="#FFFFFF"
-                      />
-                    </RNAnimated.View>
-                  </TouchableOpacity>
-                  <Text style={[styles.recordButtonLabel, { color: tokens.colors.textPrimary }]}>
-                    {isRecording
-                      ? `Recording - ${Math.floor(recordingDuration / 1000)}s`
-                      : 'Tap to record'}
-                  </Text>
-                  <Text style={[styles.recordButtonHint, { color: tokens.colors.textSecondary }]}>
-                    {isRecording
-                      ? 'Minimum 30 seconds'
-                      : 'Voice note - 30s minimum'}
-                  </Text>
-
-                  {/* Divider */}
-                  <View style={styles.modeDivider}>
-                    <View style={[styles.modeDividerLine, { backgroundColor: tokens.colors.border }]} />
-                    <Text style={[styles.modeDividerText, { color: tokens.colors.textSecondary }]}>or</Text>
-                    <View style={[styles.modeDividerLine, { backgroundColor: tokens.colors.border }]} />
-                  </View>
-
-                  {/* Type Instead Button - More Prominent */}
-                  <TouchableOpacity
-                    onPress={() => setShowTextInput(true)}
-                    style={[
-                      styles.textModeButton,
-                      {
-                        borderColor: tokens.colors.border,
-                        backgroundColor: `${tokens.colors.accent}08`,
-                      },
-                    ]}
-                    activeOpacity={0.7}
-                  >
-                    <Ionicons name="create-outline" size={20} color={tokens.colors.accent} />
-                    <Text style={[styles.textModeButtonText, { color: tokens.colors.textPrimary }]}>
-                      Type instead
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-
-              {/* Text Input Interface - Premium, Elevated Design */}
-              {showTextInput && (
-                <KeyboardAvoidingView
-                  behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-                  keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
-                >
-                  <View style={styles.textInputInterface}>
-                    {/* Enhanced Text Input Container */}
-                    <View style={[
-                      styles.textInputContainer,
-                      {
-                        backgroundColor: tokens.colors.surface,
-                        borderColor: isKeyboardVisible 
-                          ? tokens.colors.accent 
-                          : tokens.colors.borderSubtle,
-                      },
-                    ]}>
-                      <TextInput
-                        ref={textInputRef}
-                        style={[
-                          styles.textInput,
-                          Platform.OS === 'web' && styles.textInputWeb,
-                          {
-                            color: tokens.colors.textPrimary,
-                          },
-                        ]}
-                        placeholder="Write your thoughts here..."
-                        placeholderTextColor={tokens.colors.textTertiary}
-                        value={textEntry}
-                        onChangeText={setTextEntry}
-                        multiline
-                        autoFocus
-                        autoCorrect={Platform.OS !== 'web'}
-                        spellCheck={Platform.OS !== 'web'}
-                        textAlignVertical="top"
-                        onFocus={() => setIsKeyboardVisible(true)}
-                        onBlur={() => setIsKeyboardVisible(false)}
-                        returnKeyType="default"
-                        blurOnSubmit={false}
-                      />
-                      {/* Character count badge */}
-                      {textEntry.length > 0 && (
-                        <View style={[
-                          styles.characterCountBadge,
-                          { backgroundColor: `${tokens.colors.accent}15` },
-                        ]}>
-                          <Text style={[styles.characterCountText, { color: tokens.colors.accent }]}>
-                            {textEntry.length}
-                          </Text>
-                        </View>
-                      )}
-                    </View>
-
-                    {/* Action Buttons - Premium Layout */}
-                    <View style={styles.textInputActions}>
+            {!isLoading && (
+              <>
+                {/* PRIMARY CTA - Modern, Focused Journal Interface */}
+                <GlassCard style={styles.primaryCTACard}>
+                  {/* Header with prompt */}
+                  <View style={styles.promptHeader}>
+                    <View style={styles.promptTopRow}>
+                      <View style={styles.promptEmojiContainer}>
+                        <Ionicons name="sparkles" size={22} color={tokens.colors.accent} />
+                      </View>
                       <TouchableOpacity
-                        onPress={() => {
-                          setShowTextInput(false);
-                          setTextEntry('');
-                          Keyboard.dismiss();
-                        }}
-                        style={[
-                          styles.textInputCancelButton,
-                          { borderColor: tokens.colors.border },
-                        ]}
-                        activeOpacity={0.7}
+                        onPress={handleChangePrompt}
+                        style={styles.changePromptLink}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        accessibilityLabel="Change prompt"
+                        accessibilityRole="button"
                       >
-                        <Text style={[styles.textInputCancelText, { color: tokens.colors.textSecondary }]}>
-                          Cancel
+                        <Ionicons name="sync" size={16} color={tokens.colors.accent} />
+                        <Text style={[styles.changePromptText, { color: tokens.colors.accent }]}>
+                          Change prompt
                         </Text>
                       </TouchableOpacity>
+                    </View>
+                    <View style={styles.promptCtaCard}>
+                      <Text style={[styles.primaryCTAPrompt, { color: tokens.colors.textPrimary }]}>
+                        {todayPrompt}
+                      </Text>
+                      <Text style={[styles.promptSubtext, { color: tokens.colors.textSecondary }]}>
+                        Share what you are grateful for and why it matters today.
+                      </Text>
+                    </View>
+                    {isTodayComplete && (
+                      <View style={styles.completeCheckBadge}>
+                        <Ionicons name="checkmark-circle" size={16} color={tokens.colors.success} />
+                        <Text style={[styles.completeCheckText, { color: tokens.colors.success }]}>
+                          Done for today
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+
+                  {/* Voice Recording Interface - Simplified, Bigger Hit Target */}
+                  {!showTextInput && (
+                    <View style={styles.recordingInterface}>
+                      {/* Recording Indicator */}
+                      {isRecording && (
+                        <RNAnimated.View style={[styles.recIndicator, { opacity: pulseAnim }]}>
+                          <View style={styles.recDot} />
+                          <Text style={styles.recText}>Recording</Text>
+                        </RNAnimated.View>
+                      )}
                       <TouchableOpacity
-                        onPress={() => {
-                          if (textEntry.trim()) {
-                            handleTextSubmit();
-                            Keyboard.dismiss();
+                        onPress={isRecording ? handleStopRecording : handleStartRecording}
+                        onPressIn={() => {
+                          RNAnimated.spring(recordButtonScale, {
+                            toValue: 0.95,
+                            useNativeDriver: true,
+                          }).start();
+                        }}
+                        onPressOut={() => {
+                          if (!isRecording) {
+                            RNAnimated.spring(recordButtonScale, {
+                              toValue: 1,
+                              useNativeDriver: true,
+                            }).start();
                           }
                         }}
-                        disabled={!textEntry.trim()}
-                        activeOpacity={0.7}
-                        style={[
-                          styles.textInputSaveButton,
-                          { borderColor: !textEntry.trim() ? tokens.colors.border : tokens.colors.accent },
-                          !textEntry.trim() && styles.textInputSaveButtonDisabled,
-                        ]}
+                        style={styles.recordButton}
+                        activeOpacity={0.9}
                       >
-                        <LinearGradient
-                          colors={
-                            !textEntry.trim()
-                              ? ['rgba(255, 255, 255, 0)', 'rgba(255, 255, 255, 0)']
-                              : ['rgba(139, 125, 216, 1)', 'rgba(199, 125, 255, 1)']
-                          }
-                          style={styles.textInputSaveButtonGradient}
-                          start={{ x: 0, y: 0 }}
-                          end={{ x: 1, y: 1 }}
+                        <RNAnimated.View
+                          style={[
+                            styles.recordButtonInner,
+                            {
+                              backgroundColor: isRecording ? tokens.colors.error : tokens.colors.accent,
+                              transform: [{ scale: recordButtonScale }],
+                            },
+                          ]}
                         >
-                          <Text style={[
-                            styles.textInputSaveButtonText,
-                            { color: !textEntry.trim() ? tokens.colors.textTertiary : '#FFFFFF' }
-                          ]}>
-                            {isTodayComplete ? "Add Another" : "Save Entry"}
-                          </Text>
-                        </LinearGradient>
+                          <Ionicons
+                            name={isRecording ? 'stop' : 'mic'}
+                            size={36}
+                            color="#FFFFFF"
+                          />
+                        </RNAnimated.View>
+                      </TouchableOpacity>
+                      <Text style={[styles.recordButtonLabel, { color: tokens.colors.textPrimary }]}>
+                        {isRecording
+                          ? `Recording - ${Math.floor(recordingDuration / 1000)}s`
+                          : 'Tap to record'}
+                      </Text>
+                      <Text style={[styles.recordButtonHint, { color: tokens.colors.textSecondary }]}>
+                        {isRecording
+                          ? 'Minimum 30 seconds'
+                          : 'Voice note - 30s minimum'}
+                      </Text>
+
+
+                      {/* Divider */}
+                      <View style={styles.modeDivider}>
+                        <View style={[styles.modeDividerLine, { backgroundColor: tokens.colors.border }]} />
+                        <Text style={[styles.modeDividerText, { color: tokens.colors.textSecondary }]}>or</Text>
+                        <View style={[styles.modeDividerLine, { backgroundColor: tokens.colors.border }]} />
+                      </View>
+
+                      {/* Type Instead Button - More Prominent */}
+                      <TouchableOpacity
+                        onPress={() => setShowTextInput(true)}
+                        style={[
+                          styles.textModeButton,
+                          {
+                            borderColor: tokens.colors.border,
+                            backgroundColor: `${tokens.colors.accent}08`,
+                          },
+                        ]}
+                        activeOpacity={0.7}
+                      >
+                        <Ionicons name="create-outline" size={20} color={tokens.colors.accent} />
+                        <Text style={[styles.textModeButtonText, { color: tokens.colors.textPrimary }]}>
+                          Type instead
+                        </Text>
                       </TouchableOpacity>
                     </View>
-                  </View>
-                </KeyboardAvoidingView>
-              )}
-            </GlassCard>
+                  )}
 
-            {/* Streak / Calendar (SECONDARY - Reduced height ~25%) */}
-            <SectionCard style={styles.streakCard}>
-              <View style={styles.streakHeaderCompact}>
-                <Animated.View style={{ transform: [{ scale: streakScale }] }}>
-                  <View style={styles.streakNumberContainerCompact}>
-                    <Text style={[styles.streakNumberCompact, { color: tokens.colors.accent }]}>
-                      {appState.currentStreak}
-                    </Text>
-                  </View>
-                </Animated.View>
-                <View style={styles.streakInfoCompact}>
-                  <Text style={[styles.streakLabelCompact, { color: tokens.colors.textSecondary }]}>
-                    Day streak
-                  </Text>
-                </View>
-              </View>
-              <View style={styles.daysContainerCompact}>
-                {getDaysOfWeek.map((day, index) => (
-                  <View key={index} style={styles.dayItemCompact}>
-                    <View
-                      style={[
-                        styles.dayCircleCompact,
-                        day.isToday && { backgroundColor: `${tokens.colors.primary}20` },
-                        day.completed && { backgroundColor: tokens.colors.primary },
-                      ]}
+                  {/* Text Input Interface - Premium, Elevated Design */}
+                  {showTextInput && (
+                    <KeyboardAvoidingView
+                      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
                     >
-                      {day.completed && (
-                        <Ionicons name="checkmark" size={10} color="#FFFFFF" />
-                      )}
+                      <View style={styles.textInputInterface}>
+                        {/* Enhanced Text Input Container */}
+                        <View style={[
+                          styles.textInputContainer,
+                          {
+                            backgroundColor: tokens.colors.surface,
+                            borderColor: isKeyboardVisible
+                              ? tokens.colors.accent
+                              : tokens.colors.borderSubtle,
+                          },
+                        ]}>
+                          <TextInput
+                            ref={textInputRef}
+                            style={[
+                              styles.textInput,
+                              Platform.OS === 'web' && styles.textInputWeb,
+                              {
+                                color: tokens.colors.textPrimary,
+                              },
+                            ]}
+                            placeholder="Write your thoughts here..."
+                            placeholderTextColor={tokens.colors.textTertiary}
+                            value={textEntry}
+                            onChangeText={setTextEntry}
+                            multiline
+                            autoFocus
+                            autoCorrect={Platform.OS !== 'web'}
+                            spellCheck={Platform.OS !== 'web'}
+                            textAlignVertical="top"
+                            onFocus={() => setIsKeyboardVisible(true)}
+                            onBlur={() => setIsKeyboardVisible(false)}
+                            returnKeyType="default"
+                            blurOnSubmit={false}
+                          />
+                          {/* Character count badge */}
+                          {textEntry.length > 0 && (
+                            <View style={[
+                              styles.characterCountBadge,
+                              { backgroundColor: `${tokens.colors.accent}15` },
+                            ]}>
+                              <Text style={[styles.characterCountText, { color: tokens.colors.accent }]}>
+                                {textEntry.length}
+                              </Text>
+                            </View>
+                          )}
+                        </View>
+
+                        {/* Action Buttons - Premium Layout */}
+                        <View style={styles.textInputActions}>
+                          <TouchableOpacity
+                            onPress={() => {
+                              setShowTextInput(false);
+                              setTextEntry('');
+                              Keyboard.dismiss();
+                            }}
+                            style={[
+                              styles.textInputCancelButton,
+                              { borderColor: tokens.colors.border },
+                            ]}
+                            activeOpacity={0.7}
+                          >
+                            <Text style={[styles.textInputCancelText, { color: tokens.colors.textSecondary }]}>
+                              Cancel
+                            </Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            onPress={() => {
+                              if (textEntry.trim()) {
+                                handleTextSubmit();
+                                Keyboard.dismiss();
+                              }
+                            }}
+                            disabled={!textEntry.trim()}
+                            activeOpacity={0.7}
+                            style={[
+                              styles.textInputSaveButton,
+                              { borderColor: !textEntry.trim() ? tokens.colors.border : tokens.colors.accent },
+                              !textEntry.trim() && styles.textInputSaveButtonDisabled,
+                            ]}
+                          >
+                            <LinearGradient
+                              colors={
+                                !textEntry.trim()
+                                  ? ['rgba(255, 255, 255, 0)', 'rgba(255, 255, 255, 0)']
+                                  : ['rgba(139, 125, 216, 1)', 'rgba(199, 125, 255, 1)']
+                              }
+                              style={styles.textInputSaveButtonGradient}
+                              start={{ x: 0, y: 0 }}
+                              end={{ x: 1, y: 1 }}
+                            >
+                              <Text style={[
+                                styles.textInputSaveButtonText,
+                                { color: !textEntry.trim() ? tokens.colors.textTertiary : '#FFFFFF' }
+                              ]}>
+                                {isTodayComplete ? "Add Another" : "Save Entry"}
+                              </Text>
+                            </LinearGradient>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    </KeyboardAvoidingView>
+                  )}
+                </GlassCard>
+
+                {/* Streak / Calendar (SECONDARY - Reduced height ~25%) */}
+                <SectionCard style={styles.streakCard}>
+                  <View style={styles.streakHeaderCompact}>
+                    <Animated.View style={{ transform: [{ scale: streakScale }] }}>
+                      <View style={styles.streakNumberContainerCompact}>
+                        <Text style={[styles.streakNumberCompact, { color: tokens.colors.accent }]}>
+                          {appState.currentStreak}
+                        </Text>
+                      </View>
+                    </Animated.View>
+                    <View style={styles.streakInfoCompact}>
+                      <Text style={[styles.streakLabelCompact, { color: tokens.colors.textSecondary }]}>
+                        Day streak
+                      </Text>
                     </View>
-                    <Text
-                      style={[
-                        styles.dayLabelCompact,
-                        { color: tokens.colors.textSecondary },
-                        day.isToday && { color: tokens.colors.primary, fontWeight: '600' },
-                      ]}
-                    >
-                      {day.label}
-                    </Text>
                   </View>
-                ))}
-              </View>
-            </SectionCard>
+                  <View style={styles.daysContainerCompact}>
+                    {getDaysOfWeek.map((day, index) => (
+                      <View key={index} style={styles.dayItemCompact}>
+                        <View
+                          style={[
+                            styles.dayCircleCompact,
+                            day.isToday && { backgroundColor: `${tokens.colors.primary}20` },
+                            day.completed && { backgroundColor: tokens.colors.primary },
+                          ]}
+                        >
+                          {day.completed && (
+                            <Ionicons name="checkmark" size={10} color="#FFFFFF" />
+                          )}
+                        </View>
+                        <Text
+                          style={[
+                            styles.dayLabelCompact,
+                            { color: tokens.colors.textSecondary },
+                            day.isToday && { color: tokens.colors.primary, fontWeight: '600' },
+                          ]}
+                        >
+                          {day.label}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                </SectionCard>
 
-            {/* Search Bar - Only show if entries exist */}
-            {hasEntries && (
-              <View style={styles.searchContainer}>
-                <Ionicons name="search" size={18} color={tokens.colors.textSecondary} />
-                <TextInput
-                  style={[styles.searchInput, { color: tokens.colors.textPrimary }]}
-                  placeholder={`Search in ${entryCount} ${entryCount === 1 ? 'entry' : 'entries'}`}
-                  placeholderTextColor={tokens.colors.textSecondary}
-                  value={searchText}
-                  onChangeText={setSearchText}
-                  accessibilityLabel="Search journal entries"
-                />
-                {searchText.length > 0 && (
-                  <TouchableOpacity
-                    onPress={() => setSearchText('')}
-                    accessibilityLabel="Clear search"
-                    accessibilityRole="button"
-                  >
-                    <Ionicons name="close-circle" size={18} color={tokens.colors.textSecondary} />
-                  </TouchableOpacity>
+                {/* Entries List or Empty State */}
+                {hasEntries ? (
+                  <JournalEntriesList
+                    entries={recentEntries}
+                    onEntryPress={handleEntryPress}
+                    onEntryLongPress={handleDeleteEntry}
+                    playingEntryId={playingEntryId}
+                    onPlayEntry={handlePlayEntry}
+                  />
+                ) : (
+                  <JournalEmptyState
+                    onStartWriting={handleWrite}
+                    onPromptSelect={handlePromptSelect}
+                  />
                 )}
-              </View>
+              </>
             )}
-
-            {/* Entries List or Empty State */}
-            {hasEntries ? (
-              <JournalEntriesList
-                entries={recentEntries}
-                onEntryPress={handleEntryPress}
-                searchText={searchText}
-              />
-            ) : (
-              <JournalEmptyState
-                onStartWriting={handleWrite}
-                onPromptSelect={handlePromptSelect}
-              />
-            )}
-          </>
-        )}
           </>
         }
       />
@@ -931,6 +981,55 @@ export default function GratitudeJournalScreen({ navigation }: JournalMainScreen
         onRestartChallenge={handleRestartChallenge}
         onKeepGoing={handleKeepGoing}
       />
+
+      <Modal
+        visible={showEntryModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowEntryModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Journal Entry</Text>
+              <TouchableOpacity onPress={() => setShowEntryModal(false)}>
+                <Ionicons name="close" size={24} color={tokens.colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.modalBody}>
+              <Text style={styles.modalDate}>
+                {selectedEntry && new Date(selectedEntry.date).toLocaleDateString(undefined, {
+                  weekday: 'long',
+                  year: 'numeric',
+                  month: 'long',
+                  day: 'numeric'
+                })}
+              </Text>
+
+              <Text style={styles.modalText}>
+                {selectedEntry?.text || selectedEntry?.preview}
+              </Text>
+
+              {selectedEntry?.audioUri && (
+                <TouchableOpacity
+                  style={styles.playButton}
+                  onPress={playRecording}
+                >
+                  <Ionicons
+                    name={isPlaying ? "pause-circle" : "play-circle"}
+                    size={48}
+                    color={tokens.colors.accent}
+                  />
+                  <Text style={styles.playButtonText}>
+                    {isPlaying ? "Pause Recording" : "Play Recording"}
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </Screen>
   );
 }
@@ -1546,6 +1645,59 @@ const styles = StyleSheet.create({
   dayLabelCompact: {
     ...tokens.typography.small,
     fontSize: 10,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: tokens.spacing.lg,
+  },
+  modalContent: {
+    width: '100%',
+    maxHeight: '80%',
+    backgroundColor: tokens.colors.surface,
+    borderRadius: tokens.radii.lg,
+    padding: tokens.spacing.xl,
+    ...tokens.shadows.card,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: tokens.spacing.lg,
+  },
+  modalTitle: {
+    ...tokens.typography.h3,
+    color: tokens.colors.textPrimary,
+  },
+  modalBody: {
+    maxHeight: 400,
+  },
+  modalDate: {
+    ...tokens.typography.bodyBold,
+    color: tokens.colors.accent,
+    marginBottom: tokens.spacing.md,
+  },
+  modalText: {
+    ...tokens.typography.body,
+    color: tokens.colors.textPrimary,
+    lineHeight: 24,
+    marginBottom: tokens.spacing.xl,
+  },
+  playButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: tokens.spacing.md,
+    backgroundColor: tokens.colors.surfaceSecondary,
+    padding: tokens.spacing.lg,
+    borderRadius: tokens.radii.md,
+    marginTop: tokens.spacing.md,
+  },
+  playButtonText: {
+    ...tokens.typography.bodyBold,
+    color: tokens.colors.accent,
   },
 });
 

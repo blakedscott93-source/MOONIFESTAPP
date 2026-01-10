@@ -8,14 +8,31 @@ export const OfflineIndicator: React.FC = () => {
   const [isOnline, setIsOnline] = useState(true);
   const [queueCount, setQueueCount] = useState(0);
   const slideAnim = React.useRef(new Animated.Value(-100)).current;
-  const hideTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
+  const hideTimeoutRef = React.useRef<any>(null);
+  const isFirstLoad = React.useRef(true);
 
   useEffect(() => {
     // Skip on web - network detection not critical for web
     if (Platform.OS === 'web') return;
-    
+
     // Subscribe to network changes
     const unsubscribe = subscribeToNetworkState(async (connected) => {
+      // Prevent initial mount from triggering "Back Online"
+      if (isFirstLoad.current) {
+        setIsOnline(connected);
+        isFirstLoad.current = false;
+        // Only trigger offline animation if we start offline
+        if (!connected) {
+          Animated.spring(slideAnim, {
+            toValue: 0,
+            tension: 50,
+            friction: 8,
+            useNativeDriver: true,
+          }).start();
+        }
+        return;
+      }
+
       setIsOnline(connected);
 
       if (!connected) {
@@ -88,8 +105,8 @@ export const OfflineIndicator: React.FC = () => {
         {isOnline
           ? 'Back Online'
           : queueCount > 0
-          ? `Offline • ${queueCount} pending`
-          : 'Offline'}
+            ? `Offline • ${queueCount} pending`
+            : 'Offline'}
       </Text>
     </Animated.View>
   );

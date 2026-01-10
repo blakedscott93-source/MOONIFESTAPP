@@ -106,7 +106,7 @@ export default function ToolsScreen({ navigation }: ToolsScreenProps) {
             <View style={styles.infoContent}>
               <Text style={styles.infoTitle}>Premium Features</Text>
               <Text style={styles.infoText}>
-                Unlock unlimited meditations, vision boards, and community access with Moonifest Premium
+                Unlock unlimited meditations, vision boards, and community access with Vortex Premium
               </Text>
             </View>
           </View>

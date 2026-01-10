@@ -66,7 +66,7 @@ export default function SavedAffirmationsScreen({ navigation }: SavedAffirmation
     import('../utils/sharing').then(({ shareText }) => {
       shareText({
         title: 'My Saved Affirmation',
-        message: `✨ ${affirmation.text}\n\nSaved from Moonifest`,
+        message: `✨ ${affirmation.text}\n\nSaved from Vortex`,
       });
     });
   };

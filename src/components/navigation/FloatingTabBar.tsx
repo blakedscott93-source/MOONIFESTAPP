@@ -105,7 +105,7 @@ export const FloatingTabBar: React.FC<FloatingTabBarProps> = ({
 
   // Plus button press animation
   const plusButtonScale = React.useRef(new RNAnimated.Value(1)).current;
-  
+
   const handleTasksPress = () => {
     lightHaptic();
     RNAnimated.sequence([
@@ -153,7 +153,7 @@ export const FloatingTabBar: React.FC<FloatingTabBarProps> = ({
     setPillWidth(width);
     setPillHeight(height);
   };
-  
+
   /**
    * Calculate active pill position using reanimated
    * 
@@ -191,7 +191,7 @@ export const FloatingTabBar: React.FC<FloatingTabBarProps> = ({
       const highlightWidth = Math.max(50, tabWidth - (HIGHLIGHT_HORIZONTAL_INSET * 2));
       // Position highlight (no padding offset since tabs fill full width)
       const translateX = state.index * tabWidth + HIGHLIGHT_HORIZONTAL_INSET;
-      
+
       if (reducedMotion) {
         // Snap without animation for reduced motion
         highlightX.value = translateX;
@@ -212,7 +212,7 @@ export const FloatingTabBar: React.FC<FloatingTabBarProps> = ({
       beamOffset.value = 0;
       return;
     }
-    
+
     // Calculate perimeter length for rounded rectangle
     // Perimeter = 2 * (width + height) - 8 * radius + 2 * π * radius
     const outerWidth = pillWidth + (BORDER_PADDING * 2);
@@ -221,7 +221,7 @@ export const FloatingTabBar: React.FC<FloatingTabBarProps> = ({
     const perimeter = outerWidth > 0 && outerHeight > 0
       ? 2 * (outerWidth + outerHeight) - 8 * radius + 2 * Math.PI * radius
       : 1000; // Fallback
-    
+
     beamOffset.value = withRepeat(
       withTiming(perimeter, {
         duration: BEAM_DURATION,
@@ -240,10 +240,10 @@ export const FloatingTabBar: React.FC<FloatingTabBarProps> = ({
     const perimeter = outerWidth > 0 && outerHeight > 0
       ? 2 * (outerWidth + outerHeight) - 8 * radius + 2 * Math.PI * radius
       : 1000;
-    
+
     const dashArray = perimeter * BEAM_SEGMENT_LENGTH;
     const dashGap = perimeter * (1 - BEAM_SEGMENT_LENGTH);
-    
+
     return {
       strokeDasharray: `${dashArray} ${dashGap}`,
       strokeDashoffset: beamOffset.value,
@@ -260,7 +260,7 @@ export const FloatingTabBar: React.FC<FloatingTabBarProps> = ({
       // Use Math.max to prevent negative width on very small screens
       // Reference: Highlight fits perfectly around tab content (snug fit)
       const highlightWidth = Math.max(50, tabWidth - (HIGHLIGHT_HORIZONTAL_INSET * 2));
-      
+
       return {
         width: highlightWidth,
         // Height is controlled by top/bottom insets in the component style
@@ -278,42 +278,42 @@ export const FloatingTabBar: React.FC<FloatingTabBarProps> = ({
   // Use theme-aware glass colors
   const glassBg = theme.glass.overlay;
   const glassBorder = theme.glass.border;
-  const indicatorBg = isDark 
-    ? 'rgba(255, 255, 255, 0.15)' 
+  const indicatorBg = isDark
+    ? 'rgba(255, 255, 255, 0.15)'
     : 'rgba(0, 0, 0, 0.06)';
   const borderMaskBg = colors.bg; // Use theme background color
-  
+
   // Rainbow spectrum - more saturated in dark mode
   const rainbowSpectrum = isDark ? RAINBOW_SPECTRUM_DARK : RAINBOW_SPECTRUM_LIGHT;
   const beamStops = isDark
     ? [
-        <Stop key="dark-0" offset="0%" stopColor="rgba(255, 255, 255, 0)" />,
-        <Stop key="dark-20" offset="20%" stopColor="rgba(255, 255, 255, 0.40)" />,
-        <Stop key="dark-50" offset="50%" stopColor="rgba(255, 255, 255, 0.60)" />,
-        <Stop key="dark-80" offset="80%" stopColor="rgba(255, 255, 255, 0.40)" />,
-        <Stop key="dark-100" offset="100%" stopColor="rgba(255, 255, 255, 0)" />,
-      ]
+      <Stop key="dark-0" offset="0%" stopColor="rgba(255, 255, 255, 0)" />,
+      <Stop key="dark-20" offset="20%" stopColor="rgba(255, 255, 255, 0.40)" />,
+      <Stop key="dark-50" offset="50%" stopColor="rgba(255, 255, 255, 0.60)" />,
+      <Stop key="dark-80" offset="80%" stopColor="rgba(255, 255, 255, 0.40)" />,
+      <Stop key="dark-100" offset="100%" stopColor="rgba(255, 255, 255, 0)" />,
+    ]
     : [
-        <Stop key="light-0" offset="0%" stopColor="rgba(124, 58, 237, 0)" />,
-        <Stop key="light-20" offset="20%" stopColor="rgba(124, 58, 237, 0.30)" />,
-        <Stop key="light-50" offset="50%" stopColor="rgba(124, 58, 237, 0.45)" />,
-        <Stop key="light-80" offset="80%" stopColor="rgba(124, 58, 237, 0.30)" />,
-        <Stop key="light-100" offset="100%" stopColor="rgba(124, 58, 237, 0)" />,
-      ];
-  
+      <Stop key="light-0" offset="0%" stopColor="rgba(124, 58, 237, 0)" />,
+      <Stop key="light-20" offset="20%" stopColor="rgba(124, 58, 237, 0.30)" />,
+      <Stop key="light-50" offset="50%" stopColor="rgba(124, 58, 237, 0.45)" />,
+      <Stop key="light-80" offset="80%" stopColor="rgba(124, 58, 237, 0.30)" />,
+      <Stop key="light-100" offset="100%" stopColor="rgba(124, 58, 237, 0)" />,
+    ];
+
   // Outer glow colors for dark mode (very subtle rainbow echo)
   const outerGlowColors = isDark
     ? [
-        'rgba(255, 100, 100, 0.06)',  // Very subtle red glow
-        'rgba(255, 140, 100, 0.08)',  // Very subtle orange glow
-        'rgba(255, 210, 100, 0.09)',  // Very subtle yellow glow
-        'rgba(140, 255, 140, 0.08)',  // Very subtle green glow
-        'rgba(100, 255, 255, 0.09)',  // Very subtle cyan glow
-        'rgba(100, 140, 255, 0.08)',  // Very subtle blue glow
-        'rgba(140, 100, 255, 0.06)',  // Very subtle purple glow
-        'rgba(255, 100, 190, 0.08)',  // Very subtle pink glow
-        'rgba(255, 100, 100, 0.06)',  // Loop back
-      ]
+      'rgba(255, 100, 100, 0.06)',  // Very subtle red glow
+      'rgba(255, 140, 100, 0.08)',  // Very subtle orange glow
+      'rgba(255, 210, 100, 0.09)',  // Very subtle yellow glow
+      'rgba(140, 255, 140, 0.08)',  // Very subtle green glow
+      'rgba(100, 255, 255, 0.09)',  // Very subtle cyan glow
+      'rgba(100, 140, 255, 0.08)',  // Very subtle blue glow
+      'rgba(140, 100, 255, 0.06)',  // Very subtle purple glow
+      'rgba(255, 100, 190, 0.08)',  // Very subtle pink glow
+      'rgba(255, 100, 100, 0.06)',  // Loop back
+    ]
     : [];
 
   return (
@@ -374,40 +374,40 @@ export const FloatingTabBar: React.FC<FloatingTabBarProps> = ({
                   />
                 </View>
               )}
-              
+
               {/* Base rainbow border + animated beam - using SVG for proper rounded rectangle perimeter */}
               {pillWidth > 0 && (() => {
                 const outerWidth = pillWidth + (BORDER_PADDING * 2);
                 const radius = PILL_BORDER_RADIUS + BORDER_PADDING;
                 return (
-                <Svg
-                  width="100%"
-                  height="100%"
-                  style={StyleSheet.absoluteFill}
-                  viewBox={`0 0 ${outerWidth} ${frameOuterHeight}`}
-                  preserveAspectRatio="none"
-                >
-                  <Defs>
-                    {/* Base rainbow gradient */}
-                    <SvgLinearGradient id="rainbowGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                      {rainbowSpectrum.map((color, index) => (
-                        <Stop
-                          key={index}
-                          offset={`${(index / (rainbowSpectrum.length - 1)) * 100}%`}
-                          stopColor={color}
-                        />
-                      ))}
-                    </SvgLinearGradient>
-                    
-                    {/* Beam highlight gradient - visible animation */}
-                    <SvgLinearGradient id="beamGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                      {beamStops}
-                    </SvgLinearGradient>
-                  </Defs>
-                  
-                  {/* Base rainbow border path - full rounded rectangle */}
-                  <Path
-                    d={`
+                  <Svg
+                    width="100%"
+                    height="100%"
+                    style={StyleSheet.absoluteFill}
+                    viewBox={`0 0 ${outerWidth} ${frameOuterHeight}`}
+                    preserveAspectRatio="none"
+                  >
+                    <Defs>
+                      {/* Base rainbow gradient */}
+                      <SvgLinearGradient id="rainbowGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                        {rainbowSpectrum.map((color, index) => (
+                          <Stop
+                            key={index}
+                            offset={`${(index / (rainbowSpectrum.length - 1)) * 100}%`}
+                            stopColor={color}
+                          />
+                        ))}
+                      </SvgLinearGradient>
+
+                      {/* Beam highlight gradient - visible animation */}
+                      <SvgLinearGradient id="beamGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                        {beamStops}
+                      </SvgLinearGradient>
+                    </Defs>
+
+                    {/* Base rainbow border path - full rounded rectangle */}
+                    <Path
+                      d={`
                       M ${radius},0
                       L ${outerWidth - radius},0
                       Q ${outerWidth},0 ${outerWidth},${radius}
@@ -419,17 +419,17 @@ export const FloatingTabBar: React.FC<FloatingTabBarProps> = ({
                       Q 0,0 ${radius},0
                       Z
                     `}
-                    fill="none"
-                    stroke="url(#rainbowGradient)"
-                    strokeWidth={BORDER_PADDING * 2}
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
+                      fill="none"
+                      stroke="url(#rainbowGradient)"
+                      strokeWidth={BORDER_PADDING * 2}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
 
-                  {/* Animated beam path - travels around full perimeter including all curves */}
-                  {!reducedMotion && (
-                    <AnimatedPath
-                      d={`
+                    {/* Animated beam path - travels around full perimeter including all curves */}
+                    {!reducedMotion && (
+                      <AnimatedPath
+                        d={`
                         M ${radius},0
                         L ${outerWidth - radius},0
                         Q ${outerWidth},0 ${outerWidth},${radius}
@@ -441,35 +441,19 @@ export const FloatingTabBar: React.FC<FloatingTabBarProps> = ({
                         Q 0,0 ${radius},0
                         Z
                       `}
-                      fill="none"
-                      stroke="url(#beamGradient)"
-                      strokeWidth={BORDER_PADDING * 2}
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      animatedProps={animatedBeamPathStyle}
-                    />
-                  )}
-                </Svg>
+                        fill="none"
+                        stroke="url(#beamGradient)"
+                        strokeWidth={BORDER_PADDING * 2}
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        animatedProps={animatedBeamPathStyle}
+                      />
+                    )}
+                  </Svg>
                 );
               })()}
-              
-              {/* Border mask - Only covers INSIDE to reveal border on all sides */}
-              <View
-                style={[
-                  styles.borderMask,
-                  {
-                    borderRadius: PILL_BORDER_RADIUS,
-                    backgroundColor: borderMaskBg,
-                    // Position to reveal border on ALL sides
-                    // Border stroke width is BORDER_PADDING * 2, so mask should be inset by that amount
-                    top: (BORDER_PADDING * 2) + 0.5, // Small extra to ensure clean edge
-                    left: (BORDER_PADDING * 2) + 0.5,
-                    right: (BORDER_PADDING * 2) + 0.5,
-                    bottom: (BORDER_PADDING * 2) + 0.5,
-                  },
-                ]}
-                pointerEvents="none"
-              />
+
+              {/* Border mask removed - the glassBody layer handles the cutout */}
             </View>
 
             {/* Glass Background Layer - Absolute, behind content - Enhanced for dark mode */}
@@ -546,6 +530,10 @@ export const FloatingTabBar: React.FC<FloatingTabBarProps> = ({
               style={[
                 styles.contentLayer,
                 {
+                  top: BORDER_PADDING,
+                  left: BORDER_PADDING,
+                  right: BORDER_PADDING,
+                  bottom: BORDER_PADDING,
                   height: frameInnerHeight,
                   borderRadius: PILL_BORDER_RADIUS,
                   overflow: 'hidden', // CRITICAL: Clip active pill to inner pill bounds
@@ -584,7 +572,7 @@ export const FloatingTabBar: React.FC<FloatingTabBarProps> = ({
                   // Animation for tab press - use a ref to persist across renders
                   const scaleAnim = tabScaleRefs.current[route.key]
                     || (tabScaleRefs.current[route.key] = new RNAnimated.Value(1));
-                  
+
                   const handlePressIn = () => {
                     RNAnimated.spring(scaleAnim, {
                       toValue: 0.95,
@@ -612,21 +600,21 @@ export const FloatingTabBar: React.FC<FloatingTabBarProps> = ({
                   const iconColor = isFocused
                     ? (is45Tab ? goldColor : (isDark ? '#FFFFFF' : '#000000')) // Active: white in dark, black in light
                     : (is45Tab
-                        ? (isDark ? 'rgba(232, 197, 71, 0.60)' : 'rgba(212, 175, 55, 0.65)')
-                        : (isDark ? 'rgba(255, 255, 255, 0.60)' : 'rgba(0, 0, 0, 0.60)')); // Inactive: 60% opacity both modes
+                      ? (isDark ? 'rgba(232, 197, 71, 0.60)' : 'rgba(212, 175, 55, 0.65)')
+                      : (isDark ? 'rgba(255, 255, 255, 0.60)' : 'rgba(0, 0, 0, 0.60)')); // Inactive: 60% opacity both modes
                   const iconSize = isFocused ? ACTIVE_ICON_SIZE : TAB_ICON_SIZE;
                   const labelColor = isFocused
                     ? (is45Tab ? goldColor : (isDark ? '#FFFFFF' : '#000000')) // Active: white in dark, black in light
                     : (is45Tab
-                        ? (isDark ? 'rgba(232, 197, 71, 0.60)' : 'rgba(212, 175, 55, 0.65)')
-                        : (isDark ? 'rgba(255, 255, 255, 0.60)' : 'rgba(0, 0, 0, 0.60)')); // Inactive: 60% opacity both modes
-                  
+                      ? (isDark ? 'rgba(232, 197, 71, 0.60)' : 'rgba(212, 175, 55, 0.65)')
+                      : (isDark ? 'rgba(255, 255, 255, 0.60)' : 'rgba(0, 0, 0, 0.60)')); // Inactive: 60% opacity both modes
+
                   const iconElement = options.tabBarIcon
                     ? options.tabBarIcon({
-                        focused: isFocused,
-                        color: iconColor,
-                        size: iconSize,
-                      })
+                      focused: isFocused,
+                      color: iconColor,
+                      size: iconSize,
+                    })
                     : null;
 
                   const label =
@@ -636,12 +624,12 @@ export const FloatingTabBar: React.FC<FloatingTabBarProps> = ({
 
                   return (
                     <RNAnimated.View
+                      key={route.key}
                       style={[
                         { transform: [{ scale: scaleAnim }] },
                       ]}
                     >
                       <TouchableOpacity
-                        key={route.key}
                         accessibilityRole="button"
                         accessibilityState={isFocused ? { selected: true } : {}}
                         accessibilityLabel={options.tabBarAccessibilityLabel || label}
@@ -653,24 +641,24 @@ export const FloatingTabBar: React.FC<FloatingTabBarProps> = ({
                         style={styles.tabItem}
                         activeOpacity={1}
                       >
-                      <View style={styles.tabContent}>
-                        <View style={styles.iconContainer}>
-                          {iconElement}
+                        <View style={styles.tabContent}>
+                          <View style={styles.iconContainer}>
+                            {iconElement}
+                          </View>
+                          <Text
+                            style={[
+                              styles.label,
+                              { color: labelColor },
+                              isFocused && styles.labelActive,
+                            ]}
+                            numberOfLines={1}
+                            adjustsFontSizeToFit
+                            minimumFontScale={0.75}
+                          >
+                            {label}
+                          </Text>
                         </View>
-                        <Text
-                          style={[
-                            styles.label,
-                            { color: labelColor },
-                            isFocused && styles.labelActive,
-                          ]}
-                          numberOfLines={1}
-                          adjustsFontSizeToFit
-                          minimumFontScale={0.75}
-                        >
-                          {label}
-                        </Text>
-                      </View>
-                    </TouchableOpacity>
+                      </TouchableOpacity>
                     </RNAnimated.View>
                   );
                 })}
@@ -715,37 +703,37 @@ export const FloatingTabBar: React.FC<FloatingTabBarProps> = ({
               accessibilityLabel="Add Task"
               accessibilityRole="button"
             >
-            <View
-              style={[
-                styles.plusButtonCircle,
-                {
-                  width: PLUS_SIZE,
-                  height: PLUS_SIZE,
-                  borderRadius: PLUS_SIZE / 2,
-                  backgroundColor: '#0A0A0A', // Solid black
-                  ...Platform.select({
-                    ios: {
-                      shadowColor: '#000',
-                      shadowOffset: { width: 0, height: 8 },
-                      shadowOpacity: 0.4,
-                      shadowRadius: 24,
-                    },
-                    android: {
-                      elevation: 8,
-                    },
-                    default: {
-                      shadowColor: '#000',
-                      shadowOffset: { width: 0, height: 8 },
-                      shadowOpacity: 0.4,
-                      shadowRadius: 24,
-                      elevation: 8,
-                    },
-                  }),
-                },
-              ]}
-            >
-              <Ionicons name="add" size={24} color="#FFFFFF" />
-            </View>
+              <View
+                style={[
+                  styles.plusButtonCircle,
+                  {
+                    width: PLUS_SIZE,
+                    height: PLUS_SIZE,
+                    borderRadius: PLUS_SIZE / 2,
+                    backgroundColor: '#0A0A0A', // Solid black
+                    ...Platform.select({
+                      ios: {
+                        shadowColor: '#000',
+                        shadowOffset: { width: 0, height: 8 },
+                        shadowOpacity: 0.4,
+                        shadowRadius: 24,
+                      },
+                      android: {
+                        elevation: 8,
+                      },
+                      default: {
+                        shadowColor: '#000',
+                        shadowOffset: { width: 0, height: 8 },
+                        shadowOpacity: 0.4,
+                        shadowRadius: 24,
+                        elevation: 8,
+                      },
+                    }),
+                  },
+                ]}
+              >
+                <Ionicons name="add" size={24} color="#FFFFFF" />
+              </View>
             </TouchableOpacity>
           </RNAnimated.View>
         </View>
@@ -823,11 +811,14 @@ const styles = StyleSheet.create({
   // Glass Background Layer - Absolute, behind content
   glassBody: {
     position: 'absolute',
+    // SVG stroke is BORDER_PADDING * 2 wide, centered on path.
+    // To fully cover the inner portion, inset by half the stroke width.
     top: BORDER_PADDING,
     left: BORDER_PADDING,
     right: BORDER_PADDING,
     bottom: BORDER_PADDING,
     zIndex: 1,
+    overflow: 'hidden', // CRITICAL: Clip content to rounded corners
     ...Platform.select({
       ios: {
         shadowColor: '#000',
@@ -853,8 +844,7 @@ const styles = StyleSheet.create({
 
   // CONTENT LAYER - Clipped to inner pill for active highlight
   contentLayer: {
-    position: 'relative',
-    width: '100%',
+    position: 'absolute',
     overflow: 'hidden', // CRITICAL: Clip active pill to inner pill bounds
     zIndex: 2,
   },

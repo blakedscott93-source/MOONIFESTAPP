@@ -5,578 +5,606 @@ import {
   StyleSheet,
   TouchableOpacity,
   Animated,
+  Dimensions,
+  Platform,
+  Alert,
+  ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import { AVPlaybackStatus } from 'expo-av';
-import { Screen } from '../components/Screen';
-import { AppHeader } from '../components/AppHeader';
+import { Screen } from '../components/layout/Screen';
 import { Theme } from '../utils/theme';
 import { useApp } from '../context/AppContext';
-import { AudioPlayer, MEDITATION_AUDIO, MeditationAudioId } from '../utils/audioPlayer';
+import { AudioPlayer, MEDITATION_AUDIO, MeditationAudioId, getDefaultBackgroundMusic } from '../utils/audioPlayer';
 import { MEDITATION_SESSIONS } from '../data/meditations';
 import { MeditationScreenProps } from '../types/navigation';
 import { useScreenTracking } from '../hooks/useScreenTracking';
 import { trackEvent } from '../utils/analytics';
 import { useTabBarInset } from '../hooks/useTabBarInset';
+import { tokens, fonts } from '../theme/tokens';
+
+const formatDuration = (seconds: number) => {
+  const minutes = Math.floor(seconds / 60);
+  return `${minutes} min`;
+};
+
+const { width, height } = Dimensions.get('window');
+
+// --- CONSTANTS ---
+// Calm, deep gradients for meditation (Deep Indigo / Twilight / Soft Purple)
+const INHALE_COLORS = ['#4A00E0', '#8E2DE2', '#C471ED'] as const; // Deep Purple -> Violet
+const EXHALE_COLORS = ['#8A2387', '#E94057', '#F27121'] as const; // Sunset Vibes (or stick to cool tones?)
+// Let's use a cooler, more "night/calm" palette for meditation to differentiate from Affirmations
+const MEDITATION_INHALE = ['#240b36', '#c31432'] as const; // Deep Red/Purple
+const MEDITATION_EXHALE = ['#0f0c29', '#302b63', '#24243e'] as const; // Deep Blue/Night
+// Actually, let's stick to the user's requested "Calm" aesthetic - Soft Blues/Cyans/Purples
+const CALM_INHALE = ['#a18cd1', '#fbc2eb'] as const; // Soft Purple/Pink
+const CALM_EXHALE = ['#a6c0fe', '#f68084'] as const; // Soft Blue/Salmon
+
+const BREATH_DURATION = 10000; // Slower breath for meditation (5s in, 5s out)
 
 export default function MeditationScreen({ navigation, route }: MeditationScreenProps) {
-  useScreenTracking('Meditation', { meditation_id: route.params?.meditation?.id });
   const { completeMeditation, addGlowPoints } = useApp();
   const tabBarInset = useTabBarInset();
+  useScreenTracking('Meditation');
 
-  // Get current time period
-  const getCurrentPeriod = () => {
-    const hour = new Date().getHours();
-    if (hour >= 5 && hour < 12) return 'morning';
-    if (hour >= 12 && hour < 18) return 'midday';
-    return 'sleep';
-  };
-
-  const currentPeriod = getCurrentPeriod();
-  const defaultCategory = currentPeriod;
-
-  const isMeditationAudioId = (id: unknown): id is MeditationAudioId => {
-    return typeof id === 'string' && Object.prototype.hasOwnProperty.call(MEDITATION_AUDIO, id);
-  };
-
-  const requestedSessionId = route.params?.meditation?.id;
-  const requestedCategory = route.params?.meditation?.category;
-  const resolvedRequestedSession = isMeditationAudioId(requestedSessionId) ? requestedSessionId : undefined;
-  const resolvedRequestedCategory =
-    requestedCategory === 'morning' || requestedCategory === 'midday' || requestedCategory === 'sleep'
-      ? requestedCategory
-      : undefined;
-
-  const initialCategory =
-    resolvedRequestedCategory ||
-    (resolvedRequestedSession
-      ? (MEDITATION_SESSIONS.find((s) => s.id === resolvedRequestedSession)?.type ?? defaultCategory)
-      : defaultCategory);
-
-  const availableSessions = MEDITATION_SESSIONS.filter((session) => session.type === initialCategory);
-  const defaultSessionId = (availableSessions[0]?.id as MeditationAudioId | undefined) || ('morning-1' as MeditationAudioId);
-  const sessionId = resolvedRequestedSession || defaultSessionId;
-
-  const [selectedSession, setSelectedSession] = useState<MeditationAudioId>(sessionId);
+  // --- STATE ---
+  const [activeSessionId, setActiveSessionId] = useState<MeditationAudioId | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [currentPosition, setCurrentPosition] = useState(0);
-  const [duration, setDuration] = useState(0);
-  const [isPaused, setIsPaused] = useState(false);
+  const [duration, setDuration] = useState(1);
+  const [position, setPosition] = useState(0);
+  const [isCompleted, setIsCompleted] = useState(false);
 
+  // --- REFS ---
   const audioPlayerRef = useRef(new AudioPlayer());
-  const selectedSessionRef = useRef<MeditationAudioId>(selectedSession);
-  const breathAnimation = useRef(new Animated.Value(0)).current;
-  const pulseAnimation = useRef(new Animated.Value(1)).current;
+  const breathAnim = useRef(new Animated.Value(0)).current;
+  const playPulse = useRef(new Animated.Value(1)).current;
+  const playButtonScale = useRef(new Animated.Value(1)).current;
 
+  // --- INIT ---
+  // Determine time of day for default selection
+  const currentHour = new Date().getHours();
+  const timeOfDay = currentHour < 12 ? 'morning' : currentHour < 18 ? 'midday' : 'sleep';
+
+  // Helper to get sessions by category
+  const getSessions = (category: 'morning' | 'midday' | 'sleep') =>
+    MEDITATION_SESSIONS.filter(s => s.type === category);
+
+  // Initialize with passed param or null (selection mode)
   useEffect(() => {
-    selectedSessionRef.current = selectedSession;
-  }, [selectedSession]);
-
-  const handleComplete = useCallback(async (finalDurationMillis?: number) => {
-    setIsPlaying(false);
-    setIsPaused(false);
-    await audioPlayerRef.current.stop();
-    await completeMeditation();
-    await addGlowPoints(30, 'Completed meditation session');
-    const completedSessionId = selectedSessionRef.current;
-    const completedCategory =
-      MEDITATION_SESSIONS.find((s) => s.id === completedSessionId)?.type ?? initialCategory;
-    trackEvent('meditation_completed', { 
-      meditation_id: completedSessionId,
-      category: completedCategory,
-      duration_seconds: Math.floor((finalDurationMillis ?? 0) / 1000),
-    });
-    // Show completion message
-    navigation.goBack();
-  }, [addGlowPoints, completeMeditation, initialCategory, navigation]);
-
-  // Load audio when component mounts or session changes
-  useEffect(() => {
-    const audioPlayer = audioPlayerRef.current;
-    let isActive = true;
-
-    const loadAudio = async () => {
-      try {
-        const audioPath = MEDITATION_AUDIO[selectedSession];
-        setCurrentPosition(0);
-        setDuration(0);
-        await audioPlayer.loadAudio(audioPath);
-
-        if (!isActive) {
-          return;
-        }
-
-        // Set up playback status update listener
-        audioPlayer.setOnPlaybackStatusUpdate((status: AVPlaybackStatus) => {
-          if (status.isLoaded) {
-            setCurrentPosition(status.positionMillis);
-            setDuration(status.durationMillis || 0);
-
-            // Handle completion
-            if (status.didJustFinish) {
-              handleComplete(status.durationMillis || 0);
-            }
-          }
-        });
-      } catch (error) {
-        console.error('Error loading meditation audio:', error);
+    if (route.params?.meditation?.id) {
+      // If passed a specific ID, verify it exists and set it
+      const exists = MEDITATION_SESSIONS.find(s => s.id === route.params!.meditation!.id);
+      if (exists) {
+        // Auto-start playback
+        loadAndPlay(exists.id as MeditationAudioId);
       }
-    };
-
-    loadAudio();
-
-    return () => {
-      isActive = false;
-      audioPlayer.unloadAudio();
-    };
-  }, [handleComplete, selectedSession]);
-
-  // Handle animations when playing/paused
-  useEffect(() => {
-    if (isPlaying && !isPaused) {
-      const breathLoop = Animated.loop(
-        Animated.sequence([
-          Animated.timing(breathAnimation, {
-            toValue: 1,
-            duration: 4000,
-            useNativeDriver: true,
-          }),
-          Animated.timing(breathAnimation, {
-            toValue: 0,
-            duration: 4000,
-            useNativeDriver: true,
-          }),
-        ])
-      );
-      const pulseLoop = Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseAnimation, {
-            toValue: 1.1,
-            duration: 4000,
-            useNativeDriver: true,
-          }),
-          Animated.timing(pulseAnimation, {
-            toValue: 1,
-            duration: 4000,
-            useNativeDriver: true,
-          }),
-        ])
-      );
-      breathLoop.start();
-      pulseLoop.start();
-      return () => {
-        breathLoop.stop();
-        pulseLoop.stop();
-      };
-    } else {
-      breathAnimation.stopAnimation();
-      pulseAnimation.stopAnimation();
     }
-  }, [breathAnimation, isPaused, isPlaying, pulseAnimation]);
+  }, [route.params]);
 
-  const handleStart = async () => {
+  // --- AUDIO LOGIC ---
+  const loadAndPlay = async (sessionId: MeditationAudioId) => {
     try {
+      const audioSource = MEDITATION_AUDIO[sessionId];
+      if (!audioSource) {
+        Alert.alert("Content Unavailable", "This session is currently being updated. Please try again later.");
+        return;
+      }
+
+      // Stop any current
+      await audioPlayerRef.current.stop();
+
+      console.log('[Meditation] Loading new audio...');
+      // Load new
+      await audioPlayerRef.current.loadAudio(audioSource, getDefaultBackgroundMusic());
+
+      // Set listener
+      audioPlayerRef.current.setOnPlaybackStatusUpdate((status: AVPlaybackStatus) => {
+        if (status.isLoaded) {
+          setDuration(status.durationMillis || 1);
+          setPosition(status.positionMillis || 0);
+          setIsPlaying(status.isPlaying);
+          if (status.didJustFinish && !status.isLooping) {
+            handlePlaybackComplete(sessionId);
+          }
+        }
+      });
+
+      console.log('[Meditation] Playing...');
+      // Play
       await audioPlayerRef.current.play();
       setIsPlaying(true);
-      setIsPaused(false);
-    } catch (error) {
-      console.error('Error starting meditation:', error);
+      setActiveSessionId(sessionId);
+    } catch (err) {
+      console.error("Failed to load meditation:", err);
+      Alert.alert("Error", "Could not load this meditation session. Check console.");
     }
   };
 
-  const handlePause = async () => {
-    try {
-      if (isPaused) {
-        await audioPlayerRef.current.play();
-      } else {
-        await audioPlayerRef.current.pause();
-      }
-      setIsPaused(!isPaused);
-    } catch (error) {
-      console.error('Error pausing meditation:', error);
+  const handleTogglePlay = async () => {
+    // Pulse animation
+    Animated.sequence([
+      Animated.timing(playButtonScale, { toValue: 0.9, duration: 100, useNativeDriver: true }),
+      Animated.spring(playButtonScale, { toValue: 1, friction: 5, useNativeDriver: true }),
+    ]).start();
+
+    if (isPlaying) {
+      await audioPlayerRef.current.pause();
+    } else {
+      await audioPlayerRef.current.play();
     }
   };
 
   const handleStop = async () => {
-    try {
-      await audioPlayerRef.current.stop();
-      setIsPlaying(false);
-      setIsPaused(false);
-      setCurrentPosition(0);
-    } catch (error) {
-      console.error('Error stopping meditation:', error);
+    await audioPlayerRef.current.stop();
+    setActiveSessionId(null);
+    setIsPlaying(false);
+    setPosition(0);
+  };
+
+  const handlePlaybackComplete = async (sessionId: string) => {
+    setIsPlaying(false);
+    setIsCompleted(true);
+    await completeMeditation();
+    await addGlowPoints(30, 'Completed meditation');
+    trackEvent('meditation_completed', { id: sessionId });
+  };
+
+  const handleMarkComplete = async () => {
+    if (activeSessionId) {
+      handlePlaybackComplete(activeSessionId);
+      Alert.alert("Namaste", "Session marked as complete.");
+      navigation.goBack();
     }
   };
 
-  const formatTime = (milliseconds: number) => {
-    const totalSeconds = Math.floor(milliseconds / 1000);
-    const mins = Math.floor(totalSeconds / 60);
-    const secs = totalSeconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  // Cleanup
+  useEffect(() => {
+    const player = audioPlayerRef.current;
+    return () => {
+      player.stop().then(() => player.unloadAudio());
+    };
+  }, []);
+
+  // --- ANIMATIONS ---
+  // 1. Breathing Background Loop
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(breathAnim, {
+          toValue: 1,
+          duration: BREATH_DURATION / 2,
+          useNativeDriver: true,
+        }),
+        Animated.timing(breathAnim, {
+          toValue: 0,
+          duration: BREATH_DURATION / 2,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, []);
+
+  // 2. Play Button Pulse
+  useEffect(() => {
+    if (isPlaying) {
+      const loop = Animated.loop(
+        Animated.sequence([
+          Animated.timing(playPulse, {
+            toValue: 1.2,
+            duration: 2000,
+            useNativeDriver: true,
+          }),
+          Animated.timing(playPulse, {
+            toValue: 1,
+            duration: 2000,
+            useNativeDriver: true,
+          }),
+        ])
+      );
+      loop.start();
+      return () => loop.stop();
+    } else {
+      playPulse.setValue(1);
+    }
+  }, [isPlaying]);
+
+  // --- UI HELPERS ---
+  const formatTime = (millis: number) => {
+    const totalSeconds = Math.floor(millis / 1000);
+    const m = Math.floor(totalSeconds / 60);
+    const s = totalSeconds % 60;
+    return `${m}:${s < 10 ? '0' : ''}${s}`;
   };
 
-  const progress = duration > 0 ? currentPosition / duration : 0;
-  const breathScale = breathAnimation.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0.8, 1.2],
-  });
+  const activeSessionData = activeSessionId
+    ? MEDITATION_SESSIONS.find(s => s.id === activeSessionId)
+    : null;
 
-  const getBreathText = () => {
-    const cyclePosition = ((currentPosition / 1000) % 8) / 8;
-    if (cyclePosition < 0.5) return 'Breathe In...';
-    return 'Breathe Out...';
-  };
-
+  // --- RENDER ---
   return (
-    <Screen style={styles.container}>
-      <AppHeader
-        title="Meditation"
-        subtitle="Find your inner peace"
-        leftIcon={{
-          name: 'chevron-back',
-          onPress: () => navigation.goBack(),
-          accessibilityLabel: 'Go back',
-        }}
-        rightIcon={{
-          name: 'home-outline',
-          onPress: () => navigation.navigate('MainTabs', { screen: 'Today' }),
-          accessibilityLabel: 'Back to Today',
-        }}
-      />
+    <View style={styles.container}>
+      {/* 1. LAYERED BREATHING BACKGROUND */}
+      <View style={StyleSheet.absoluteFill}>
+        <LinearGradient
+          colors={CALM_INHALE} // Inhale
+          style={StyleSheet.absoluteFill}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+        />
+        <Animated.View style={[StyleSheet.absoluteFill, { opacity: breathAnim }]}>
+          <LinearGradient
+            colors={CALM_EXHALE} // Exhale
+            style={StyleSheet.absoluteFill}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+          />
+        </Animated.View>
+      </View>
 
-      <View style={[styles.content, { paddingBottom: tabBarInset }]}>
-        {!isPlaying ? (
-          <>
-            {/* Session Selection */}
-            <View style={styles.durationContainer}>
-              <Text style={styles.sectionTitle}>
-                {initialCategory === 'morning' && 'Morning Meditations'}
-                {initialCategory === 'midday' && 'Midday Meditations'}
-                {initialCategory === 'sleep' && 'Evening Meditations'}
-              </Text>
-              <Text style={styles.sectionSubtitle}>
-                Perfect for {initialCategory === 'morning' ? 'starting your day' : initialCategory === 'midday' ? 'a refreshing break' : 'winding down'}
-              </Text>
-              <View style={styles.sessionGrid}>
-                {availableSessions.map((session) => (
-                  <TouchableOpacity
-                    key={session.id}
-                    style={[
-                      styles.durationButton,
-                      selectedSession === session.id && styles.durationButtonActive,
-                    ]}
-                    onPress={() => setSelectedSession(session.id as MeditationAudioId)}
-                    activeOpacity={0.7}
-                  >
-                    <Text
-                      style={[
-                        styles.durationText,
-                        selectedSession === session.id && styles.durationTextActive,
-                      ]}
-                    >
-                      {session.title}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+      {/* 2. HEADER */}
+      <View style={[styles.header, { paddingTop: tokens.spacing.xl + 20 }]}>
+        <TouchableOpacity
+          onPress={() => {
+            if (activeSessionId) {
+              handleStop(); // If playing, stop and go back to list
+            } else {
+              navigation.goBack(); // If listing, go back to App
+            }
+          }}
+          style={styles.backButton}
+        >
+          <BlurView intensity={20} tint="light" style={styles.backButtonBlur}>
+            <Ionicons name={activeSessionId ? "chevron-down" : "chevron-back"} size={24} color="#FFF" />
+          </BlurView>
+        </TouchableOpacity>
+
+        <Text style={styles.headerTitle}>
+          {activeSessionData ? "Now Playing" : "Meditation"}
+        </Text>
+        <View style={{ width: 40 }} />
+      </View>
+
+      {/* 3. CONTENT AREA */}
+      {!activeSessionId ? (
+        // --- SELECTION MODE ---
+        <ScrollView
+          contentContainerStyle={[
+            styles.selectionContent,
+            { paddingBottom: tabBarInset + 100 }
+          ]}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          <View style={styles.greetingContainer}>
+            <Text style={styles.greetingTitle}>Find your peace.</Text>
+            <Text style={styles.greetingSubtitle}>Choose a session to begin.</Text>
+          </View>
+
+          {/* Morning Section */}
+          <Text style={styles.sectionHeader}>Morning Clarity</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.horizontalScroll}>
+            {getSessions('morning').map((session) => (
+              <TouchableOpacity
+                key={session.id}
+                onPress={() => loadAndPlay(session.id as MeditationAudioId)}
+                activeOpacity={0.9}
+              >
+                <BlurView intensity={30} tint="light" style={styles.sessionCard} pointerEvents="none">
+                  <Ionicons name={session.icon as any} size={32} color="#FFF" style={{ marginBottom: 12 }} />
+                  <Text style={styles.cardTitle}>{session.title}</Text>
+                  <Text style={styles.cardSubtitle}>{formatDuration(session.duration)}</Text>
+                </BlurView>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
+          {/* Midday Section */}
+          <Text style={styles.sectionHeader}>Midday Reset</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.horizontalScroll}>
+            {getSessions('midday').map((session) => (
+              <TouchableOpacity
+                key={session.id}
+                onPress={() => loadAndPlay(session.id as MeditationAudioId)}
+                activeOpacity={0.9}
+              >
+                <BlurView intensity={30} tint="light" style={styles.sessionCard} pointerEvents="none">
+                  <Ionicons name="sunny" size={32} color="#FFF" style={{ marginBottom: 12 }} />
+                  <Text style={styles.cardTitle}>{session.title}</Text>
+                  <Text style={styles.cardSubtitle}>{formatDuration(session.duration)}</Text>
+                </BlurView>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
+          {/* Sleep Section */}
+          <Text style={styles.sectionHeader}>Deep Sleep</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.horizontalScroll}>
+            {getSessions('sleep').map((session) => (
+              <TouchableOpacity
+                key={session.id}
+                onPress={() => loadAndPlay(session.id as MeditationAudioId)}
+                activeOpacity={0.9}
+              >
+                <BlurView intensity={30} tint="light" style={styles.sessionCard} pointerEvents="none">
+                  <Ionicons name="moon" size={32} color="#FFF" style={{ marginBottom: 12 }} />
+                  <Text style={styles.cardTitle}>{session.title}</Text>
+                  <Text style={styles.cardSubtitle}>{formatDuration(session.duration)}</Text>
+                </BlurView>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
+        </ScrollView>
+      ) : (
+        // --- PLAYER MODE ---
+        <View style={styles.playerContainer}>
+          {/* Visual Anchor - Breathing Circle */}
+          <View style={styles.visualContainer}>
+            <Animated.View style={[
+              styles.breathingCircle,
+              {
+                transform: [
+                  { scale: 1 }
+                ],
+                opacity: breathAnim.interpolate({ inputRange: [0, 1], outputRange: [0.3, 0.6] })
+              }
+            ]}
+            />
+            <BlurView intensity={30} tint="light" style={styles.iconContainer}>
+              <Ionicons name={activeSessionData?.icon as any || "leaf"} size={64} color="#FFF" />
+            </BlurView>
+
+            <Text style={styles.playerTitle}>{activeSessionData?.title}</Text>
+            <Text style={styles.playerSubtitle}>{activeSessionData?.subtitle}</Text>
+          </View>
+
+          {/* Controls */}
+          <View style={[styles.controlsContainer, { paddingBottom: tabBarInset + 40 }]}>
+            {/* Progress */}
+            <View style={styles.progressContainer}>
+              <Text style={styles.timeText}>{formatTime(position)}</Text>
+              <View style={styles.progressBarBg}>
+                <View
+                  style={[
+                    styles.progressBarFill,
+                    { width: `${(position / duration) * 100}%` }
+                  ]}
+                />
               </View>
+              <Text style={styles.timeText}>{formatTime(duration)}</Text>
             </View>
 
-            {/* Center Circle */}
-            <View style={styles.circleContainer}>
-              <LinearGradient
-                colors={['#C77DFF', '#9D4EDD']}
-                style={styles.circleGradient}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-              >
-                <Ionicons name="leaf" size={80} color={Theme.colors.textInverse} />
-              </LinearGradient>
-            </View>
-
-            {/* Start Button */}
-            <TouchableOpacity
-              style={styles.startButton}
-              onPress={handleStart}
-              activeOpacity={0.8}
-            >
-              <LinearGradient
-                colors={['#4ECDC4', '#44A08D']}
-                style={styles.startGradient}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-              >
-                <Ionicons name="play" size={32} color={Theme.colors.textInverse} />
-                <Text style={styles.startButtonText}>Begin Meditation</Text>
-              </LinearGradient>
+            {/* Play/Pause */}
+            <TouchableOpacity onPress={handleTogglePlay} activeOpacity={0.8}>
+              <Animated.View style={{ transform: [{ scale: playButtonScale }] }}>
+                <BlurView intensity={40} tint="light" style={styles.playButton}>
+                  {isPlaying && (
+                    <Animated.View style={[styles.playButtonPulse, { transform: [{ scale: playPulse }] }]} />
+                  )}
+                  <Ionicons
+                    name={isPlaying ? "pause" : "play"}
+                    size={48}
+                    color="#FFF"
+                    style={{ marginLeft: isPlaying ? 0 : 4 }} // visual centering
+                  />
+                </BlurView>
+              </Animated.View>
             </TouchableOpacity>
 
-            {/* Benefits List */}
-            <View style={styles.benefitsContainer}>
-              <Text style={styles.benefitsTitle}>Benefits</Text>
-              {[
-                'Reduce stress and anxiety',
-                'Improve focus and clarity',
-                'Enhance emotional well-being',
-                'Better sleep quality',
-              ].map((benefit, index) => (
-                <View key={index} style={styles.benefitItem}>
-                  <Ionicons name="checkmark-circle" size={20} color={Theme.colors.success} />
-                  <Text style={styles.benefitText}>{benefit}</Text>
-                </View>
-              ))}
-            </View>
-          </>
-        ) : (
-          <>
-            {/* Active Meditation View */}
-            <View style={styles.activeContainer}>
-              {/* Breathing Circle */}
-              <View style={styles.breathingContainer}>
-                <Animated.View
-                  style={[
-                    styles.breathingCircle,
-                    {
-                      transform: [{ scale: pulseAnimation }],
-                    },
-                  ]}
-                >
-                  <LinearGradient
-                    colors={['#4ECDC4', '#44A08D']}
-                    style={styles.breathingGradient}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                  >
-                    <Animated.View
-                      style={{
-                        transform: [{ scale: breathScale }],
-                      }}
-                    >
-                      <Ionicons name="leaf" size={60} color={Theme.colors.textInverse} />
-                    </Animated.View>
-                  </LinearGradient>
-                </Animated.View>
-
-                {/* Progress Ring */}
-                <View style={styles.progressRing}>
-                  <View
-                    style={[
-                      styles.progressFill,
-                      {
-                        transform: [{ rotate: `${progress * 360}deg` }],
-                      },
-                    ]}
-                  />
-                </View>
-              </View>
-
-              {/* Timer Display */}
-              <View style={styles.timerContainer}>
-                <Text style={styles.timerText}>{formatTime(currentPosition)}</Text>
-                <Text style={styles.totalDurationText}>of {formatTime(duration)}</Text>
-                <Text style={styles.breathText}>{isPaused ? 'Paused' : getBreathText()}</Text>
-              </View>
-
-              {/* Control Buttons */}
-              <View style={styles.controls}>
-                <TouchableOpacity
-                  style={styles.controlButton}
-                  onPress={handlePause}
-                  activeOpacity={0.7}
-                >
-                  <Ionicons
-                    name={isPaused ? 'play' : 'pause'}
-                    size={32}
-                    color={Theme.colors.accent}
-                  />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.controlButton}
-                  onPress={handleStop}
-                  activeOpacity={0.7}
-                >
-                  <Ionicons name="stop" size={32} color={Theme.colors.error} />
-                </TouchableOpacity>
-              </View>
-            </View>
-          </>
-        )}
-      </View>
-    </Screen>
+            {/* Mark Complete */}
+            <TouchableOpacity
+              onPress={handleMarkComplete}
+              style={styles.checkButton}
+            >
+              <BlurView intensity={20} tint="light" style={styles.checkButtonBlur}>
+                <Ionicons name="checkmark" size={20} color="#FFF" />
+                <Text style={styles.checkButtonText}>Mark Complete</Text>
+              </BlurView>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Theme.colors.bg,
+    backgroundColor: '#000',
   },
-  content: {
-    flex: 1,
-    padding: Theme.spacing.lg,
-  },
-  durationContainer: {
-    marginBottom: Theme.spacing.xl,
-  },
-  sectionTitle: {
-    ...Theme.typography.h3,
-    color: Theme.colors.textPrimary,
-    marginBottom: Theme.spacing.sm,
-  },
-  sectionSubtitle: {
-    ...Theme.typography.body,
-    color: Theme.colors.textSecondary,
-    marginBottom: Theme.spacing.md,
-  },
-  sessionGrid: {
+  header: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: Theme.spacing.md,
-  },
-  durationButton: {
-    flex: 1,
-    minWidth: '30%',
-    padding: Theme.spacing.lg,
-    borderRadius: Theme.radius.lg,
-    borderWidth: 2,
-    borderColor: Theme.colors.border,
+    justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: Theme.colors.surface,
+    paddingHorizontal: 20,
+    zIndex: 10,
   },
-  durationButtonActive: {
-    borderColor: Theme.colors.accent,
-    backgroundColor: Theme.colors.accentSoft,
-  },
-  durationText: {
-    ...Theme.typography.bodyBold,
-    color: Theme.colors.textSecondary,
-  },
-  durationTextActive: {
-    color: Theme.colors.accent,
-  },
-  circleContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginVertical: Theme.spacing.xxxl,
-  },
-  circleGradient: {
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...Theme.shadow.large,
-  },
-  startButton: {
-    borderRadius: Theme.radius.lg,
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     overflow: 'hidden',
-    marginBottom: Theme.spacing.xl,
-    ...Theme.shadow.medium,
   },
-  startGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: Theme.spacing.xl,
-    gap: Theme.spacing.md,
-  },
-  startButtonText: {
-    ...Theme.typography.h3,
-    color: Theme.colors.textInverse,
-  },
-  benefitsContainer: {
-    backgroundColor: Theme.colors.surface,
-    padding: Theme.spacing.lg,
-    borderRadius: Theme.radius.lg,
-    ...Theme.shadow.subtle,
-  },
-  benefitsTitle: {
-    ...Theme.typography.bodyBold,
-    color: Theme.colors.textPrimary,
-    marginBottom: Theme.spacing.md,
-  },
-  benefitItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Theme.spacing.sm,
-    marginBottom: Theme.spacing.sm,
-  },
-  benefitText: {
-    ...Theme.typography.body,
-    color: Theme.colors.textSecondary,
-    flex: 1,
-  },
-  activeContainer: {
+  backButtonBlur: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  breathingContainer: {
+  headerTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFF',
+    opacity: 0.9,
+    fontFamily: Platform.select({ ios: 'Georgia', android: 'serif' }),
+  },
+
+  // Selection Styles
+  selectionContent: {
+    paddingTop: 20,
+    paddingHorizontal: 0,
+  },
+  greetingContainer: {
+    paddingHorizontal: 24,
+    marginBottom: 32,
+    marginTop: 10,
+  },
+  greetingTitle: {
+    fontSize: 32,
+    fontWeight: '700',
+    color: '#FFF',
+    marginBottom: 8,
+    fontFamily: fonts.headingBold,
+  },
+  greetingSubtitle: {
+    fontSize: 18,
+    color: 'rgba(255,255,255,0.7)',
+
+  },
+  sectionHeader: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#FFF',
+    marginLeft: 24,
+    marginBottom: 16,
+    marginTop: 8,
+    opacity: 0.9,
+  },
+  horizontalScroll: {
+    paddingLeft: 24,
+    paddingRight: 10,
+    marginBottom: 32,
+  },
+  sessionCard: {
+    width: 160,
+    height: 140,
+    borderRadius: 24,
+    padding: 20,
+    marginRight: 16,
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    overflow: 'hidden',
+  },
+  cardTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFF',
+    marginBottom: 4,
+  },
+  cardSubtitle: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.7)',
+  },
+
+  // Player Styles
+  playerContainer: {
+    flex: 1,
+    justifyContent: 'space-between',
+  },
+  visualContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  iconContainer: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: Theme.spacing.xxxl,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    overflow: 'hidden',
+    marginBottom: 24,
   },
   breathingCircle: {
-    width: 250,
-    height: 250,
-    borderRadius: 125,
-  },
-  breathingGradient: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 125,
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...Theme.shadow.large,
-  },
-  progressRing: {
     position: 'absolute',
-    width: 270,
-    height: 270,
-    borderRadius: 135,
-    borderWidth: 4,
-    borderColor: Theme.colors.accentSoft,
+    width: 300,
+    height: 300,
+    borderRadius: 150,
+    backgroundColor: 'rgba(255,255,255,0.15)',
   },
-  progressFill: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 135,
-    borderWidth: 4,
-    borderColor: Theme.colors.accent,
-    borderRightColor: 'transparent',
-    borderBottomColor: 'transparent',
-  },
-  timerContainer: {
-    alignItems: 'center',
-    gap: Theme.spacing.md,
-    marginBottom: Theme.spacing.xxxl,
-  },
-  timerText: {
-    fontSize: 64,
+  playerTitle: {
+    fontSize: 24,
     fontWeight: '700',
-    color: Theme.colors.textPrimary,
-    letterSpacing: -2,
+    color: '#FFF',
+    marginBottom: 8,
+    fontFamily: fonts.headingBold,
+    textAlign: 'center',
   },
-  totalDurationText: {
-    ...Theme.typography.body,
-    color: Theme.colors.textSecondary,
-    fontSize: 18,
+  playerSubtitle: {
+    fontSize: 16,
+    color: 'rgba(255,255,255,0.7)',
+
   },
-  breathText: {
-    ...Theme.typography.h3,
-    color: Theme.colors.textSecondary,
+  controlsContainer: {
+    paddingHorizontal: 32,
+    alignItems: 'center',
   },
-  controls: {
+  progressContainer: {
     flexDirection: 'row',
-    gap: Theme.spacing.xl,
+    alignItems: 'center',
+    width: '100%',
+    justifyContent: 'space-between',
+    marginBottom: 40,
   },
-  controlButton: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: Theme.colors.surface,
+  timeText: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.7)',
+    width: 35,
+    textAlign: 'center',
+  },
+  progressBarBg: {
+    flex: 1,
+    height: 4,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderRadius: 2,
+    marginHorizontal: 10,
+  },
+  progressBarFill: {
+    height: '100%',
+    backgroundColor: '#FFF',
+    borderRadius: 2,
+  },
+  playButton: {
+    width: 88,
+    height: 88,
+    borderRadius: 44,
     alignItems: 'center',
     justifyContent: 'center',
-    ...Theme.shadow.medium,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    overflow: 'hidden',
+    marginBottom: 32,
+  },
+  playButtonPulse: {
+    position: 'absolute',
+    width: '100%',
+    height: '100%',
+    borderRadius: 50,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+  },
+  checkButton: {
+    borderRadius: 30,
+    overflow: 'hidden',
+  },
+  checkButtonBlur: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    gap: 8,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+  },
+  checkButtonText: {
+    color: '#FFF',
+    fontSize: 15,
+    fontWeight: '600',
   },
 });
+
+
+

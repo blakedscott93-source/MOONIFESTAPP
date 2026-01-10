@@ -48,6 +48,20 @@ export async function saveGratitudeCheckIns(checkIns: GratitudeCheckIn[]): Promi
 }
 
 /**
+ * Delete a gratitude check-in from storage
+ */
+export async function deleteGratitudeCheckIn(id: string): Promise<void> {
+  try {
+    const checkIns = await getGratitudeCheckIns();
+    const updatedCheckIns = checkIns.filter(c => c.id !== id);
+    await saveGratitudeCheckIns(updatedCheckIns);
+  } catch (error) {
+    console.error('Error deleting gratitude check-in:', error);
+    throw error;
+  }
+}
+
+/**
  * Get day completion statuses from storage
  */
 export async function getDayCompletionStatuses(): Promise<{ [key: string]: DayCompletionStatus }> {
@@ -145,10 +159,10 @@ export async function checkDayRollover(): Promise<DayRolloverResult> {
     hasRollover: true,
     incompleteDay: yesterdayKey === lastSeenDayKey && !wasComplete
       ? {
-          localDayKey: yesterdayKey,
-          checkInCount,
-          wasComplete: false,
-        }
+        localDayKey: yesterdayKey,
+        checkInCount,
+        wasComplete: false,
+      }
       : undefined,
     currentDayKey,
   };
@@ -160,7 +174,7 @@ export async function checkDayRollover(): Promise<DayRolloverResult> {
 export async function markDayComplete(localDayKey: string): Promise<void> {
   const statuses = await getDayCompletionStatuses();
   const checkInCount = await getCheckInCountForDay(localDayKey);
-  
+
   statuses[localDayKey] = {
     localDayKey,
     checkInCount,
@@ -176,7 +190,7 @@ export async function markDayComplete(localDayKey: string): Promise<void> {
  */
 export async function recordMissedDay(localDayKey: string): Promise<void> {
   const statuses = await getDayCompletionStatuses();
-  
+
   statuses[localDayKey] = {
     localDayKey,
     checkInCount: await getCheckInCountForDay(localDayKey),

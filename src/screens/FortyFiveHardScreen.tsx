@@ -151,19 +151,181 @@ export default function FortyFiveHardScreen({ navigation }: FortyFiveHardMainScr
           paddingBottom: tabBarInset,
         }}
       >
-      {/* Challenge Explanation - Hero Card */}
-      <GlassCard style={styles.heroCard}>
-        <View style={styles.heroContent}>
-          <View style={styles.heroIcon}>
-            <Ionicons name="trophy" size={32} color={tokens.colors.warning} />
+        {/* Challenge Explanation - Hero Card */}
+        <GlassCard style={styles.heroCard}>
+          <View style={styles.heroContent}>
+            <View style={styles.heroIcon}>
+              <Ionicons name="trophy" size={32} color={tokens.colors.warning} />
+            </View>
+            <Text style={[styles.heroTitle, { color: theme.colors.textPrimary }]}>The 45 NOW Challenge</Text>
+            <Text style={[styles.heroDescription, { color: theme.colors.textSecondary }]}>
+              Complete 5 daily tasks for 45 consecutive days to transform your habits and manifest your goals through consistent action.
+            </Text>
+            {!isPremium && (
+              <TouchableOpacity
+                style={styles.upgradeButton}
+                onPress={handleUpgradePress}
+                activeOpacity={0.9}
+                accessibilityRole="button"
+                accessibilityLabel="Unlock premium access"
+              >
+                <BlurView
+                  intensity={80}
+                  tint="light"
+                  style={styles.upgradeButtonBlur}
+                >
+                  <LinearGradient
+                    colors={[
+                      'rgba(124, 58, 237, 1)',
+                      'rgba(167, 139, 250, 1)',
+                      'rgba(199, 125, 255, 1)',
+                    ]}
+                    style={styles.upgradeButtonGradient}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                  >
+                    <View style={styles.upgradeButtonContent}>
+                      <Ionicons name="sparkles" size={20} color="#FFFFFF" />
+                      <Text style={styles.upgradeButtonText}>Unlock Premium Access</Text>
+                      <Ionicons name="chevron-forward" size={18} color="#FFFFFF" style={{ opacity: 0.9 }} />
+                    </View>
+                    {/* Glossy shine effect */}
+                    <View style={styles.upgradeButtonShine} />
+                  </LinearGradient>
+                </BlurView>
+              </TouchableOpacity>
+            )}
           </View>
-          <Text style={[styles.heroTitle, { color: theme.colors.textPrimary }]}>The 45 NOW Challenge</Text>
-          <Text style={[styles.heroDescription, { color: theme.colors.textSecondary }]}>
-            Complete 5 daily tasks for 45 consecutive days to transform your habits and manifest your goals through consistent action.
+        </GlassCard>
+
+        {/* Day Progress - Big & Prominent */}
+        <SectionCard style={styles.progressCard}>
+          <View style={styles.progressHeader}>
+            <Text style={[styles.progressLabel, { color: theme.colors.textPrimary }]}>Your Progress</Text>
+            {isDayComplete && (
+              <View style={styles.todayCompleteBadge}>
+                <Ionicons name="checkmark-circle" size={18} color={tokens.colors.success} />
+                <Text style={styles.todayCompleteText}>Today Done!</Text>
+              </View>
+            )}
+          </View>
+
+          <View style={styles.dayCounterContainer}>
+            <View style={styles.dayCounter}>
+              <Text style={[styles.dayNumberLabel, { color: theme.colors.textSecondary }]}>Day</Text>
+              <Text style={[styles.dayNumber, { color: theme.colors.accent }]}>{currentDay}</Text>
+            </View>
+            <Text style={[styles.dayDivider, { color: theme.colors.textSecondary }]}>of</Text>
+            <View style={styles.dayTotal}>
+              <Text style={[styles.dayTotalNumber, { color: theme.colors.textSecondary }]}>{CHALLENGE_DURATION_DAYS}</Text>
+            </View>
+          </View>
+
+          <ProgressBar
+            progress={challengeProgress / 100}
+            height={12}
+            fillColor={challengeProgress === 100 ? tokens.colors.success : tokens.colors.accent}
+            trackColor={`${tokens.colors.accent}15`}
+          />
+
+          <Text style={[styles.daysRemainingText, { color: theme.colors.textSecondary }]}>
+            {daysRemaining === 0
+              ? 'Challenge complete! Amazing work!'
+              : `${daysRemaining} day${daysRemaining === 1 ? '' : 's'} to go`}
           </Text>
+        </SectionCard>
+
+        {/* Daily Requirements - Reference Only (NOT Interactive) */}
+        <SectionCard style={styles.requirementsCard}>
+          <Text style={[styles.requirementsTitle, { color: theme.colors.textPrimary }]}>Daily Requirements</Text>
+          <Text style={[styles.requirementsSubtitle, { color: theme.colors.textSecondary }]}>
+            Complete these 5 tasks every day
+          </Text>
+
+          <View style={styles.requirementsList}>
+            {dailyRequirements.map((req, index) => (
+              <View key={req.id}>
+                <View style={styles.requirementRow}>
+                  <View style={[styles.requirementIcon, { backgroundColor: `${req.color}20` }]}>
+                    <Ionicons name={req.icon as any} size={20} color={req.color} />
+                  </View>
+                  <Text style={[styles.requirementText, { color: theme.colors.textPrimary }]}>{req.title}</Text>
+                  {req.completed && (
+                    <Ionicons name="checkmark-circle" size={20} color={tokens.colors.success} />
+                  )}
+                </View>
+                {index < dailyRequirements.length - 1 && (
+                  <View style={styles.requirementSeparator} />
+                )}
+              </View>
+            ))}
+          </View>
+
+          {!isDayComplete && (
+            <TouchableOpacity
+              style={styles.goToTodayButton}
+              onPress={() => navigation.getParent()?.navigate('Today' as never)}
+              activeOpacity={0.8}
+            >
+              <LinearGradient
+                colors={[tokens.colors.accent, tokens.colors.primary]}
+                style={styles.goToTodayGradient}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+              >
+                <Text style={styles.goToTodayText}>Go to Today Tab to Execute</Text>
+                <Ionicons name="arrow-forward" size={20} color="#FFFFFF" />
+              </LinearGradient>
+            </TouchableOpacity>
+          )}
+        </SectionCard>
+
+        {/* Premium Tools - Locked for free users */}
+        <SectionCard style={styles.premiumCard}>
+          <View style={styles.premiumHeader}>
+            <Text style={[styles.premiumTitle, { color: theme.colors.textPrimary }]}>Premium tools</Text>
+            {!isPremium && (
+              <View style={styles.premiumBadge}>
+                <Ionicons name="lock-closed" size={12} color={tokens.colors.textInverse} />
+                <Text style={styles.premiumBadgeText}>Locked</Text>
+              </View>
+            )}
+          </View>
+          <Text style={[styles.premiumSubtitle, { color: theme.colors.textSecondary }]}>
+            {isPremium
+              ? 'Premium tools are unlocked and rolling out in upcoming updates.'
+              : 'Unlock deeper structure and guidance for the full 45-day journey.'}
+          </Text>
+          <View style={styles.premiumList}>
+            {premiumTools.map(tool => (
+              <TouchableOpacity
+                key={tool.id}
+                style={styles.premiumRow}
+                onPress={handlePremiumToolPress}
+                activeOpacity={0.85}
+              >
+                <View style={[styles.premiumIcon, { backgroundColor: `${tokens.colors.accent}15` }]}>
+                  <Ionicons name={tool.icon as any} size={18} color={tokens.colors.accent} />
+                </View>
+                <View style={styles.premiumText}>
+                  <Text style={[styles.premiumRowTitle, { color: theme.colors.textPrimary }]}>
+                    {tool.title}
+                  </Text>
+                  <Text style={[styles.premiumRowSubtitle, { color: theme.colors.textSecondary }]}>
+                    {tool.description}
+                  </Text>
+                </View>
+                <Ionicons
+                  name={isPremium ? 'checkmark-circle' : 'lock-closed'}
+                  size={18}
+                  color={isPremium ? tokens.colors.success : tokens.colors.textTertiary}
+                />
+              </TouchableOpacity>
+            ))}
+          </View>
           {!isPremium && (
             <TouchableOpacity
-              style={styles.upgradeButton}
+              style={styles.premiumCTA}
               onPress={handleUpgradePress}
               activeOpacity={0.9}
               accessibilityRole="button"
@@ -172,7 +334,7 @@ export default function FortyFiveHardScreen({ navigation }: FortyFiveHardMainScr
               <BlurView
                 intensity={80}
                 tint="light"
-                style={styles.upgradeButtonBlur}
+                style={styles.premiumCTABlur}
               >
                 <LinearGradient
                   colors={[
@@ -180,270 +342,108 @@ export default function FortyFiveHardScreen({ navigation }: FortyFiveHardMainScr
                     'rgba(167, 139, 250, 1)',
                     'rgba(199, 125, 255, 1)',
                   ]}
-                  style={styles.upgradeButtonGradient}
+                  style={styles.premiumCTAGradient}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
                 >
-                  <View style={styles.upgradeButtonContent}>
-                    <Ionicons name="sparkles" size={20} color="#FFFFFF" />
-                    <Text style={styles.upgradeButtonText}>Unlock Premium Access</Text>
-                    <Ionicons name="chevron-forward" size={18} color="#FFFFFF" style={{ opacity: 0.9 }} />
+                  <View style={styles.premiumCTAContent}>
+                    <Ionicons name="sparkles" size={18} color="#FFFFFF" />
+                    <Text style={styles.premiumCTAText}>Unlock Premium Access</Text>
                   </View>
-                  {/* Glossy shine effect */}
-                  <View style={styles.upgradeButtonShine} />
+                  <View style={styles.premiumCTAShine} />
                 </LinearGradient>
               </BlurView>
             </TouchableOpacity>
           )}
-        </View>
-      </GlassCard>
+        </SectionCard>
 
-      {/* Day Progress - Big & Prominent */}
-      <SectionCard style={styles.progressCard}>
-        <View style={styles.progressHeader}>
-          <Text style={[styles.progressLabel, { color: theme.colors.textPrimary }]}>Your Progress</Text>
-          {isDayComplete && (
-            <View style={styles.todayCompleteBadge}>
-              <Ionicons name="checkmark-circle" size={18} color={tokens.colors.success} />
-              <Text style={styles.todayCompleteText}>Today Done!</Text>
+        {/* Streak & Consistency */}
+        <SectionCard style={styles.streakCard}>
+          <Text style={[styles.streakTitle, { color: theme.colors.textPrimary }]}>Your Consistency</Text>
+
+          <View style={styles.streakDisplay}>
+            <View style={styles.streakBadge}>
+              <Ionicons name="flame" size={48} color={tokens.colors.warning} />
+              <Text style={styles.streakNumber}>{appState.currentStreak}</Text>
+              <Text style={[styles.streakLabel, { color: theme.colors.textSecondary }]}>Day Streak</Text>
             </View>
-          )}
-        </View>
 
-        <View style={styles.dayCounterContainer}>
-          <View style={styles.dayCounter}>
-            <Text style={[styles.dayNumberLabel, { color: theme.colors.textSecondary }]}>Day</Text>
-            <Text style={[styles.dayNumber, { color: theme.colors.accent }]}>{currentDay}</Text>
-          </View>
-          <Text style={[styles.dayDivider, { color: theme.colors.textSecondary }]}>of</Text>
-          <View style={styles.dayTotal}>
-            <Text style={[styles.dayTotalNumber, { color: theme.colors.textSecondary }]}>{CHALLENGE_DURATION_DAYS}</Text>
-          </View>
-        </View>
-
-        <ProgressBar
-          progress={challengeProgress / 100}
-          height={12}
-          fillColor={challengeProgress === 100 ? tokens.colors.success : tokens.colors.accent}
-          trackColor={`${tokens.colors.accent}15`}
-        />
-
-        <Text style={[styles.daysRemainingText, { color: theme.colors.textSecondary }]}>
-          {daysRemaining === 0
-            ? 'Challenge complete! Amazing work!'
-            : `${daysRemaining} day${daysRemaining === 1 ? '' : 's'} to go`}
-        </Text>
-      </SectionCard>
-
-      {/* Daily Requirements - Reference Only (NOT Interactive) */}
-      <SectionCard style={styles.requirementsCard}>
-        <Text style={[styles.requirementsTitle, { color: theme.colors.textPrimary }]}>Daily Requirements</Text>
-        <Text style={[styles.requirementsSubtitle, { color: theme.colors.textSecondary }]}>
-          Complete these 5 tasks every day
-        </Text>
-
-        <View style={styles.requirementsList}>
-          {dailyRequirements.map((req, index) => (
-            <View key={req.id}>
-              <View style={styles.requirementRow}>
-                <View style={[styles.requirementIcon, { backgroundColor: `${req.color}20` }]}>
-                  <Ionicons name={req.icon as any} size={20} color={req.color} />
-                </View>
-                <Text style={[styles.requirementText, { color: theme.colors.textPrimary }]}>{req.title}</Text>
-                {req.completed && (
-                  <Ionicons name="checkmark-circle" size={20} color={tokens.colors.success} />
-                )}
+            <View style={styles.streakStats}>
+              <View style={styles.streakStat}>
+                <Text style={[styles.streakStatNumber, { color: theme.colors.accent }]}>{appState.totalDays || 0}</Text>
+                <Text style={[styles.streakStatLabel, { color: theme.colors.textSecondary }]}>Total Days</Text>
               </View>
-              {index < dailyRequirements.length - 1 && (
-                <View style={styles.requirementSeparator} />
-              )}
-            </View>
-          ))}
-        </View>
-
-      {!isDayComplete && (
-        <TouchableOpacity
-          style={styles.goToTodayButton}
-          onPress={() => navigation.getParent()?.navigate('Today' as never)}
-          activeOpacity={0.8}
-          >
-            <LinearGradient
-              colors={[tokens.colors.accent, tokens.colors.primary]}
-              style={styles.goToTodayGradient}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-            >
-              <Text style={styles.goToTodayText}>Go to Today Tab to Execute</Text>
-              <Ionicons name="arrow-forward" size={20} color="#FFFFFF" />
-            </LinearGradient>
-          </TouchableOpacity>
-        )}
-      </SectionCard>
-
-      {/* Premium Tools - Locked for free users */}
-      <SectionCard style={styles.premiumCard}>
-        <View style={styles.premiumHeader}>
-          <Text style={[styles.premiumTitle, { color: theme.colors.textPrimary }]}>Premium tools</Text>
-          {!isPremium && (
-            <View style={styles.premiumBadge}>
-              <Ionicons name="lock-closed" size={12} color={tokens.colors.textInverse} />
-              <Text style={styles.premiumBadgeText}>Locked</Text>
-            </View>
-          )}
-        </View>
-        <Text style={[styles.premiumSubtitle, { color: theme.colors.textSecondary }]}>
-          {isPremium
-            ? 'Premium tools are unlocked and rolling out in upcoming updates.'
-            : 'Unlock deeper structure and guidance for the full 45-day journey.'}
-        </Text>
-        <View style={styles.premiumList}>
-          {premiumTools.map(tool => (
-            <TouchableOpacity
-              key={tool.id}
-              style={styles.premiumRow}
-              onPress={handlePremiumToolPress}
-              activeOpacity={0.85}
-            >
-              <View style={[styles.premiumIcon, { backgroundColor: `${tokens.colors.accent}15` }]}>
-                <Ionicons name={tool.icon as any} size={18} color={tokens.colors.accent} />
-              </View>
-              <View style={styles.premiumText}>
-                <Text style={[styles.premiumRowTitle, { color: theme.colors.textPrimary }]}>
-                  {tool.title}
+              <View style={styles.streakStat}>
+                <Text style={[styles.streakStatNumber, { color: theme.colors.accent }]}>
+                  {Math.round((appState.totalDays / CHALLENGE_DURATION_DAYS) * 100)}%
                 </Text>
-                <Text style={[styles.premiumRowSubtitle, { color: theme.colors.textSecondary }]}>
-                  {tool.description}
-                </Text>
+                <Text style={[styles.streakStatLabel, { color: theme.colors.textSecondary }]}>Complete</Text>
               </View>
-              <Ionicons
-                name={isPremium ? 'checkmark-circle' : 'lock-closed'}
-                size={18}
-                color={isPremium ? tokens.colors.success : tokens.colors.textTertiary}
-              />
-            </TouchableOpacity>
-          ))}
-        </View>
-        {!isPremium && (
-          <TouchableOpacity
-            style={styles.premiumCTA}
-            onPress={handleUpgradePress}
-            activeOpacity={0.9}
-            accessibilityRole="button"
-            accessibilityLabel="Unlock premium access"
-          >
-            <BlurView
-              intensity={80}
-              tint="light"
-              style={styles.premiumCTABlur}
-            >
-              <LinearGradient
-                colors={[
-                  'rgba(124, 58, 237, 1)',
-                  'rgba(167, 139, 250, 1)',
-                  'rgba(199, 125, 255, 1)',
-                ]}
-                style={styles.premiumCTAGradient}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-              >
-                <View style={styles.premiumCTAContent}>
-                  <Ionicons name="sparkles" size={18} color="#FFFFFF" />
-                  <Text style={styles.premiumCTAText}>Unlock Premium Access</Text>
-                </View>
-                <View style={styles.premiumCTAShine} />
-              </LinearGradient>
-            </BlurView>
-          </TouchableOpacity>
-        )}
-      </SectionCard>
-
-      {/* Streak & Consistency */}
-      <SectionCard style={styles.streakCard}>
-        <Text style={[styles.streakTitle, { color: theme.colors.textPrimary }]}>Your Consistency</Text>
-
-        <View style={styles.streakDisplay}>
-          <View style={styles.streakBadge}>
-            <Ionicons name="flame" size={48} color={tokens.colors.warning} />
-            <Text style={styles.streakNumber}>{appState.currentStreak}</Text>
-            <Text style={[styles.streakLabel, { color: theme.colors.textSecondary }]}>Day Streak</Text>
+            </View>
           </View>
 
-          <View style={styles.streakStats}>
-            <View style={styles.streakStat}>
-              <Text style={[styles.streakStatNumber, { color: theme.colors.accent }]}>{appState.totalDays || 0}</Text>
-              <Text style={[styles.streakStatLabel, { color: theme.colors.textSecondary }]}>Total Days</Text>
-            </View>
-            <View style={styles.streakStat}>
-              <Text style={[styles.streakStatNumber, { color: theme.colors.accent }]}>
-                {Math.round((appState.totalDays / CHALLENGE_DURATION_DAYS) * 100)}%
+          {/* Motivation Quote */}
+          <View style={styles.motivationBox}>
+            <Text style={[styles.motivationQuote, { color: theme.colors.textPrimary }]}>
+              "Consistency is the bridge between goals and accomplishment"
+            </Text>
+            <Text style={[styles.motivationAuthor, { color: theme.colors.textSecondary }]}>- Jim Rohn</Text>
+          </View>
+        </SectionCard>
+
+        {/* Why This Works */}
+        <GlassCard style={styles.whyCard}>
+          <Text style={[styles.whyTitle, { color: theme.colors.textPrimary }]}>Why 45 Days?</Text>
+          <View style={styles.whyList}>
+            <View style={styles.whyItem}>
+              <Ionicons name="checkmark-circle-outline" size={20} color={tokens.colors.accent} />
+              <Text style={[styles.whyText, { color: theme.colors.textSecondary }]}>
+                Research shows it takes <Text style={[styles.whyBold, { color: theme.colors.textPrimary }]}>21-66 days</Text> to form a habit
               </Text>
-              <Text style={[styles.streakStatLabel, { color: theme.colors.textSecondary }]}>Complete</Text>
+            </View>
+            <View style={styles.whyItem}>
+              <Ionicons name="checkmark-circle-outline" size={20} color={tokens.colors.accent} />
+              <Text style={[styles.whyText, { color: theme.colors.textSecondary }]}>
+                45 days solidifies new behaviors into <Text style={[styles.whyBold, { color: theme.colors.textPrimary }]}>lasting change</Text>
+              </Text>
+            </View>
+            <View style={styles.whyItem}>
+              <Ionicons name="checkmark-circle-outline" size={20} color={tokens.colors.accent} />
+              <Text style={[styles.whyText, { color: theme.colors.textSecondary }]}>
+                Consistent daily action <Text style={[styles.whyBold, { color: theme.colors.textPrimary }]}>rewires your brain</Text>
+              </Text>
+            </View>
+            <View style={styles.whyItem}>
+              <Ionicons name="checkmark-circle-outline" size={20} color={tokens.colors.accent} />
+              <Text style={[styles.whyText, { color: theme.colors.textSecondary }]}>
+                Builds <Text style={[styles.whyBold, { color: theme.colors.textPrimary }]}>discipline and momentum</Text> for life transformation
+              </Text>
             </View>
           </View>
-        </View>
+        </GlassCard>
 
-        {/* Motivation Quote */}
-        <View style={styles.motivationBox}>
-          <Text style={[styles.motivationQuote, { color: theme.colors.textPrimary }]}>
-            "Consistency is the bridge between goals and accomplishment"
-          </Text>
-          <Text style={[styles.motivationAuthor, { color: theme.colors.textSecondary }]}>- Jim Rohn</Text>
-        </View>
-      </SectionCard>
-
-      {/* Why This Works */}
-      <GlassCard style={styles.whyCard}>
-        <Text style={[styles.whyTitle, { color: theme.colors.textPrimary }]}>Why 45 Days?</Text>
-        <View style={styles.whyList}>
-          <View style={styles.whyItem}>
-            <Ionicons name="checkmark-circle-outline" size={20} color={tokens.colors.accent} />
-            <Text style={[styles.whyText, { color: theme.colors.textSecondary }]}>
-              Research shows it takes <Text style={[styles.whyBold, { color: theme.colors.textPrimary }]}>21-66 days</Text> to form a habit
-            </Text>
+        {/* Rules */}
+        <GlassCard style={styles.rulesCard}>
+          <Text style={[styles.rulesTitle, { color: theme.colors.textPrimary }]}>The Rules</Text>
+          <View style={styles.rulesList}>
+            <View style={styles.ruleItem}>
+              <Text style={[styles.ruleNumber, { color: theme.colors.accent }]}>1.</Text>
+              <Text style={[styles.ruleText, { color: theme.colors.textPrimary }]}>Complete all 5 tasks every single day</Text>
+            </View>
+            <View style={styles.ruleItem}>
+              <Text style={[styles.ruleNumber, { color: theme.colors.accent }]}>2.</Text>
+              <Text style={[styles.ruleText, { color: theme.colors.textPrimary }]}>If you miss a day, restart from Day 1</Text>
+            </View>
+            <View style={styles.ruleItem}>
+              <Text style={[styles.ruleNumber, { color: theme.colors.accent }]}>3.</Text>
+              <Text style={[styles.ruleText, { color: theme.colors.textPrimary }]}>No excuses, no skipping, total commitment</Text>
+            </View>
+            <View style={styles.ruleItem}>
+              <Text style={[styles.ruleNumber, { color: theme.colors.accent }]}>4.</Text>
+              <Text style={[styles.ruleText, { color: theme.colors.textPrimary }]}>Trust the process and stay consistent</Text>
+            </View>
           </View>
-          <View style={styles.whyItem}>
-            <Ionicons name="checkmark-circle-outline" size={20} color={tokens.colors.accent} />
-            <Text style={[styles.whyText, { color: theme.colors.textSecondary }]}>
-              45 days solidifies new behaviors into <Text style={[styles.whyBold, { color: theme.colors.textPrimary }]}>lasting change</Text>
-            </Text>
-          </View>
-          <View style={styles.whyItem}>
-            <Ionicons name="checkmark-circle-outline" size={20} color={tokens.colors.accent} />
-            <Text style={[styles.whyText, { color: theme.colors.textSecondary }]}>
-              Consistent daily action <Text style={[styles.whyBold, { color: theme.colors.textPrimary }]}>rewires your brain</Text>
-            </Text>
-          </View>
-          <View style={styles.whyItem}>
-            <Ionicons name="checkmark-circle-outline" size={20} color={tokens.colors.accent} />
-            <Text style={[styles.whyText, { color: theme.colors.textSecondary }]}>
-              Builds <Text style={[styles.whyBold, { color: theme.colors.textPrimary }]}>discipline and momentum</Text> for life transformation
-            </Text>
-          </View>
-        </View>
-      </GlassCard>
-
-      {/* Rules */}
-      <GlassCard style={styles.rulesCard}>
-        <Text style={[styles.rulesTitle, { color: theme.colors.textPrimary }]}>The Rules</Text>
-        <View style={styles.rulesList}>
-          <View style={styles.ruleItem}>
-            <Text style={[styles.ruleNumber, { color: theme.colors.accent }]}>1.</Text>
-            <Text style={[styles.ruleText, { color: theme.colors.textPrimary }]}>Complete all 5 tasks every single day</Text>
-          </View>
-          <View style={styles.ruleItem}>
-            <Text style={[styles.ruleNumber, { color: theme.colors.accent }]}>2.</Text>
-            <Text style={[styles.ruleText, { color: theme.colors.textPrimary }]}>If you miss a day, restart from Day 1</Text>
-          </View>
-          <View style={styles.ruleItem}>
-            <Text style={[styles.ruleNumber, { color: theme.colors.accent }]}>3.</Text>
-            <Text style={[styles.ruleText, { color: theme.colors.textPrimary }]}>No excuses, no skipping, total commitment</Text>
-          </View>
-          <View style={styles.ruleItem}>
-            <Text style={[styles.ruleNumber, { color: theme.colors.accent }]}>4.</Text>
-            <Text style={[styles.ruleText, { color: theme.colors.textPrimary }]}>Trust the process and stay consistent</Text>
-          </View>
-        </View>
-      </GlassCard>
+        </GlassCard>
 
         {/* Extra bottom padding */}
         <View style={{ height: 110 }} />
@@ -503,10 +503,8 @@ const styles = StyleSheet.create({
     zIndex: 2,
   },
   upgradeButtonText: {
-    fontSize: 16,
-    fontWeight: '800',
+    ...tokens.typography.bodyBold,
     color: '#FFFFFF',
-    letterSpacing: 0.6,
     textShadowColor: 'rgba(0, 0, 0, 0.4)',
     textShadowOffset: { width: 0, height: 2 },
     textShadowRadius: 4,
@@ -532,16 +530,12 @@ const styles = StyleSheet.create({
     marginBottom: tokens.spacing.xs,
   },
   heroTitle: {
-    fontSize: 24,
-    fontWeight: '700',
+    ...tokens.typography.h2,
     textAlign: 'center',
-    letterSpacing: -0.5,
   },
   heroDescription: {
-    fontSize: 15,
-    fontWeight: '400',
+    ...tokens.typography.body,
     textAlign: 'center',
-    lineHeight: 22,
   },
 
   // Progress Card
@@ -556,8 +550,7 @@ const styles = StyleSheet.create({
     marginBottom: tokens.spacing.lg,
   },
   progressLabel: {
-    fontSize: 16,
-    fontWeight: '600',
+    ...tokens.typography.h3,
   },
   todayCompleteBadge: {
     flexDirection: 'row',
@@ -569,8 +562,7 @@ const styles = StyleSheet.create({
     borderRadius: tokens.radii.full,
   },
   todayCompleteText: {
-    fontSize: 13,
-    fontWeight: '600',
+    ...tokens.typography.captionBold,
     color: tokens.colors.success,
   },
   dayCounterContainer: {
@@ -584,8 +576,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   dayNumberLabel: {
-    fontSize: 14,
-    fontWeight: '500',
+    ...tokens.typography.bodyMedium,
     marginBottom: 4,
   },
   dayNumber: {
@@ -609,8 +600,7 @@ const styles = StyleSheet.create({
     letterSpacing: -1,
   },
   daysRemainingText: {
-    fontSize: 15,
-    fontWeight: '500',
+    ...tokens.typography.bodyMedium,
     textAlign: 'center',
     marginTop: tokens.spacing.md,
   },
@@ -621,14 +611,11 @@ const styles = StyleSheet.create({
     padding: tokens.spacing.lg,
   },
   requirementsTitle: {
-    fontSize: 20,
-    fontWeight: '700',
+    ...tokens.typography.h3,
     marginBottom: 4,
-    letterSpacing: -0.3,
   },
   requirementsSubtitle: {
-    fontSize: 13,
-    fontWeight: '400',
+    ...tokens.typography.caption,
     marginBottom: tokens.spacing.lg,
   },
   requirementsList: {
@@ -649,8 +636,7 @@ const styles = StyleSheet.create({
   },
   requirementText: {
     flex: 1,
-    fontSize: 15,
-    fontWeight: '500',
+    ...tokens.typography.bodyMedium,
   },
   requirementSeparator: {
     height: 1,
@@ -670,8 +656,7 @@ const styles = StyleSheet.create({
     gap: tokens.spacing.sm,
   },
   goToTodayText: {
-    fontSize: 16,
-    fontWeight: '700',
+    ...tokens.typography.bodyBold,
     color: '#FFFFFF',
   },
 
@@ -687,8 +672,7 @@ const styles = StyleSheet.create({
     marginBottom: tokens.spacing.xs,
   },
   premiumTitle: {
-    fontSize: 18,
-    fontWeight: '700',
+    ...tokens.typography.h3,
   },
   premiumBadge: {
     flexDirection: 'row',
@@ -700,14 +684,13 @@ const styles = StyleSheet.create({
     borderRadius: tokens.radii.full,
   },
   premiumBadgeText: {
-    fontSize: 11,
+    fontSize: 11, // Keep small
     fontWeight: '700',
     color: tokens.colors.textInverse,
     letterSpacing: 0.4,
   },
   premiumSubtitle: {
-    fontSize: 13,
-    lineHeight: 18,
+    ...tokens.typography.caption,
     marginBottom: tokens.spacing.md,
   },
   premiumList: {
@@ -734,12 +717,10 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   premiumRowTitle: {
-    fontSize: 15,
-    fontWeight: '600',
+    ...tokens.typography.bodyMedium,
   },
   premiumRowSubtitle: {
-    fontSize: 12,
-    lineHeight: 16,
+    ...tokens.typography.small,
     marginTop: 2,
   },
   premiumCTA: {
@@ -770,10 +751,8 @@ const styles = StyleSheet.create({
     zIndex: 2,
   },
   premiumCTAText: {
-    fontSize: 15,
-    fontWeight: '800',
+    ...tokens.typography.bodyBold,
     color: '#FFFFFF',
-    letterSpacing: 0.6,
     textShadowColor: 'rgba(0, 0, 0, 0.4)',
     textShadowOffset: { width: 0, height: 2 },
     textShadowRadius: 4,
@@ -796,8 +775,7 @@ const styles = StyleSheet.create({
     padding: tokens.spacing.lg,
   },
   streakTitle: {
-    fontSize: 20,
-    fontWeight: '700',
+    ...tokens.typography.h3,
     marginBottom: tokens.spacing.lg,
     letterSpacing: -0.3,
   },

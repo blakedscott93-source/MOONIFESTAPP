@@ -17,10 +17,12 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Theme, TOUCH_TARGET_MIN } from '../utils/theme';
-import { 
-  purchasePremiumRevenueCat, 
-  restorePurchases, 
+import {
+  purchasePremiumRevenueCat,
+  restorePurchases,
   getSubscriptionPricing,
+  usePremiumOfferings,
+  findPackage,
 } from '../utils/premium';
 
 interface PremiumGateProps {
@@ -40,13 +42,34 @@ export const PremiumGate: React.FC<PremiumGateProps> = ({
 }) => {
   const [isPurchasing, setIsPurchasing] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
-  const [showPlans, setShowPlans] = useState(false);
-  const [selectedPlan, setSelectedPlan] = useState<'monthly' | 'yearly'>('yearly');
-  const pricing = getSubscriptionPricing();
+  const [selectedPlan, setSelectedPlan] = useState<'monthly' | 'yearly' | 'lifetime'>('yearly');
+
+  const { packages, isConfigured } = usePremiumOfferings();
+
+  // Default fallbacks while loading
+  const defaultPricing = getSubscriptionPricing();
+
+  const getPackage = (type: 'ANNUAL' | 'MONTHLY' | 'LIFETIME') => {
+    return findPackage(packages, type);
+  };
+
+  const annualPkg = getPackage('ANNUAL');
+  const monthlyPkg = getPackage('MONTHLY');
+  const lifetimePkg = getPackage('LIFETIME');
+
+  // Use real data if available, otherwise fallback
+  const yearlyPrice = annualPkg?.product.priceString || defaultPricing.yearlyPrice;
+  const monthlyPrice = monthlyPkg?.product.priceString || defaultPricing.monthlyPrice;
+  const lifetimePrice = lifetimePkg?.product.priceString || "$299.99"; // Fallback
+
+  // Calculate savings
+  const annualMonthlyPrice = annualPkg ? (annualPkg.product.price / 12).toFixed(2) : defaultPricing.yearlyPerMonth;
+  const savings = annualPkg && monthlyPkg
+    ? Math.round((1 - (annualPkg.product.price / (monthlyPkg.product.price * 12))) * 100)
+    : defaultPricing.yearlySavingsPercent;
 
   useEffect(() => {
     if (visible) {
-      setShowPlans(false);
       setSelectedPlan('yearly');
     }
   }, [visible]);
@@ -56,39 +79,37 @@ export const PremiumGate: React.FC<PremiumGateProps> = ({
     'Daily gratitude check-ins + streak tracking',
     'Vision boards and manifestation goals',
     'Exclusive challenges and community access',
+    'Remove all limits',
   ];
 
   const trialSteps = [
     {
       icon: 'lock-closed',
       title: 'Today: Get instant access',
-      description: 'All premium features are available right away.',
-    },
-    {
-      icon: 'notifications',
-      title: `Day ${pricing.trialDays - 2}: Trial reminder`,
-      description: 'We will send a reminder so you can cancel anytime.',
+      description: 'Unlock everything immediately.',
     },
     {
       icon: 'star',
-      title: `Day ${pricing.trialDays}: Trial ends`,
-      description: `Your subscription starts after the ${pricing.trialDays}-day trial.`,
+      title: 'Premium for life',
+      description: 'Choose the plan that fits your journey.',
     },
   ];
 
-  const handlePurchase = async (plan: 'monthly' | 'yearly') => {
+  const handlePurchase = async (plan: 'monthly' | 'yearly' | 'lifetime') => {
     setIsPurchasing(true);
     try {
       // For now, use RevenueCat default offering
       // In production, you'd pass the specific offering ID
       const success = await purchasePremiumRevenueCat(plan);
-      
+
       if (success) {
-        Alert.alert('Success!', 'Welcome to Moonifest Premium!', [
-          { text: 'OK', onPress: () => {
-            onUpgrade();
-            onClose();
-          }}
+        Alert.alert('Success!', 'Welcome to Vortex Premium!', [
+          {
+            text: 'OK', onPress: () => {
+              onUpgrade();
+              onClose();
+            }
+          }
         ]);
       }
     } catch (error: any) {
@@ -110,10 +131,12 @@ export const PremiumGate: React.FC<PremiumGateProps> = ({
       const restored = await restorePurchases();
       if (restored) {
         Alert.alert('Success', 'Your purchases have been restored!', [
-          { text: 'OK', onPress: () => {
-            onUpgrade();
-            onClose();
-          }}
+          {
+            text: 'OK', onPress: () => {
+              onUpgrade();
+              onClose();
+            }
+          }
         ]);
       } else {
         Alert.alert('No Purchases Found', 'We couldn\'t find any purchases to restore.');
@@ -125,14 +148,20 @@ export const PremiumGate: React.FC<PremiumGateProps> = ({
     }
   };
 
-  const ctaLabel = `Start my ${pricing.trialDays}-day free trial`;
+  const ctaLabel = `Start Premium Journey`;
 
   const summaryLine = selectedPlan === 'yearly'
-    ? `Unlimited free access for ${pricing.trialDays} days, then ${pricing.yearlyPrice} per year (${pricing.yearlyPerMonth}/month).`
-    : `Unlimited free access for ${pricing.trialDays} days, then ${pricing.monthlyPrice} per month.`;
+    ? `Unlimited access for ${yearlyPrice} per year (just ${annualPkg?.product.currencyCode || '$'}${annualMonthlyPrice}/mo).`
+    : selectedPlan === 'monthly'
+      ? `Unlimited access for ${monthlyPrice} per month.`
+      : `One-time payment of ${lifetimePrice} for lifetime access.`;
+
   const planFootnote = selectedPlan === 'yearly'
-    ? `${pricing.trialDays} days free, then ${pricing.yearlyPrice}/year.`
-    : `${pricing.trialDays} days free, then ${pricing.monthlyPrice}/month.`;
+    ? `Billed annually at ${yearlyPrice}. Cancel anytime.`
+    : selectedPlan === 'monthly'
+      ? `Billed monthly at ${monthlyPrice}. Cancel anytime.`
+      : `One-time payment. No recurring fees.`;
+
   const storeLabel = Platform.OS === 'ios' ? 'App Store' : 'Play Store';
 
   return (
@@ -155,108 +184,86 @@ export const PremiumGate: React.FC<PremiumGateProps> = ({
               </TouchableOpacity>
             </View>
 
-            <Text style={styles.title}>How your free trial works</Text>
-            <View style={styles.timeline}>
-              <View style={styles.timelineLine} />
+            <Text style={styles.title}>Unlock Premium</Text>
+            <Text style={styles.subtitle}>Start your 7-day free trial today</Text>
+
+            <View style={styles.highlightsContainer}>
               {trialSteps.map((step, index) => (
-                <View key={index} style={styles.timelineRow}>
-                  <View style={styles.timelineIcon}>
-                    <Ionicons name={step.icon as any} size={16} color={Theme.colors.textPrimary} />
+                <View key={index} style={styles.highlightItem}>
+                  <View style={styles.highlightIcon}>
+                    <Ionicons name={step.icon as any} size={20} color={Theme.colors.accent} />
                   </View>
-                  <View style={styles.timelineContent}>
-                    <Text style={styles.timelineTitle}>{step.title}</Text>
-                    <Text style={styles.timelineText}>{step.description}</Text>
+                  <View style={styles.highlightContent}>
+                    <Text style={styles.highlightTitle}>{step.title}</Text>
+                    <Text style={styles.highlightText}>{step.description}</Text>
                   </View>
                 </View>
               ))}
             </View>
 
-            <Text style={styles.trialSummary}>{summaryLine}</Text>
-            {!showPlans && (
+            <View style={styles.featuresList}>
+              {premiumHighlights.map((feature, index) => (
+                <View key={index} style={styles.featureItem}>
+                  <Ionicons name="checkmark-circle" size={18} color={Theme.colors.success} />
+                  <Text style={styles.featureText}>{feature}</Text>
+                </View>
+              ))}
+            </View>
+
+            <View style={styles.planStack}>
               <TouchableOpacity
-                onPress={() => setShowPlans(true)}
-                style={styles.viewPlansButton}
-                accessibilityRole="button"
-                accessibilityLabel="View all plans"
+                style={[
+                  styles.planCard,
+                  selectedPlan === 'yearly' && styles.planCardSelected,
+                ]}
+                onPress={() => setSelectedPlan('yearly')}
+                activeOpacity={0.8}
               >
-                <Text style={styles.viewPlansText}>View all plans</Text>
+                <View style={styles.planBadges}>
+                  <Text style={styles.planBadgeText}>RECOMMENDED</Text>
+                  <View style={styles.saveBadge}>
+                    <Text style={styles.saveBadgeText}>Save {savings}%</Text>
+                  </View>
+                </View>
+                <View style={styles.planRow}>
+                  <View style={styles.planText}>
+                    <Text style={styles.planTitle}>Annual Plan</Text>
+                    <Text style={styles.planPrice}>
+                      {yearlyPrice} per year
+                    </Text>
+                    <Text style={styles.planTrial}>Just {annualPkg?.product.currencyCode || '$'}${annualMonthlyPrice}/mo · Save {savings}%</Text>
+                  </View>
+                  <Ionicons
+                    name={selectedPlan === 'yearly' ? 'checkmark-circle' : 'ellipse-outline'}
+                    size={24}
+                    color={selectedPlan === 'yearly' ? Theme.colors.accent : Theme.colors.border}
+                  />
+                </View>
               </TouchableOpacity>
-            )}
 
-            {showPlans && (
-              <>
-                <View style={styles.unlockHeader}>
-                  <Text style={styles.unlockTitle}>Unlock the full {featureName} experience</Text>
-                  {featureDescription ? (
-                    <Text style={styles.unlockSubtitle}>{featureDescription}</Text>
-                  ) : null}
+              <TouchableOpacity
+                style={[
+                  styles.planCard,
+                  selectedPlan === 'monthly' && styles.planCardSelected,
+                ]}
+                onPress={() => setSelectedPlan('monthly')}
+                activeOpacity={0.8}
+              >
+                <View style={styles.planRow}>
+                  <View style={styles.planText}>
+                    <Text style={styles.planTitle}>Monthly Plan</Text>
+                    <Text style={styles.planPrice}>{monthlyPrice}/month</Text>
+                  </View>
+                  <Ionicons
+                    name={selectedPlan === 'monthly' ? 'checkmark-circle' : 'ellipse-outline'}
+                    size={24}
+                    color={selectedPlan === 'monthly' ? Theme.colors.accent : Theme.colors.border}
+                  />
                 </View>
+              </TouchableOpacity>
 
-                <View style={styles.featuresList}>
-                  {premiumHighlights.map((feature, index) => (
-                    <View key={index} style={styles.featureItem}>
-                      <Ionicons name="checkmark" size={18} color={Theme.colors.success} />
-                      <Text style={styles.featureText}>{feature}</Text>
-                    </View>
-                  ))}
-                </View>
-
-                <View style={styles.planStack}>
-                  <TouchableOpacity
-                    style={[
-                      styles.planCard,
-                      selectedPlan === 'yearly' && styles.planCardSelected,
-                    ]}
-                    onPress={() => setSelectedPlan('yearly')}
-                    activeOpacity={0.8}
-                  >
-                    <View style={styles.planBadges}>
-                      <Text style={styles.planBadgeText}>RECOMMENDED</Text>
-                      <View style={styles.saveBadge}>
-                        <Text style={styles.saveBadgeText}>Save {pricing.yearlySavingsPercent}%</Text>
-                      </View>
-                    </View>
-                    <View style={styles.planRow}>
-                      <View style={styles.planText}>
-                        <Text style={styles.planTitle}>Annual Plan</Text>
-                        <Text style={styles.planPrice}>
-                          {pricing.yearlyPrice} per year ({pricing.yearlyPerMonth}/month)
-                        </Text>
-                        <Text style={styles.planTrial}>Includes {pricing.trialDays}-day free trial</Text>
-                      </View>
-                      <Ionicons
-                        name={selectedPlan === 'yearly' ? 'checkmark-circle' : 'ellipse-outline'}
-                        size={22}
-                        color={Theme.colors.accent}
-                      />
-                    </View>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[
-                      styles.planCard,
-                      selectedPlan === 'monthly' && styles.planCardSelected,
-                    ]}
-                    onPress={() => setSelectedPlan('monthly')}
-                    activeOpacity={0.8}
-                  >
-                    <View style={styles.planRow}>
-                      <View style={styles.planText}>
-                        <Text style={styles.planTitle}>Monthly Plan</Text>
-                        <Text style={styles.planPrice}>{pricing.monthlyPrice}/month</Text>
-                      </View>
-                      <Ionicons
-                        name={selectedPlan === 'monthly' ? 'checkmark-circle' : 'ellipse-outline'}
-                        size={22}
-                        color={Theme.colors.accent}
-                      />
-                    </View>
-                  </TouchableOpacity>
-
-                  <Text style={styles.planFootnote}>{planFootnote}</Text>
-                </View>
-              </>
-            )}
+              <Text style={styles.planFootnote}>{planFootnote}</Text>
+            </View>
 
             <TouchableOpacity
               style={styles.ctaButton}
@@ -269,7 +276,13 @@ export const PremiumGate: React.FC<PremiumGateProps> = ({
               {isPurchasing ? (
                 <ActivityIndicator size="small" color={Theme.colors.textInverse} />
               ) : (
-                <Text style={styles.ctaText}>{ctaLabel}</Text>
+                <Text style={styles.ctaText}>
+                  {selectedPlan === 'yearly' 
+                    ? `Start 7-Day Free Trial - ${yearlyPrice}/year`
+                    : selectedPlan === 'monthly'
+                    ? `Start 7-Day Free Trial - ${monthlyPrice}/month`
+                    : `Get Lifetime Access - ${lifetimePrice}`}
+                </Text>
               )}
             </TouchableOpacity>
 
@@ -318,7 +331,8 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: Theme.spacing.xl,
-    paddingTop: Theme.spacing.lg,
+    paddingTop: Theme.spacing.md,
+    paddingBottom: Theme.spacing.xl,
   },
   closeRow: {
     alignItems: 'flex-end',
@@ -335,80 +349,61 @@ const styles = StyleSheet.create({
     ...Theme.typography.h2,
     color: Theme.colors.textPrimary,
     marginTop: Theme.spacing.sm,
-    marginBottom: Theme.spacing.lg,
+    marginBottom: Theme.spacing.xs,
     textAlign: 'center',
+    fontWeight: '700',
+    fontSize: 24,
   },
-  timeline: {
-    position: 'relative',
-    paddingLeft: 26,
+  subtitle: {
+    ...Theme.typography.body,
+    color: Theme.colors.textSecondary,
+    textAlign: 'center',
+    marginBottom: Theme.spacing.xl,
+    fontSize: 15,
+  },
+  highlightsContainer: {
     marginBottom: Theme.spacing.lg,
-  },
-  timelineLine: {
-    position: 'absolute',
-    top: 6,
-    left: 12,
-    bottom: 8,
-    width: 2,
-    backgroundColor: Theme.colors.border,
-  },
-  timelineRow: {
-    flexDirection: 'row',
-    marginBottom: Theme.spacing.md,
     gap: Theme.spacing.md,
   },
-  timelineIcon: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: Theme.colors.surfaceSecondary,
+  highlightItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: Theme.spacing.md,
+    paddingVertical: Theme.spacing.sm,
+  },
+  highlightIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: `${Theme.colors.accent}15`,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: Theme.colors.border,
+    borderWidth: 1.5,
+    borderColor: `${Theme.colors.accent}30`,
   },
-  timelineContent: {
+  highlightContent: {
     flex: 1,
+    paddingTop: 2,
   },
-  timelineTitle: {
+  highlightTitle: {
     ...Theme.typography.bodyBold,
     color: Theme.colors.textPrimary,
-    marginBottom: 2,
+    marginBottom: 4,
+    fontSize: 15,
+    fontWeight: '600',
   },
-  timelineText: {
-    ...Theme.typography.small,
-    color: Theme.colors.textSecondary,
-  },
-  trialSummary: {
-    ...Theme.typography.body,
-    color: Theme.colors.textPrimary,
-    textAlign: 'center',
-    marginBottom: Theme.spacing.md,
-  },
-  viewPlansButton: {
-    alignSelf: 'center',
-    marginBottom: Theme.spacing.lg,
-  },
-  viewPlansText: {
-    ...Theme.typography.bodyBold,
-    color: Theme.colors.accent,
-  },
-  unlockHeader: {
-    marginBottom: Theme.spacing.md,
-  },
-  unlockTitle: {
-    ...Theme.typography.h3,
-    color: Theme.colors.textPrimary,
-    textAlign: 'center',
-    marginBottom: Theme.spacing.xs,
-  },
-  unlockSubtitle: {
+  highlightText: {
     ...Theme.typography.body,
     color: Theme.colors.textSecondary,
-    textAlign: 'center',
+    fontSize: 13,
+    lineHeight: 18,
   },
   featuresList: {
     marginBottom: Theme.spacing.lg,
     gap: Theme.spacing.sm,
+    backgroundColor: Theme.colors.surfaceSecondary,
+    borderRadius: Theme.radius.md,
+    padding: Theme.spacing.md,
   },
   featureItem: {
     flexDirection: 'row',
@@ -493,16 +488,21 @@ const styles = StyleSheet.create({
   ctaButton: {
     backgroundColor: Theme.colors.success,
     borderRadius: Theme.radius.lg,
-    paddingVertical: Theme.spacing.md,
+    paddingVertical: Theme.spacing.lg,
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: TOUCH_TARGET_MIN,
+    minHeight: TOUCH_TARGET_MIN + 8,
     marginBottom: Theme.spacing.sm,
+    marginTop: Theme.spacing.md,
+    ...Theme.shadow.medium,
   },
   ctaText: {
     ...Theme.typography.bodyBold,
     color: Theme.colors.textInverse,
     fontSize: 16,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+    textAlign: 'center',
   },
   ctaSubtext: {
     ...Theme.typography.small,
@@ -524,6 +524,7 @@ const styles = StyleSheet.create({
     ...Theme.typography.small,
     color: Theme.colors.textTertiary,
     textAlign: 'center',
+    marginTop: Theme.spacing.sm,
   },
 });
 

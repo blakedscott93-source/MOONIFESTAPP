@@ -9,12 +9,14 @@
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Logger } from './logger';
 import { Platform } from 'react-native';
+import { useState, useEffect } from 'react';
 
 const PREMIUM_STORAGE_KEY = '@is_premium_user';
 const PREMIUM_EXPIRY_KEY = '@premium_expiry_date';
 const SUBSCRIPTION_TYPE_KEY = '@subscription_type';
-const REVENUECAT_ENTITLEMENT_ID = 'premium';
+const REVENUECAT_ENTITLEMENT_ID = 'Moonifest Pro';
 
 export type SubscriptionType = 'monthly' | 'yearly' | 'lifetime' | 'trial' | null;
 export type PaymentProvider = 'revenuecat' | 'stripe' | 'local' | null;
@@ -88,7 +90,7 @@ export async function initializePremium(): Promise<void> {
       });
       revenueCatConfigured = true;
     } catch (error) {
-      console.error('RevenueCat initialization failed:', error);
+      Logger.error('RevenueCat initialization failed:', error);
     }
   }
 
@@ -101,7 +103,7 @@ export async function initializePremium(): Promise<void> {
         merchantIdentifier: 'merchant.com.moonifest',
       });
     } catch (error) {
-      console.error('Stripe initialization failed:', error);
+      Logger.error('Stripe initialization failed:', error);
     }
   }
 }
@@ -112,12 +114,12 @@ export async function initializePremium(): Promise<void> {
 async function getOrCreateUserId(): Promise<string> {
   const userIdKey = '@premium_user_id';
   let userId = await AsyncStorage.getItem(userIdKey);
-  
+
   if (!userId) {
     userId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     await AsyncStorage.setItem(userIdKey, userId);
   }
-  
+
   return userId;
 }
 
@@ -150,6 +152,18 @@ async function ensureRevenueCatConfigured(): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/**
+ * Check if premium service is configured with API keys
+ */
+export async function isPremiumConfigured(): Promise<boolean> {
+  const custom = await ensureRevenueCatConfigured();
+  if (custom) return true;
+
+  // Also check for Stripe
+  const stripeKey = getEnvValue('EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY');
+  return !!stripeKey;
 }
 
 async function getCustomerInfoSafe(): Promise<any | null> {
@@ -189,7 +203,7 @@ export async function isPremiumUser(): Promise<boolean> {
         return true;
       }
     } catch (error) {
-      console.error('Error checking RevenueCat premium status:', error);
+      Logger.error('Error checking RevenueCat premium status:', error);
     }
   }
 
@@ -209,7 +223,7 @@ export async function isPremiumUser(): Promise<boolean> {
       return true;
     }
   } catch (error) {
-    console.error('Error checking premium status:', error);
+    Logger.error('Error checking premium status:', error);
   }
 
   return false;
@@ -222,7 +236,7 @@ export async function getPremiumStatus(): Promise<PremiumStatus> {
   const isPremium = await isPremiumUser();
   const subscriptionType = (await AsyncStorage.getItem(SUBSCRIPTION_TYPE_KEY)) as SubscriptionType || null;
   const expiryDate = await AsyncStorage.getItem(PREMIUM_EXPIRY_KEY);
-  
+
   let provider: PaymentProvider = 'local';
   if (Purchases) {
     try {
@@ -282,7 +296,7 @@ export async function setPremiumStatus(
       await AsyncStorage.removeItem(SUBSCRIPTION_TYPE_KEY);
     }
   } catch (error) {
-    console.error('Error setting premium status:', error);
+    Logger.error('Error setting premium status:', error);
   }
 }
 
@@ -290,7 +304,7 @@ export async function setPremiumStatus(
  * Purchase premium subscription via RevenueCat
  */
 export async function purchasePremiumRevenueCat(
-  plan: 'monthly' | 'yearly' = 'yearly',
+  plan: 'monthly' | 'yearly' | 'lifetime' = 'yearly',
   offeringId?: string
 ): Promise<boolean> {
   if (!Purchases) {
@@ -307,7 +321,7 @@ export async function purchasePremiumRevenueCat(
     const offering =
       (offeringId
         ? (offerings?.all?.[offeringId] ??
-            (typeof offerings?.offering === 'function' ? offerings.offering(offeringId) : null))
+          (typeof offerings?.offering === 'function' ? offerings.offering(offeringId) : null))
         : null) ||
       offerings?.current ||
       null;
@@ -317,7 +331,7 @@ export async function purchasePremiumRevenueCat(
     }
 
     // Prefer the requested plan if available, fallback to first package
-    const targetPackageType = plan === 'yearly' ? 'ANNUAL' : 'MONTHLY';
+    const targetPackageType = plan === 'yearly' ? 'ANNUAL' : plan === 'monthly' ? 'MONTHLY' : 'LIFETIME';
     const matchedPackage = offering.availablePackages.find(
       (pkg: any) => String(pkg.packageType || '').toUpperCase().includes(targetPackageType)
     );
@@ -332,13 +346,13 @@ export async function purchasePremiumRevenueCat(
 
     const isPremium = isRevenueCatPremium(customerInfo);
     await syncPremiumStatus(isPremium, 'revenuecat');
-    
+
     return isPremium;
   } catch (error: any) {
     if (error.userCancelled) {
       return false;
     }
-    console.error('Purchase error:', error);
+    Logger.error('Purchase error:', error);
     throw error;
   }
 }
@@ -359,7 +373,7 @@ export async function restorePurchases(): Promise<boolean> {
     await syncPremiumStatus(isPremium, 'revenuecat');
     return isPremium;
   } catch (error) {
-    console.error('Restore purchases error:', error);
+    Logger.error('Restore purchases error:', error);
     return false;
   }
 }
@@ -368,7 +382,7 @@ export async function restorePurchases(): Promise<boolean> {
  * Premium feature gate component helper
  */
 export function getPremiumMessage(featureName: string): string {
-  return `Unlock ${featureName} with Moonifest Premium!`;
+  return `Unlock ${featureName} with Vortex Premium!`;
 }
 
 /**
@@ -382,7 +396,7 @@ export function getSubscriptionPricing(): {
   trialDays: number;
 } {
   const monthlyValue = 9.99;
-  const yearlyValue = 59.99;
+  const yearlyValue = 49.99;
   const yearlyPerMonth = (yearlyValue / 12).toFixed(2);
   const yearlySavingsPercent = Math.round(
     100 - (yearlyValue / (monthlyValue * 12)) * 100
@@ -395,6 +409,69 @@ export function getSubscriptionPricing(): {
     yearlySavingsPercent,
     trialDays: 7,
   };
+}
+
+/**
+ * Hook to fetch and return RevenueCat offerings
+ */
+export function usePremiumOfferings() {
+  const [packages, setPackages] = useState<any[]>([]);
+  const [isConfigured, setIsConfigured] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadOfferings();
+  }, []);
+
+  const loadOfferings = async () => {
+    try {
+      const configured = await isPremiumConfigured();
+      setIsConfigured(configured);
+
+      if (configured && Purchases) {
+        try {
+          const offerings = await Purchases.getOfferings();
+          if (offerings.current?.availablePackages?.length) {
+            setPackages(offerings.current.availablePackages);
+          }
+        } catch (e) {
+          Logger.warn('Failed to load offerings', e);
+        }
+      }
+    } catch (e) {
+      Logger.warn('Error checking premium config', e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return { packages, isConfigured, loading };
+}
+
+/**
+ * Helper to find a package by type/identifier robustly
+ * Handles: "ANNUAL", "Annual", "$rc_annual", "yearly", etc.
+ */
+export function findPackage(packages: any[], type: 'ANNUAL' | 'MONTHLY' | 'LIFETIME') {
+  if (!packages || !packages.length) return null;
+
+  return packages.find((pkg) => {
+    const id = (pkg.identifier || '').toUpperCase();
+    const pkgType = String(pkg.packageType || '').toUpperCase();
+
+    // Check strict SDK type (if string) or Identifier
+    // RC standard is $rc_annual, custom is Annual
+    if (type === 'ANNUAL') {
+      return id.includes('ANNUAL') || id.includes('YEARLY') || pkgType === 'ANNUAL' || pkgType === '3';
+    }
+    if (type === 'MONTHLY') {
+      return id.includes('MONTHLY') || pkgType === 'MONTHLY' || pkgType === '7';
+    }
+    if (type === 'LIFETIME') {
+      return id.includes('LIFETIME') || pkgType === 'LIFETIME' || pkgType === '2';
+    }
+    return false;
+  });
 }
 
 

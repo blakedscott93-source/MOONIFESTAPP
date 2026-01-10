@@ -16,6 +16,7 @@ import { trackAppSession } from './src/utils/appRating';
 import { initSentry } from './src/utils/sentry';
 import { initializePremium } from './src/utils/premium';
 import { useFonts, Sora_400Regular, Sora_600SemiBold, Sora_700Bold } from '@expo-google-fonts/sora';
+import { AnimatedSplashScreen } from './src/components/AnimatedSplashScreen';
 
 // Initialize Sentry error tracking (wrapped in try-catch to prevent crashes)
 try {
@@ -27,15 +28,15 @@ try {
 function AppContent() {
   if (__DEV__) {
   }
-  
+
   // Hooks must be called unconditionally at the top level
   const theme = useOldTheme();
   const isDark = theme.isDark;
   const colors = getColors(isDark);
-  
+
   if (__DEV__) {
   }
-  
+
   // Track app session for rating prompts
   useEffect(() => {
     if (__DEV__) {
@@ -89,10 +90,12 @@ export default function App() {
     Sora_700Bold,
   });
 
+  const [showSplash, setShowSplash] = React.useState(true);
+
   if (!fontsLoaded) {
     return null;
   }
-  
+
   try {
     return (
       <ErrorBoundary>
@@ -102,7 +105,11 @@ export default function App() {
               <ToastProvider>
                 <AppProvider>
                   <WebPhoneWrapper>
-                    <AppContent />
+                    {showSplash ? (
+                      <AnimatedSplashScreen onAnimationFinish={() => setShowSplash(false)} />
+                    ) : (
+                      <AppContent />
+                    )}
                   </WebPhoneWrapper>
                 </AppProvider>
               </ToastProvider>

@@ -1,58 +1,53 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  RefreshControl,
-  Animated,
-  Platform,
-} from 'react-native';
+import { RefreshControl, Animated, Alert, TouchableOpacity, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { useTabBarInset } from '../hooks/useTabBarInset';
 import { useApp } from '../context/AppContext';
-import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
-import { SectionCard, ProgressBar, GlassCard } from '../components/ui';
-import { ListRow } from '../components/ListRow';
 import { Screen } from '../components/layout/Screen';
-import { UnifiedCard } from '../components/UnifiedCard';
 import { tokens } from '../theme/tokens';
 import { useTheme } from '../context/ThemeContext';
 import { MoodCheckIn } from '../components/MoodCheckIn';
-import { MoodType, EnergyLevel, getMoodOption, getEnergyOption } from '../data/moodTracking';
-import { DailySpin, DailySpinButton } from '../components/DailySpin';
+import { MoodType, EnergyLevel } from '../data/moodTracking';
+import { DailySpin } from '../components/DailySpin';
 import { getQuoteOfTheDay, Quote } from '../data/quotes';
-import { SkeletonLoader } from '../components/SkeletonLoader';
 import { canSpinToday, DailySpinReward, getNextStreakMilestone, getDaysUntilMilestone } from '../utils/rewards';
 import { mediumHaptic, successHaptic } from '../utils/haptics';
 import { Confetti } from '../components/Confetti';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { REQUIRED_DAILY_AFFIRMATION_SESSIONS, REQUIRED_DAILY_MUST_DO_TASKS, REQUIRED_DAILY_GRATITUDE_CHECKINS } from '../utils/constants';
-import { getGoalCategory } from '../data/goalCategories';
 import { useScreenTracking } from '../hooks/useScreenTracking';
 import { trackEvent } from '../utils/analytics';
 import { TodayScreenProps } from '../types/navigation';
-
-const GOAL_MESSAGES: Record<string, string> = {
-  wealth: "Let's manifest abundance",
-  love: "Let's attract meaningful connections",
-  health: "Let's nurture your wellbeing",
-  career: "Let's elevate your professional path",
-  happiness: "Let's cultivate joy",
-  spirituality: "Let's deepen your spiritual practice",
-};
-
-// Screen padding constant
-const SCREEN_PAD = 16;
+import { AdBanner } from '../components/ads/BannerAd';
+import { isPremiumUser } from '../utils/premium';
+import { HomeProgressCard } from '../components/home/HomeProgressCard';
+import { HomeDailyTasks, DailyPractice } from '../components/home/HomeDailyTasks';
+import { HomeSecondaryActions } from '../components/home/HomeSecondaryActions';
+import { DayCompleteCelebration } from '../components/home/DayCompleteCelebration';
+import { IncompleteDayModal } from '../components/IncompleteDayModal';
+import { IncompleteDayInfo } from '../utils/dayRolloverManager';
 
 export default function HomeScreen({ navigation, route }: TodayScreenProps) {
   useScreenTracking('Today');
-  const insets = useSafeAreaInsets();
   const tabBarInset = useTabBarInset();
-  const { theme, isDark } = useTheme();
-  const { appState, getTodayProgress, saveMoodEntry, getTodayMood, addGlowPoints, userGoals, goalCategories, hasVisionImageAddedToday, updateTasks } = useApp();
+  const { theme } = useTheme();
+  const {
+    appState,
+    getTodayProgress,
+    saveMoodEntry,
+    getTodayMood,
+    addGlowPoints,
+    hasVisionImageAddedToday,
+    resetGratitude,
+    resetMeditation,
+    resetVisionImage,
+    checkForDayRollover,
+    markYesterdayComplete,
+    handleMissedDay,
+    resetChallenge,
+  } = useApp();
+
   // Memoize todayProgress to prevent recalculation on every render
   const todayProgress = useMemo(() => getTodayProgress(), [getTodayProgress]);
   const [showMoodModal, setShowMoodModal] = useState(false);
@@ -66,11 +61,14 @@ export default function HomeScreen({ navigation, route }: TodayScreenProps) {
   const [showConfetti, setShowConfetti] = useState(false);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [shouldPromptVisionImage, setShouldPromptVisionImage] = useState(false);
+  const [isPremium, setIsPremium] = useState(false);
+  const [showIncompleteModal, setShowIncompleteModal] = useState(false);
+  const [incompleteDay, setIncompleteDay] = useState<IncompleteDayInfo | null>(null);
   const gratitudeLabel = REQUIRED_DAILY_GRATITUDE_CHECKINS === 1 ? 'gratitude' : 'gratitudes';
-  
+
   // Animation for streak icon pulse
   const streakPulseAnim = useRef(new Animated.Value(1)).current;
-  
+
   // Check if navigated from Daily Vision Image practice
   useEffect(() => {
     if (route?.params?.fromDailyVisionImage) {
@@ -103,6 +101,14 @@ export default function HomeScreen({ navigation, route }: TodayScreenProps) {
     setHasSpunToday(!canSpin);
   }, []);
 
+  const checkDayRolloverStatus = useCallback(async () => {
+    const result = await checkForDayRollover();
+    if (result.hasRollover && result.incompleteDay) {
+      setIncompleteDay(result.incompleteDay);
+      setShowIncompleteModal(true);
+    }
+  }, [checkForDayRollover]);
+
   const loadInitialData = useCallback(async () => {
     setIsInitialLoading(true);
     try {
@@ -110,6 +116,7 @@ export default function HomeScreen({ navigation, route }: TodayScreenProps) {
         loadTodayMood(),
         loadOnboardingData(),
         checkSpinStatus(),
+        checkDayRolloverStatus(),
       ]);
       setDailyQuote(getQuoteOfTheDay());
     } finally {
@@ -133,6 +140,8 @@ export default function HomeScreen({ navigation, route }: TodayScreenProps) {
       // Reload mood and spin status to ensure UI is up to date
       loadTodayMood();
       checkSpinStatus();
+      checkDayRolloverStatus();
+      isPremiumUser().then(setIsPremium);
       // todayProgress will auto-update via useMemo when AppContext changes
     }, [loadTodayMood, checkSpinStatus])
   );
@@ -174,12 +183,12 @@ export default function HomeScreen({ navigation, route }: TodayScreenProps) {
     if (reward.type === 'points' && addGlowPoints) {
       await addGlowPoints(reward.value, `Daily spin reward: ${reward.label}`);
     }
-    
+
     // Show confetti for rare rewards
     if (reward.rarity === 'rare' || reward.rarity === 'legendary') {
       setShowConfetti(true);
     }
-    
+
     setHasSpunToday(true);
     successHaptic();
   }, [addGlowPoints]);
@@ -197,30 +206,78 @@ export default function HomeScreen({ navigation, route }: TodayScreenProps) {
     return 'Good Evening';
   };
 
+  const handleResetTask = useCallback((title: string, onReset: () => Promise<void>) => {
+    mediumHaptic();
+    Alert.alert(
+      "Mark as incomplete?",
+      `This will remove your progress for "${title}" today.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Mark Incomplete",
+          style: "destructive",
+          onPress: async () => {
+            await onReset();
+            successHaptic();
+          }
+        }
+      ]
+    );
+  }, []);
+
+  const handleMarkYesterdayComplete = async () => {
+    await markYesterdayComplete();
+    setShowIncompleteModal(false);
+    setIncompleteDay(null);
+  };
+
+  const handleRestartChallenge = async () => {
+    await resetChallenge();
+    setShowIncompleteModal(false);
+    setIncompleteDay(null);
+  };
+
+  const handleKeepGoing = async () => {
+    await handleMissedDay();
+    setShowIncompleteModal(false);
+    setIncompleteDay(null);
+  };
+
+  const handleResetOnboarding = async () => {
+    Alert.alert(
+      "Reset Onboarding?",
+      "This will clear your onboarding status and restart the quiz.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Reset",
+          style: "destructive",
+          onPress: async () => {
+            await AsyncStorage.removeItem('@hasSeenOnboardingPaywall');
+            await AsyncStorage.removeItem('@onboarding_data');
+            navigation.getParent()?.reset({
+              index: 0,
+              routes: [{ name: 'OnboardingQuiz' as never }],
+            });
+          }
+        }
+      ]
+    );
+  };
+
   const dateString = today.toLocaleDateString('en-US', {
     weekday: 'long',
     month: 'long',
     day: 'numeric',
   });
 
-  // Memoize expensive calculations
-  const mustDoTasks = useMemo(() => 
-    todayProgress.tasks.filter(t => t.isMustDo), 
+  const mustDoTasks = useMemo(() =>
+    todayProgress.tasks.filter(t => t.isMustDo),
     [todayProgress.tasks]
   );
-  const mustDoCompleted = useMemo(() => 
+  const mustDoCompleted = useMemo(() =>
     mustDoTasks.filter(t => t.completed).length,
     [mustDoTasks]
-  );
-
-  // Next milestone info (memoized)
-  const nextMilestone = useMemo(() => 
-    getNextStreakMilestone(appState.currentStreak),
-    [appState.currentStreak]
-  );
-  const daysUntilMilestone = useMemo(() => 
-    getDaysUntilMilestone(appState.currentStreak),
-    [appState.currentStreak]
   );
 
   // Track previous streak to detect milestone changes
@@ -236,7 +293,7 @@ export default function HomeScreen({ navigation, route }: TodayScreenProps) {
         previousStreak.current !== appState.currentStreak
       ) {
         previousStreak.current = appState.currentStreak;
-        
+
         // Delay to avoid interrupting user flow
         if (ratingPromptTimeoutRef.current) {
           clearTimeout(ratingPromptTimeoutRef.current);
@@ -261,7 +318,7 @@ export default function HomeScreen({ navigation, route }: TodayScreenProps) {
   }, [appState.currentStreak, appState.totalDays]);
 
   // Memoize daily practices array to prevent recreation on every render
-  const dailyPractices = useMemo(() => {
+  const dailyPractices: DailyPractice[] = useMemo(() => {
     const practices = [
       {
         id: 'must-do-tasks',
@@ -289,6 +346,11 @@ export default function HomeScreen({ navigation, route }: TodayScreenProps) {
         color: '#FF6B9D',
         completed: todayProgress.gratitudeEntry.trim().length > 0,
         action: () => navigation.navigate('Journal'),
+        onLongPress: () => {
+          if (todayProgress.gratitudeEntry.trim().length > 0) {
+            handleResetTask('Gratitude Journal', resetGratitude);
+          }
+        }
       },
       {
         id: 'meditation',
@@ -298,9 +360,14 @@ export default function HomeScreen({ navigation, route }: TodayScreenProps) {
         color: '#4ECDC4',
         completed: todayProgress.meditationCompleted,
         action: () => navigation.getParent()?.navigate('MeditationScreen' as never),
+        onLongPress: () => {
+          if (todayProgress.meditationCompleted) {
+            handleResetTask('Guided Meditation', resetMeditation);
+          }
+        }
       },
     ];
-    
+
     // Add Daily Vision Image (always show for now - can be gated by challengeActive later)
     const visionImageAdded = hasVisionImageAddedToday();
     practices.push({
@@ -311,8 +378,13 @@ export default function HomeScreen({ navigation, route }: TodayScreenProps) {
       color: '#9D4EDD',
       completed: visionImageAdded,
       action: () => navigation.navigate('Vision', { fromDailyVisionImage: true }),
+      onLongPress: () => {
+        if (visionImageAdded) {
+          handleResetTask('Daily Vision Image', resetVisionImage);
+        }
+      }
     });
-    
+
     return practices;
   }, [
     mustDoCompleted,
@@ -324,11 +396,11 @@ export default function HomeScreen({ navigation, route }: TodayScreenProps) {
     navigation,
   ]);
 
-  const completedCount = useMemo(() => 
+  const completedCount = useMemo(() =>
     dailyPractices.filter(p => p.completed).length,
     [dailyPractices]
   );
-  const progressPercentage = useMemo(() => 
+  const progressPercentage = useMemo(() =>
     (completedCount / dailyPractices.length) * 100,
     [completedCount, dailyPractices.length]
   );
@@ -360,176 +432,49 @@ export default function HomeScreen({ navigation, route }: TodayScreenProps) {
       }
       contentContainerStyle={{
         paddingTop: tokens.spacing.xs,
-        paddingBottom: tabBarInset,
+        paddingBottom: tabBarInset + 100, // Extra padding to clear floating tab bar
       }}
     >
-        {/* TODAY = THE COCKPIT - Clear Progress Overview */}
-        <GlassCard style={styles.progressOverviewCard}>
-          <View style={styles.progressOverviewHeader}>
-            <Text style={[styles.progressOverviewTitle, { color: theme.colors.textPrimary }]}>Today's Progress</Text>
-            {isDayComplete && (
-              <View style={styles.completeBadge}>
-                <Ionicons name="checkmark-circle" size={20} color={tokens.colors.success} />
-              </View>
-            )}
-          </View>
-          <View style={styles.progressCountDisplay}>
-            <Text style={[styles.progressCountLarge, { color: theme.colors.accent }]}>{completedCount}</Text>
-            <Text style={[styles.progressCountDivider, { color: theme.colors.textSecondary }]}>/</Text>
-            <Text style={[styles.progressCountTotal, { color: theme.colors.textSecondary }]}>{dailyPractices.length}</Text>
-            <Text style={[styles.progressCountLabel, { color: theme.colors.textSecondary }]}>complete</Text>
-          </View>
-          <ProgressBar
-            progress={progressPercentage / 100}
-            height={10}
-            fillColor={isDayComplete ? tokens.colors.success : tokens.colors.accent}
-            trackColor={`${tokens.colors.accent}15`}
-          />
-        </GlassCard>
+      {/* TODAY = THE COCKPIT - Clear Progress Overview */}
+      <HomeProgressCard
+        completedCount={completedCount}
+        totalCount={dailyPractices.length}
+        progressPercentage={progressPercentage}
+        isDayComplete={isDayComplete}
+      />
 
-        {/* Day Complete Celebration */}
-        {isDayComplete && (
-          <GlassCard style={styles.celebrationCard}>
-            <View style={styles.celebrationContent}>
-              <Ionicons name="trophy" size={40} color={tokens.colors.warning} />
-              <View style={styles.celebrationText}>
-                <Text style={[styles.celebrationTitle, { color: theme.colors.textPrimary }]}>Day Complete! 🎉</Text>
-                <Text style={[styles.celebrationSubtitle, { color: theme.colors.textSecondary }]}>
-                  {appState.currentStreak > 1
-                    ? `${appState.currentStreak} day streak! Keep it going!`
-                    : `Great start! Come back tomorrow to build your streak`}
-                </Text>
-              </View>
-            </View>
-          </GlassCard>
-        )}
+      {/* Day Complete Celebration */}
+      {isDayComplete && (
+        <DayCompleteCelebration streak={appState.currentStreak} />
+      )}
 
-        {/* 5 DAILY TASKS - Primary Focus */}
-        <SectionCard style={styles.dailyTasksCard}>
-          <View style={styles.dailyTasksHeader}>
-            <Text style={[styles.dailyTasksTitle, { color: theme.colors.textPrimary }]}>Daily Tasks</Text>
-            <Text style={[styles.dailyTasksSubtitle, { color: theme.colors.textSecondary }]}>Complete all 5 to finish today</Text>
-          </View>
-          <View style={styles.dailyTasksList}>
-            {dailyPractices.map((practice, index) => (
-              <View key={practice.id}>
-                <ListRow
-                  title={practice.title}
-                  subtitle={practice.subtitle}
-                  icon={practice.icon as any}
-                  iconColor={practice.color}
-                  rightIcon={practice.completed ? 'checkmark-circle' : 'chevron-forward'}
-                  onPress={practice.action}
-                  completed={practice.completed}
-                />
-                {index < dailyPractices.length - 1 && (
-                  <View style={styles.taskSeparator} />
-                )}
-              </View>
-            ))}
-          </View>
-        </SectionCard>
+      {/* 5 DAILY TASKS - Primary Focus */}
+      <HomeDailyTasks practices={dailyPractices} />
 
-        {/* SECONDARY SECTIONS - Deemphasized */}
+      {/* SECONDARY SECTIONS - Deemphasized */}
+      <HomeSecondaryActions
+        todayMoodEntry={todayMoodEntry}
+        onMoodPress={() => setShowMoodModal(true)}
+        streak={appState.currentStreak}
+        streakPulseAnim={streakPulseAnim}
+        onStreakPress={() => navigation.navigate('45 NOW')}
+        hasSpunToday={hasSpunToday}
+        onSpinPress={handleOpenSpin}
+        dailyQuote={dailyQuote}
+      />
 
-        {/* Mood Check-In - Compact */}
-        <GlassCard style={{ marginBottom: tokens.spacing.md }}>
-          <TouchableOpacity
-            onPress={() => setShowMoodModal(true)}
-            activeOpacity={0.7}
-            accessibilityRole="button"
-            accessibilityLabel={todayMoodEntry ? 'Update mood' : 'Check in with your mood'}
-            style={styles.moodRowItemCompact}
-          >
-            <View
-              style={[
-                styles.moodIconCircleCompact,
-                {
-                  backgroundColor: todayMoodEntry
-                    ? `${getMoodOption(todayMoodEntry.mood)?.color}20`
-                    : `${tokens.colors.accent}20`,
-                },
-              ]}
-            >
-              {todayMoodEntry ? (
-                <Text style={styles.moodEmojiCompact}>{getMoodOption(todayMoodEntry.mood)?.emoji}</Text>
-              ) : (
-                <Ionicons name="happy-outline" size={18} color={tokens.colors.accent} />
-              )}
-            </View>
+      {/* DEBUG: Reset Onboarding Trigger */}
+      <TouchableOpacity
+        style={{ padding: 20, alignItems: 'center', opacity: 0.5 }}
+        onPress={handleResetOnboarding}
+      >
+        <Text style={[{ color: tokens.colors.textSecondary }, tokens.typography.small]}>
+          Dev: Reset Onboarding Flow
+        </Text>
+      </TouchableOpacity>
 
-            <View style={styles.moodTextContainerCompact}>
-              <Text style={[styles.moodTitleCompact, { color: theme.colors.textPrimary }]}>
-                {todayMoodEntry ? `Mood: ${getMoodOption(todayMoodEntry.mood)?.label}` : 'Check in with your mood'}
-              </Text>
-            </View>
-
-            <Ionicons
-              name={todayMoodEntry ? 'create-outline' : 'chevron-forward'}
-              size={18}
-              color={tokens.colors.textSecondary}
-            />
-          </TouchableOpacity>
-        </GlassCard>
-
-        {/* Streak & Daily Spin - Compact */}
-        <SectionCard style={styles.streakCardCompact}>
-          <LinearGradient
-            colors={['rgba(167, 139, 250, 0.75)', 'rgba(124, 58, 237, 0.65)']}
-            style={styles.streakGradientCompact}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-          >
-            <TouchableOpacity
-              onPress={() => navigation.navigate('45 NOW')}
-              activeOpacity={0.9}
-              style={styles.streakTouchableCompact}
-              accessibilityLabel="View 45 NOW challenge"
-              accessibilityRole="button"
-            >
-              <Animated.View
-                style={[
-                  styles.streakIconContainerCompact,
-                  appState.currentStreak > 0 && {
-                    transform: [{ scale: streakPulseAnim }],
-                  },
-                ]}
-              >
-                <Ionicons name="flame" size={20} color="#FFFFFF" />
-              </Animated.View>
-
-              <View style={styles.streakTextStackCompact}>
-                <Text style={styles.streakMessageCompact}>
-                  {appState.currentStreak === 0 ? 'Start streak' : `${appState.currentStreak} day streak`}
-                </Text>
-              </View>
-
-              <Ionicons name="chevron-forward" size={18} color="rgba(255, 255, 255, 0.8)" />
-            </TouchableOpacity>
-
-            <View style={styles.spinButtonWrapperCompact}>
-              <DailySpinButton
-                onPress={handleOpenSpin}
-                hasSpun={hasSpunToday}
-              />
-            </View>
-          </LinearGradient>
-        </SectionCard>
-
-        {/* Daily Quote - Simple */}
-        <GlassCard style={{ marginBottom: tokens.spacing.md }}>
-          <View style={styles.quoteContainerCompact}>
-            <Text style={[styles.quoteTextCompact, { color: theme.colors.textPrimary }]}>
-              "{dailyQuote?.text || 'Your thoughts create your reality.'}"
-            </Text>
-            <Text style={[styles.quoteAuthorCompact, { color: theme.colors.textSecondary }]}>
-              — {dailyQuote?.author || 'Unknown'}
-            </Text>
-          </View>
-        </GlassCard>
-
-        {/* Extra bottom padding to clear floating tab bar */}
-        <View style={{ height: 110 }} />
+      {/* Ad Banner - Only for free users */}
+      {!isPremium && <AdBanner />}
 
       {/* Mood Check-In Modal */}
       <MoodCheckIn
@@ -551,186 +496,15 @@ export default function HomeScreen({ navigation, route }: TodayScreenProps) {
         onComplete={() => setShowConfetti(false)}
       />
 
-      {/* Task Manager Modal */}
+
+      {/* Incomplete Day Modal */}
+      <IncompleteDayModal
+        visible={showIncompleteModal}
+        incompleteDay={incompleteDay}
+        onMarkComplete={handleMarkYesterdayComplete}
+        onRestartChallenge={handleRestartChallenge}
+        onKeepGoing={handleKeepGoing}
+      />
     </Screen>
   );
 }
-
-const styles = StyleSheet.create({
-  // TODAY = THE COCKPIT - New Styles
-  progressOverviewCard: {
-    marginBottom: tokens.spacing.md,
-    paddingHorizontal: tokens.spacing.lg,
-    paddingVertical: tokens.spacing.lg * 0.56, // 44% total reduction (30% + 20%)
-  },
-  progressOverviewHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: tokens.spacing.sm * 0.56, // 44% total reduction
-  },
-  progressOverviewTitle: {
-    fontSize: 16, // Further reduced
-    fontWeight: '700',
-    letterSpacing: -0.2,
-  },
-  completeBadge: {
-    width: 24, // Further reduced
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: `${tokens.colors.success}20`,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  progressCountDisplay: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    marginBottom: tokens.spacing.md * 0.56, // 44% total reduction
-    gap: tokens.spacing.xs,
-  },
-  progressCountLarge: {
-    fontSize: 32, // Further reduced (20% more)
-    fontWeight: '700',
-    letterSpacing: -1,
-  },
-  progressCountDivider: {
-    fontSize: 22, // Further reduced
-    fontWeight: '300',
-  },
-  progressCountTotal: {
-    fontSize: 22, // Further reduced
-    fontWeight: '300',
-  },
-  progressCountLabel: {
-    fontSize: 13, // Further reduced
-    fontWeight: '500',
-    marginLeft: tokens.spacing.xs,
-  },
-  celebrationCard: {
-    marginBottom: tokens.spacing.md,
-    padding: tokens.spacing.lg,
-    backgroundColor: `${tokens.colors.success}10`,
-  },
-  celebrationContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: tokens.spacing.md,
-  },
-  celebrationText: {
-    flex: 1,
-    gap: 4,
-  },
-  celebrationTitle: {
-    fontSize: 17,
-    fontWeight: '600',
-  },
-  celebrationSubtitle: {
-    fontSize: 14,
-    fontWeight: '400',
-  },
-  dailyTasksCard: {
-    marginBottom: tokens.spacing.lg,
-    padding: tokens.spacing.lg,
-  },
-  dailyTasksHeader: {
-    marginBottom: tokens.spacing.md,
-    gap: 4,
-  },
-  dailyTasksTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    letterSpacing: -0.3,
-  },
-  dailyTasksSubtitle: {
-    fontSize: 13,
-    fontWeight: '400',
-  },
-  dailyTasksList: {
-    gap: 0,
-  },
-  taskSeparator: {
-    height: 1,
-    backgroundColor: 'rgba(31, 18, 53, 0.05)',
-    marginLeft: 60,
-    marginRight: 0,
-    marginVertical: tokens.spacing.xs,
-  },
-  // Compact secondary sections
-  streakCardCompact: {
-    padding: 0,
-    overflow: 'hidden',
-    borderWidth: 0,
-    marginBottom: tokens.spacing.md,
-  },
-  streakGradientCompact: {
-    padding: tokens.spacing.md,
-    borderRadius: tokens.radii.lg,
-    flexDirection: 'row',
-    alignItems: 'center',
-    minHeight: 60,
-  },
-  streakTouchableCompact: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: tokens.spacing.md,
-  },
-  streakIconContainerCompact: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(255, 255, 255, 0.22)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  streakTextStackCompact: {
-    flex: 1,
-  },
-  streakMessageCompact: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  spinButtonWrapperCompact: {
-    marginLeft: tokens.spacing.md,
-  },
-  moodRowItemCompact: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: tokens.spacing.md,
-    paddingHorizontal: tokens.spacing.lg,
-  },
-  moodIconCircleCompact: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: tokens.spacing.md,
-  },
-  moodEmojiCompact: {
-    fontSize: 20,
-  },
-  moodTextContainerCompact: {
-    flex: 1,
-  },
-  moodTitleCompact: {
-    fontSize: 15,
-    fontWeight: '500',
-  },
-  quoteContainerCompact: {
-    padding: tokens.spacing.lg,
-    gap: tokens.spacing.sm,
-  },
-  quoteTextCompact: {
-    fontSize: 15,
-    fontWeight: '400',
-    fontStyle: 'italic',
-    lineHeight: 22,
-  },
-  quoteAuthorCompact: {
-    fontSize: 13,
-    fontWeight: '400',
-    textAlign: 'right',
-  },
-});

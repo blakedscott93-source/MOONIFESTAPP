@@ -25,8 +25,8 @@ interface FAQItem {
 const FAQ_DATA: FAQItem[] = [
   // General
   {
-    question: 'What is Moonifest?',
-    answer: 'Moonifest is a comprehensive manifestation app that helps you practice gratitude, set goals, build positive habits, and manifest your dreams through daily affirmations, journaling, meditation, and structured challenges.',
+    question: 'What is Vortex?',
+    answer: 'Vortex is a comprehensive manifestation app that helps you practice gratitude, set goals, build positive habits, and manifest your dreams through daily affirmations, journaling, meditation, and structured challenges.',
     category: 'general',
   },
   {

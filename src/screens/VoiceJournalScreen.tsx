@@ -21,16 +21,12 @@ import { Screen } from '../components/Screen';
 import { Theme, TOUCH_TARGET_MIN } from '../utils/theme';
 import { REQUIRED_DAILY_GRATITUDE_CHECKINS } from '../utils/constants';
 import {
-  startRecording,
-  stopRecording,
-  cancelRecording,
-  requestMicrophonePermission,
   formatDuration,
-  getRecordingDuration,
 } from '../utils/voiceRecording';
 import { transcribeAudio, isTranscriptionAvailable } from '../utils/voiceTranscription';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { VoiceJournalScreenProps } from '../types/navigation';
+import { useVoiceRecorder } from '../hooks/useVoiceRecorder'; // Import the new hook
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -113,7 +109,15 @@ export default function VoiceJournalScreen({ navigation }: VoiceJournalScreenPro
   } = useApp();
   const { showSuccess, showError, showPoints, showInfo } = useToast();
 
-  const [isRecording, setIsRecording] = useState(false);
+  // Use custom hook for recording logic
+  const {
+    isRecording,
+    recordingDuration,
+    startRecording,
+    stopRecording: stopRecordingHook,
+    cancelRecording: cancelRecordingHook
+  } = useVoiceRecorder();
+
   const [isPressing, setIsPressing] = useState(false);
   const [textEntry, setTextEntry] = useState('');
   const [currentPromptIndex, setCurrentPromptIndex] = useState(0);
@@ -123,7 +127,7 @@ export default function VoiceJournalScreen({ navigation }: VoiceJournalScreenPro
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
   const [showTextInput, setShowTextInput] = useState(false);
   const [recordingUri, setRecordingUri] = useState<string | null>(null);
-  const [recordingDuration, setRecordingDuration] = useState<number>(0);
+  // recordingDuration is now from hook
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [userGoal, setUserGoal] = useState<string>('');
   const [activePrompts, setActivePrompts] = useState<string[]>(MANIFESTATION_PROMPTS);
@@ -151,10 +155,6 @@ export default function VoiceJournalScreen({ navigation }: VoiceJournalScreenPro
     Array.from({ length: 20 }, () => new Animated.Value(0.2))
   ).current;
 
-  // Ref to store the recording duration interval ID
-  const durationIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const isRecordingRef = useRef(false);
-
   // Sidebar animations
   const sidebarItems = isPressing ? RECORDING_SIDEBAR_ITEMS : IDLE_SIDEBAR_ITEMS;
   const sidebarScales = useRef(
@@ -162,28 +162,12 @@ export default function VoiceJournalScreen({ navigation }: VoiceJournalScreenPro
   ).current;
 
   useEffect(() => {
-    isRecordingRef.current = isRecording;
-  }, [isRecording]);
-
-  useEffect(() => {
-    return () => {
-      if (durationIntervalRef.current) {
-        clearInterval(durationIntervalRef.current);
-        durationIntervalRef.current = null;
-      }
-      if (isRecordingRef.current) {
-        cancelRecording().catch(() => null);
-      }
-    };
-  }, []);
-
-  useEffect(() => {
     // Auto-expand text input based on content
     const lines = textEntry.split('\n').length;
     const minHeight = 120;
     const maxHeight = 300;
     const newHeight = Math.min(Math.max(minHeight, lines * 28 + 40), maxHeight);
-    
+
     Animated.spring(textInputHeight, {
       toValue: newHeight,
       tension: 50,
@@ -333,7 +317,12 @@ export default function VoiceJournalScreen({ navigation }: VoiceJournalScreenPro
     loadTodayData();
     startEntranceAnimations();
     startIdleAnimations();
+    startIdleAnimations();
   }, [loadTodayData, startEntranceAnimations, startIdleAnimations]);
+
+  // Check transcription status
+  const transcriptionAvailable = isTranscriptionAvailable();
+
 
 
   // Waveform animation
@@ -370,10 +359,10 @@ export default function VoiceJournalScreen({ navigation }: VoiceJournalScreenPro
 
   // Handle press in (start recording)
   const handlePressIn = () => {
-    
+
     // Start animations IMMEDIATELY (before async permission check)
     setIsPressing(true);
-    setIsRecording(true);
+    // isRecording set by hook
 
     // Scale up button with spring
     Animated.spring(micButtonPressScale, {
@@ -409,95 +398,28 @@ export default function VoiceJournalScreen({ navigation }: VoiceJournalScreenPro
     startWaveformAnimation();
 
     // Now do async permission check and recording start
-    (async () => {
-      try {
-        // Request permission first
-        const hasPermission = await requestMicrophonePermission();
-        if (!hasPermission) {
-          console.warn('Microphone permission denied');
-          Alert.alert(
-            'Microphone Permission',
-            Platform.OS === 'web' 
-              ? 'Please allow microphone access in your browser settings and refresh the page.'
-              : 'Moonifest needs microphone access to record voice journals. Please enable it in your device settings.',
-            [{ 
-              text: 'OK',
-              onPress: () => {
-                // Reset state if permission denied
-                setIsPressing(false);
-                setIsRecording(false);
-                Animated.spring(micButtonPressScale, {
-                  toValue: 1,
-                  tension: 100,
-                  friction: 7,
-                  useNativeDriver: true,
-                }).start();
-                pulseAnim.stopAnimation();
-                stopWaveformAnimation();
-                startIdleAnimations();
-              }
-            }]
-          );
-          return;
-        }
+    startRecording().catch(error => {
+      // Reset state on error
+      setIsPressing(false);
 
-        // Start actual voice recording
-        await startRecording();
+      // Reset animations
+      Animated.spring(micButtonPressScale, {
+        toValue: 1,
+        tension: 100,
+        friction: 7,
+        useNativeDriver: true,
+      }).start();
 
-        // Update recording duration every 100ms
-        const durationInterval = setInterval(async () => {
-          try {
-            const duration = await getRecordingDuration();
-            setRecordingDuration(duration);
-          } catch (durationError) {
-            console.warn('Error getting recording duration:', durationError);
-          }
-        }, 500);
-
-        // Store interval ID in ref to clear it later
-        durationIntervalRef.current = durationInterval;
-      } catch (error) {
-        console.error('Failed to start recording:', error);
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        
-        // Reset state on error
-        setIsPressing(false);
-        setIsRecording(false);
-        
-        // Reset animations
-        Animated.spring(micButtonPressScale, {
-          toValue: 1,
-          tension: 100,
-          friction: 7,
-          useNativeDriver: true,
-        }).start();
-        
-        pulseAnim.stopAnimation();
-        stopWaveformAnimation();
-        startIdleAnimations();
-        
-        // Show user-friendly error message
-        const errorAlert = Platform.OS === 'web'
-          ? 'Voice recording on web requires HTTPS or localhost. Please:\n\n1. Use Chrome or Edge browser\n2. Allow microphone permissions\n3. Or test on iOS/Android for full functionality'
-          : `Failed to start recording: ${errorMessage}\n\nPlease check:\n- Microphone permissions\n- Microphone is not being used by another app\n- Try restarting the app`;
-        
-        Alert.alert('Recording Error', errorAlert, [{ text: 'OK' }]);
-        showError('Recording Error', 'Failed to start recording. Check console for details.');
-      }
-    })();
+      pulseAnim.stopAnimation();
+      stopWaveformAnimation();
+      startIdleAnimations();
+    });
   };
 
   // Handle press out (stop recording)
   const handlePressOut = async () => {
     try {
-      // Clear duration interval
-      if (durationIntervalRef.current) {
-        clearInterval(durationIntervalRef.current);
-        durationIntervalRef.current = null;
-      }
-
       setIsPressing(false);
-      setIsRecording(false);
 
       // Reset button scale
       Animated.spring(micButtonPressScale, {
@@ -519,7 +441,7 @@ export default function VoiceJournalScreen({ navigation }: VoiceJournalScreenPro
       startIdleAnimations();
 
       // Stop recording and get URI
-      const uri = await stopRecording();
+      const uri = await stopRecordingHook();
 
       if (uri) {
         setRecordingUri(uri);
@@ -537,14 +459,12 @@ export default function VoiceJournalScreen({ navigation }: VoiceJournalScreenPro
                   const voiceOnlyText = `Voice journal entry (${duration})`;
                   await saveEntry(voiceOnlyText);
                   setRecordingUri(null);
-                  setRecordingDuration(0);
                 },
               },
               {
                 text: 'Re-record',
                 onPress: () => {
                   setRecordingUri(null);
-                  setRecordingDuration(0);
                 },
                 style: 'cancel',
               },
@@ -563,7 +483,7 @@ export default function VoiceJournalScreen({ navigation }: VoiceJournalScreenPro
             language: 'en-US',
             hints: ['gratitude', 'manifestation', 'abundance', 'grateful'],
           });
-          
+
           setIsTranscribing(false);
 
           if (transcriptionResult.error) {
@@ -579,14 +499,12 @@ export default function VoiceJournalScreen({ navigation }: VoiceJournalScreenPro
                     const voiceOnlyText = `Voice journal entry (${duration})`;
                     await saveEntry(voiceOnlyText);
                     setRecordingUri(null);
-                    setRecordingDuration(0);
                   },
                 },
                 {
                   text: 'Re-record',
                   onPress: () => {
                     setRecordingUri(null);
-                    setRecordingDuration(0);
                   },
                   style: 'cancel',
                 },
@@ -606,7 +524,6 @@ export default function VoiceJournalScreen({ navigation }: VoiceJournalScreenPro
                   onPress: async () => {
                     await saveEntry(transcribedText);
                     setRecordingUri(null);
-                    setRecordingDuration(0);
                   },
                 },
                 {
@@ -616,14 +533,12 @@ export default function VoiceJournalScreen({ navigation }: VoiceJournalScreenPro
                     setTextEntry(transcribedText);
                     setShowTextInput(true);
                     setRecordingUri(null);
-                    setRecordingDuration(0);
                   },
                 },
                 {
                   text: 'Re-record',
                   onPress: () => {
                     setRecordingUri(null);
-                    setRecordingDuration(0);
                   },
                   style: 'cancel',
                 },
@@ -643,7 +558,6 @@ export default function VoiceJournalScreen({ navigation }: VoiceJournalScreenPro
       console.error('Failed to stop recording:', error);
       showError('Recording Error', 'Failed to save recording. Please try again.');
       setIsPressing(false);
-      setIsRecording(false);
     }
   };
 
@@ -724,16 +638,9 @@ export default function VoiceJournalScreen({ navigation }: VoiceJournalScreenPro
     // Handle actions
     if (action === 'cancel') {
       // Cancel recording without saving
-      if (durationIntervalRef.current) {
-        clearInterval(durationIntervalRef.current);
-        durationIntervalRef.current = null;
-      }
-
-      await cancelRecording();
+      await cancelRecordingHook();
       setIsPressing(false);
-      setIsRecording(false);
       setRecordingUri(null);
-      setRecordingDuration(0);
 
       // Reset animations
       Animated.spring(micButtonPressScale, {
@@ -786,350 +693,356 @@ export default function VoiceJournalScreen({ navigation }: VoiceJournalScreenPro
           keyboardShouldPersistTaps="handled"
           ListHeaderComponent={
             <>
-          {/* Header Section */}
-          <Animated.View
-            style={[
-              styles.header,
-              {
-                opacity: headerOpacity,
-                transform: [{ translateY: headerTranslateY }],
-              },
-            ]}
-          >
-            <TouchableOpacity
-              onPress={() => navigation.goBack()}
-              style={styles.backButton}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              accessible={true}
-              accessibilityLabel="Go back"
-              accessibilityRole="button"
-            >
-              <Ionicons name="chevron-back" size={24} color={Theme.colors.textPrimary} />
-            </TouchableOpacity>
-
-            <View style={styles.headerCenter}>
-              <Text style={styles.headerTitle}>Manifestation Journal</Text>
-              <View style={styles.progressBadge}>
-                <Ionicons name="flame" size={12} color="#FF6B35" />
-                <Text style={styles.progressText}>{appState.currentStreak} day streak</Text>
-                <View style={styles.progressDivider} />
-                <Text style={styles.progressText}>{checkInCount}/{REQUIRED_DAILY_GRATITUDE_CHECKINS} today</Text>
-              </View>
-            </View>
-
-            <View style={styles.glowBadge}>
-              <Ionicons name="sparkles" size={14} color="#FFD700" />
-              <Text style={styles.glowText}>{glowPoints}</Text>
-            </View>
-          </Animated.View>
-
-          {/* Prompt Card Section - Enhanced Visual Presence */}
-          <Animated.View
-            style={[
-              styles.promptSection,
-              {
-                opacity: Animated.multiply(promptOpacity, promptCardOpacity),
-                transform: [{ translateY: promptTranslateY }],
-              },
-            ]}
-          >
-            <Pressable
-              onPress={handleChangePrompt}
-              style={styles.promptCard}
-              accessible={true}
-              accessibilityLabel={`Current prompt: ${activePrompts[currentPromptIndex]}. Double tap to change prompt.`}
-              accessibilityRole="button"
-            >
-              <LinearGradient
-                colors={['rgba(255, 255, 255, 0.95)', 'rgba(255, 255, 255, 0.85)']}
-                style={styles.promptGradient}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
+              {/* Header Section */}
+              <Animated.View
+                style={[
+                  styles.header,
+                  {
+                    opacity: headerOpacity,
+                    transform: [{ translateY: headerTranslateY }],
+                  },
+                ]}
               >
-                <Text style={styles.promptText}>
-                  {activePrompts[currentPromptIndex]}
-                </Text>
-                <TouchableOpacity
+                <View style={styles.headerTopRow}>
+                  <TouchableOpacity
+                    onPress={() => navigation.goBack()}
+                    style={styles.backButton}
+                  >
+                    <Ionicons name="chevron-back" size={24} color={Theme.colors.textPrimary} />
+                  </TouchableOpacity>
+
+                  {!transcriptionAvailable && (
+                    <View style={styles.badgeContainer}>
+                      <Ionicons name="mic-outline" size={12} color={Theme.colors.textSecondary} />
+                      <Text style={styles.badgeText}>Voice Only</Text>
+                    </View>
+                  )}
+                </View>
+
+
+                <View style={styles.headerCenter}>
+                  <Text style={styles.headerTitle}>Manifestation Journal</Text>
+                  <View style={styles.progressBadge}>
+                    <Ionicons name="flame" size={12} color="#FF6B35" />
+                    <Text style={styles.progressText}>{appState.currentStreak} day streak</Text>
+                    <View style={styles.progressDivider} />
+                    <Text style={styles.progressText}>{checkInCount}/{REQUIRED_DAILY_GRATITUDE_CHECKINS} today</Text>
+                  </View>
+                </View>
+
+                <View style={styles.glowBadge}>
+                  <Ionicons name="sparkles" size={14} color="#FFD700" />
+                  <Text style={styles.glowText}>{glowPoints}</Text>
+                </View>
+              </Animated.View>
+
+              {/* Prompt Card Section - Enhanced Visual Presence */}
+              <Animated.View
+                style={[
+                  styles.promptSection,
+                  {
+                    opacity: Animated.multiply(promptOpacity, promptCardOpacity),
+                    transform: [{ translateY: promptTranslateY }],
+                  },
+                ]}
+              >
+                <Pressable
                   onPress={handleChangePrompt}
-                  style={styles.changePromptButton}
-                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                  style={styles.promptCard}
                   accessible={true}
-                  accessibilityLabel="Change prompt"
+                  accessibilityLabel={`Current prompt: ${activePrompts[currentPromptIndex]}. Double tap to change prompt.`}
                   accessibilityRole="button"
                 >
-                  <Text style={styles.changePromptText}>Change Prompt</Text>
-                  <Ionicons name="refresh" size={14} color={Theme.colors.accent} style={{ marginLeft: 4 }} />
-                </TouchableOpacity>
-              </LinearGradient>
-            </Pressable>
-          </Animated.View>
-
-          {/* Main Content Area - Centered Voice Button */}
-          <View style={styles.mainContent}>
-            {/* Left Sidebar - Frosted Glass Icons (only show when relevant) */}
-            {sidebarItems.length > 0 && (
-              <Animated.View style={styles.sidebar}>
-                {sidebarItems.map((item, index) => (
-                  <Animated.View
-                    key={index}
-                    style={{ transform: [{ scale: sidebarScales[index] }] }}
+                  <LinearGradient
+                    colors={['rgba(255, 255, 255, 0.95)', 'rgba(255, 255, 255, 0.85)']}
+                    style={styles.promptGradient}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
                   >
+                    <Text style={styles.promptText}>
+                      {activePrompts[currentPromptIndex]}
+                    </Text>
                     <TouchableOpacity
-                      onPress={() => handleSidebarPress(index, item.action)}
-                      style={styles.sidebarButton}
-                      activeOpacity={0.7}
+                      onPress={handleChangePrompt}
+                      style={styles.changePromptButton}
+                      hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
                       accessible={true}
-                      accessibilityLabel={item.label}
+                      accessibilityLabel="Change prompt"
                       accessibilityRole="button"
                     >
-                      <View style={styles.sidebarIconContainer}>
-                        <Ionicons
-                          name={item.icon as any}
-                          size={22}
-                          color={Theme.colors.textSecondary}
-                        />
-                      </View>
+                      <Text style={styles.changePromptText}>Change Prompt</Text>
+                      <Ionicons name="refresh" size={14} color={Theme.colors.accent} style={{ marginLeft: 4 }} />
                     </TouchableOpacity>
-                  </Animated.View>
-                ))}
+                  </LinearGradient>
+                </Pressable>
               </Animated.View>
-            )}
 
-            {/* Center - Voice Button (The Star) */}
-            <Animated.View
-              style={[
-                styles.voiceButtonContainer,
-                {
-                  opacity: micButtonOpacity,
-                  transform: [{ scale: micButtonScale }],
-                },
-              ]}
-            >
-              {/* Subtle soft glow when recording */}
-              {isPressing && (
+              {/* Main Content Area - Centered Voice Button */}
+              <View style={styles.mainContent}>
+                {/* Left Sidebar - Frosted Glass Icons (only show when relevant) */}
+                {sidebarItems.length > 0 && (
+                  <Animated.View style={styles.sidebar}>
+                    {sidebarItems.map((item, index) => (
+                      <Animated.View
+                        key={index}
+                        style={{ transform: [{ scale: sidebarScales[index] }] }}
+                      >
+                        <TouchableOpacity
+                          onPress={() => handleSidebarPress(index, item.action)}
+                          style={styles.sidebarButton}
+                          activeOpacity={0.7}
+                          accessible={true}
+                          accessibilityLabel={item.label}
+                          accessibilityRole="button"
+                        >
+                          <View style={styles.sidebarIconContainer}>
+                            <Ionicons
+                              name={item.icon as any}
+                              size={22}
+                              color={Theme.colors.textSecondary}
+                            />
+                          </View>
+                        </TouchableOpacity>
+                      </Animated.View>
+                    ))}
+                  </Animated.View>
+                )}
+
+                {/* Center - Voice Button (The Star) */}
                 <Animated.View
                   style={[
-                    styles.softGlow,
+                    styles.voiceButtonContainer,
                     {
-                      opacity: glowRingOpacity.interpolate({
-                        inputRange: [0.3, 0.8],
-                        outputRange: [0.15, 0.25],
-                      }),
+                      opacity: micButtonOpacity,
+                      transform: [{ scale: micButtonScale }],
                     },
                   ]}
                 >
-                  <View style={styles.softGlowInner} />
-                </Animated.View>
-              )}
+                  {/* Subtle soft glow when recording */}
+                  {isPressing && (
+                    <Animated.View
+                      style={[
+                        styles.softGlow,
+                        {
+                          opacity: glowRingOpacity.interpolate({
+                            inputRange: [0.3, 0.8],
+                            outputRange: [0.15, 0.25],
+                          }),
+                        },
+                      ]}
+                    >
+                      <View style={styles.softGlowInner} />
+                    </Animated.View>
+                  )}
 
-              {/* Main mic button */}
-              <Pressable
-                onPressIn={handlePressIn}
-                onPressOut={handlePressOut}
-                disabled={isSaving || isTranscribing}
-                style={[
-                  styles.micButtonPressable,
-                  (isSaving || isTranscribing) && styles.micButtonDisabled,
-                ]}
-                accessible={true}
-                accessibilityLabel={isPressing ? "Recording. Release to save" : "Hold to record"}
-                accessibilityRole="button"
-                accessibilityState={{ disabled: isSaving || isTranscribing }}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              >
+                  {/* Main mic button */}
+                  <Pressable
+                    onPressIn={handlePressIn}
+                    onPressOut={handlePressOut}
+                    disabled={isSaving || isTranscribing}
+                    style={[
+                      styles.micButtonPressable,
+                      (isSaving || isTranscribing) && styles.micButtonDisabled,
+                    ]}
+                    accessible={true}
+                    accessibilityLabel={isPressing ? "Recording. Release to save" : "Hold to record"}
+                    accessibilityRole="button"
+                    accessibilityState={{ disabled: isSaving || isTranscribing }}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  >
+                    <Animated.View
+                      style={[
+                        styles.micButton,
+                        {
+                          transform: [
+                            { scale: Animated.multiply(micButtonPressScale, pulseAnim) },
+                          ],
+                        },
+                      ]}
+                    >
+                      <LinearGradient
+                        colors={
+                          isPressing
+                            ? ['#FF6B9D', '#C77DFF', '#8B7DD8']
+                            : ['#FFB6D9', '#E9D5FF', '#D4C5FF']
+                        }
+                        style={styles.micButtonGradient}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                      >
+                        {/* Inner highlight for depth */}
+                        <View style={styles.micButtonInner}>
+                          <Ionicons
+                            name="mic"
+                            size={52}
+                            color={isPressing ? "rgba(255, 255, 255, 0.9)" : "#FFFFFF"}
+                          />
+                          {isPressing && (
+                            <View style={styles.recordingIndicator}>
+                              <View style={styles.recordingDot} />
+                            </View>
+                          )}
+                        </View>
+                      </LinearGradient>
+                    </Animated.View>
+                  </Pressable>
+
+                  {/* Instruction label - "Hold to Record" */}
+                  <Text style={styles.instructionLabel}>
+                    {isPressing ? 'Release to save' : 'Hold to Record'}
+                  </Text>
+
+                  {/* Waveform visualization - Organic, warm bars */}
+                  {isPressing && (
+                    <Animated.View
+                      style={[
+                        styles.waveformWrapper,
+                        {
+                          opacity: pulseAnim.interpolate({
+                            inputRange: [1, 1.08],
+                            outputRange: [0.95, 1],
+                          }),
+                        },
+                      ]}
+                    >
+                      <View style={styles.waveformContainer}>
+                        {waveformBars.map((bar, index) => {
+                          // Warm, organic colors - softer and more natural
+                          const barColors = [
+                            '#E9D5FF', // Soft lavender
+                            '#F0E8FF', // Very light purple
+                            '#E9D5FF', // Soft lavender
+                            '#F5F0FF', // Almost white purple
+                            '#E9D5FF', // Soft lavender
+                          ];
+                          const colorIndex = index % barColors.length;
+
+                          return (
+                            <Animated.View
+                              key={index}
+                              style={[
+                                styles.waveformBar,
+                                {
+                                  transform: [{ scaleY: bar }],
+                                  backgroundColor: barColors[colorIndex],
+                                },
+                              ]}
+                            />
+                          );
+                        })}
+                      </View>
+                    </Animated.View>
+                  )}
+                </Animated.View>
+              </View>
+
+              {/* Modern Floating Text Input - Elevated Design */}
+              {showTextInput && (
                 <Animated.View
                   style={[
-                    styles.micButton,
+                    styles.textInputWrapper,
                     {
-                      transform: [
-                        { scale: Animated.multiply(micButtonPressScale, pulseAnim) },
-                      ],
+                      opacity: textInputOpacity,
+                      transform: [{ translateY: textInputTranslateY }],
                     },
                   ]}
                 >
                   <LinearGradient
-                    colors={
-                      isPressing
-                        ? ['#FF6B9D', '#C77DFF', '#8B7DD8']
-                        : ['#FFB6D9', '#E9D5FF', '#D4C5FF']
-                    }
-                    style={styles.micButtonGradient}
+                    colors={['rgba(255, 255, 255, 0.98)', 'rgba(255, 255, 255, 0.95)']}
+                    style={styles.textInputCard}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
                   >
-                    {/* Inner highlight for depth */}
-                    <View style={styles.micButtonInner}>
-                      <Ionicons 
-                        name="mic" 
-                        size={52} 
-                        color={isPressing ? "rgba(255, 255, 255, 0.9)" : "#FFFFFF"} 
+                    <Animated.View style={[styles.textInputContainer, { height: textInputHeight }]}>
+                      <TextInput
+                        style={styles.textInput}
+                        multiline
+                        placeholder="Type your manifestation here..."
+                        placeholderTextColor={Theme.colors.textTertiary}
+                        value={textEntry}
+                        onChangeText={setTextEntry}
+                        textAlignVertical="top"
+                        onFocus={() => setIsKeyboardVisible(true)}
+                        onBlur={() => setIsKeyboardVisible(false)}
+                        accessible={true}
+                        accessibilityLabel="Text input for manifestation entry"
+                        accessibilityHint="Enter your manifestation text here"
                       />
-                      {isPressing && (
-                        <View style={styles.recordingIndicator}>
-                          <View style={styles.recordingDot} />
-                        </View>
-                      )}
-                    </View>
+                      <View style={styles.textInputActions}>
+                        <TouchableOpacity
+                          onPress={() => {
+                            setShowTextInput(false);
+                            setTextEntry('');
+                          }}
+                          style={styles.cancelButton}
+                          activeOpacity={0.7}
+                          accessible={true}
+                          accessibilityLabel="Cancel"
+                          accessibilityRole="button"
+                        >
+                          <Text style={styles.cancelButtonText}>Cancel</Text>
+                        </TouchableOpacity>
+                        {textEntry.trim().length > 0 && (
+                          <TouchableOpacity
+                            onPress={handleSaveText}
+                            style={styles.sendButton}
+                            activeOpacity={0.7}
+                            accessible={true}
+                            accessibilityLabel="Save entry"
+                            accessibilityRole="button"
+                          >
+                            <LinearGradient
+                              colors={[Theme.colors.accent, Theme.colors.accentDark]}
+                              style={styles.sendButtonGradient}
+                              start={{ x: 0, y: 0 }}
+                              end={{ x: 1, y: 1 }}
+                            >
+                              <Ionicons name="checkmark" size={20} color="#FFFFFF" />
+                            </LinearGradient>
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    </Animated.View>
                   </LinearGradient>
                 </Animated.View>
-              </Pressable>
+              )}
 
-              {/* Instruction label - "Hold to Record" */}
-              <Text style={styles.instructionLabel}>
-                {isPressing ? 'Release to save' : 'Hold to Record'}
-              </Text>
-
-              {/* Waveform visualization - Organic, warm bars */}
-              {isPressing && (
+              {/* Text Input Trigger (when not showing input) */}
+              {!showTextInput && (
                 <Animated.View
                   style={[
-                    styles.waveformWrapper,
+                    styles.textInputTriggerWrapper,
                     {
-                      opacity: pulseAnim.interpolate({
-                        inputRange: [1, 1.08],
-                        outputRange: [0.95, 1],
-                      }),
+                      opacity: textInputOpacity,
+                      transform: [{ translateY: textInputTranslateY }],
                     },
                   ]}
                 >
-                  <View style={styles.waveformContainer}>
-                    {waveformBars.map((bar, index) => {
-                      // Warm, organic colors - softer and more natural
-                      const barColors = [
-                        '#E9D5FF', // Soft lavender
-                        '#F0E8FF', // Very light purple
-                        '#E9D5FF', // Soft lavender
-                        '#F5F0FF', // Almost white purple
-                        '#E9D5FF', // Soft lavender
-                      ];
-                      const colorIndex = index % barColors.length;
-                      
-                      return (
-                        <Animated.View
-                          key={index}
-                          style={[
-                            styles.waveformBar,
-                            {
-                              transform: [{ scaleY: bar }],
-                              backgroundColor: barColors[colorIndex],
-                            },
-                          ]}
-                        />
-                      );
-                    })}
-                  </View>
+                  <TouchableOpacity
+                    onPress={() => setShowTextInput(true)}
+                    style={styles.textInputTrigger}
+                    activeOpacity={0.7}
+                    accessible={true}
+                    accessibilityLabel="Tap to type your manifestation"
+                    accessibilityRole="button"
+                  >
+                    <LinearGradient
+                      colors={['rgba(255, 255, 255, 0.95)', 'rgba(255, 255, 255, 0.85)']}
+                      style={styles.textInputTriggerGradient}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                    >
+                      <Ionicons name="create-outline" size={24} color={Theme.colors.accent} />
+                      <Text style={styles.textInputTriggerText}>Type your manifestation here...</Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
                 </Animated.View>
               )}
-            </Animated.View>
-          </View>
-
-          {/* Modern Floating Text Input - Elevated Design */}
-          {showTextInput && (
-            <Animated.View
-              style={[
-                styles.textInputWrapper,
-                {
-                  opacity: textInputOpacity,
-                  transform: [{ translateY: textInputTranslateY }],
-                },
-              ]}
-            >
-              <LinearGradient
-                colors={['rgba(255, 255, 255, 0.98)', 'rgba(255, 255, 255, 0.95)']}
-                style={styles.textInputCard}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-              >
-                <Animated.View style={[styles.textInputContainer, { height: textInputHeight }]}>
-                  <TextInput
-                    style={styles.textInput}
-                    multiline
-                    placeholder="Type your manifestation here..."
-                    placeholderTextColor={Theme.colors.textTertiary}
-                    value={textEntry}
-                    onChangeText={setTextEntry}
-                    textAlignVertical="top"
-                    onFocus={() => setIsKeyboardVisible(true)}
-                    onBlur={() => setIsKeyboardVisible(false)}
-                    accessible={true}
-                    accessibilityLabel="Text input for manifestation entry"
-                    accessibilityHint="Enter your manifestation text here"
-                  />
-                  <View style={styles.textInputActions}>
-                    <TouchableOpacity
-                      onPress={() => {
-                        setShowTextInput(false);
-                        setTextEntry('');
-                      }}
-                      style={styles.cancelButton}
-                      activeOpacity={0.7}
-                      accessible={true}
-                      accessibilityLabel="Cancel"
-                      accessibilityRole="button"
-                    >
-                      <Text style={styles.cancelButtonText}>Cancel</Text>
-                    </TouchableOpacity>
-                    {textEntry.trim().length > 0 && (
-                      <TouchableOpacity
-                        onPress={handleSaveText}
-                        style={styles.sendButton}
-                        activeOpacity={0.7}
-                        accessible={true}
-                        accessibilityLabel="Save entry"
-                        accessibilityRole="button"
-                      >
-                        <LinearGradient
-                          colors={[Theme.colors.accent, Theme.colors.accentDark]}
-                          style={styles.sendButtonGradient}
-                          start={{ x: 0, y: 0 }}
-                          end={{ x: 1, y: 1 }}
-                        >
-                          <Ionicons name="checkmark" size={20} color="#FFFFFF" />
-                        </LinearGradient>
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                </Animated.View>
-              </LinearGradient>
-            </Animated.View>
-          )}
-
-          {/* Text Input Trigger (when not showing input) */}
-          {!showTextInput && (
-            <Animated.View
-              style={[
-                styles.textInputTriggerWrapper,
-                {
-                  opacity: textInputOpacity,
-                  transform: [{ translateY: textInputTranslateY }],
-                },
-              ]}
-            >
-              <TouchableOpacity
-                onPress={() => setShowTextInput(true)}
-                style={styles.textInputTrigger}
-                activeOpacity={0.7}
-                accessible={true}
-                accessibilityLabel="Tap to type your manifestation"
-                accessibilityRole="button"
-              >
-                <LinearGradient
-                  colors={['rgba(255, 255, 255, 0.95)', 'rgba(255, 255, 255, 0.85)']}
-                  style={styles.textInputTriggerGradient}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                >
-                  <Ionicons name="create-outline" size={24} color={Theme.colors.accent} />
-                  <Text style={styles.textInputTriggerText}>Type your manifestation here...</Text>
-                </LinearGradient>
-              </TouchableOpacity>
-            </Animated.View>
-          )}
             </>
           }
         />
       </KeyboardAvoidingView>
-    </Screen>
+    </Screen >
   );
 }
 
@@ -1447,5 +1360,26 @@ const styles = StyleSheet.create({
     fontSize: 17,
     color: Theme.colors.accent,
     letterSpacing: 0.2,
+  },
+  headerTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+  },
+  badgeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Theme.colors.surfaceSecondary,
+    paddingHorizontal: Theme.spacing.sm,
+    paddingVertical: 4,
+    borderRadius: Theme.radius.full,
+    gap: 4,
+  },
+  badgeText: {
+    ...Theme.typography.caption,
+    color: Theme.colors.textSecondary,
+    fontWeight: '600',
+    fontSize: 10,
   },
 });

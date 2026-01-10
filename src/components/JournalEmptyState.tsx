@@ -3,23 +3,8 @@ import { View, Text, StyleSheet, TouchableOpacity, Animated } from 'react-native
 import { Ionicons } from '@expo/vector-icons';
 import { Theme, TOUCH_TARGET_MIN } from '../utils/theme';
 
-interface PromptChip {
-  label: string;
-  icon: string;
-  promptType: string;
-}
-
-const QUICK_PROMPTS: PromptChip[] = [
-  { label: 'Gratitude', icon: 'heart', promptType: 'gratitude' },
-  { label: 'Wins', icon: 'trophy', promptType: 'wins' },
-  { label: 'Reflection', icon: 'bulb', promptType: 'reflection' },
-];
-
-interface JournalEmptyStateProps {
-  onStartWriting: () => void;
-  onPromptSelect?: (promptType: string) => void;
-}
-
+// Chips removed as per user request
+// Replaced with simplified view
 export const JournalEmptyState: React.FC<JournalEmptyStateProps> = ({
   onStartWriting,
   onPromptSelect,
@@ -43,14 +28,6 @@ export const JournalEmptyState: React.FC<JournalEmptyStateProps> = ({
     ]).start();
   }, []);
 
-  const handlePromptPress = (promptType: string) => {
-    if (onPromptSelect) {
-      onPromptSelect(promptType);
-    } else {
-      onStartWriting();
-    }
-  };
-
   return (
     <Animated.View
       style={[
@@ -68,27 +45,6 @@ export const JournalEmptyState: React.FC<JournalEmptyStateProps> = ({
       <Text style={styles.subtitle}>
         Choose a prompt to begin your gratitude journey.
       </Text>
-
-      {/* Quick Prompt Chips */}
-      <View style={styles.chipsContainer}>
-        {QUICK_PROMPTS.map((prompt, index) => (
-          <TouchableOpacity
-            key={prompt.promptType}
-            style={styles.chip}
-            onPress={() => handlePromptPress(prompt.promptType)}
-            activeOpacity={0.7}
-            accessibilityLabel={`Start ${prompt.label} entry`}
-            accessibilityRole="button"
-          >
-            <Ionicons
-              name={prompt.icon as any}
-              size={18}
-              color={Theme.colors.accent}
-            />
-            <Text style={styles.chipText}>{prompt.label}</Text>
-          </TouchableOpacity>
-        ))}
-      </View>
     </Animated.View>
   );
 };
@@ -116,29 +72,5 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: Theme.spacing.xl,
     lineHeight: 22,
-  },
-  chipsContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    gap: Theme.spacing.md,
-    width: '100%',
-  },
-  chip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Theme.colors.accentSoft,
-    paddingVertical: Theme.spacing.md,
-    paddingHorizontal: Theme.spacing.lg,
-    borderRadius: Theme.radius.md,
-    gap: Theme.spacing.sm,
-    minHeight: TOUCH_TARGET_MIN,
-    borderWidth: 1,
-    borderColor: Theme.colors.border,
-    ...Theme.shadow.subtle,
-  },
-  chipText: {
-    ...Theme.typography.bodyBold,
-    color: Theme.colors.accent,
   },
 });

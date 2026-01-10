@@ -12,6 +12,7 @@ module.exports = function (api) {
           allowUndefined: true,
         },
       ],
+      'react-native-reanimated/plugin', // Must be last - worklets plugin not supported in Expo Go
     ],
   };
 };

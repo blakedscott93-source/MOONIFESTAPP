@@ -10,6 +10,7 @@ interface ListRowProps {
   iconColor?: string;
   rightIcon?: keyof typeof Ionicons.glyphMap;
   onPress?: () => void;
+  onLongPress?: () => void;
   onRightIconPress?: () => void;
   completed?: boolean;
   testID?: string;
@@ -28,6 +29,7 @@ export const ListRow: React.FC<ListRowProps> = React.memo(({
   iconColor,
   rightIcon = 'chevron-forward',
   onPress,
+  onLongPress,
   onRightIconPress,
   completed,
   testID,
@@ -93,8 +95,8 @@ export const ListRow: React.FC<ListRowProps> = React.memo(({
               completed
                 ? '#22C55E' // Vibrant green checkmark for completed items
                 : onRightIconPress
-                ? Theme.colors.danger
-                : Theme.colors.textTertiary
+                  ? Theme.colors.danger
+                  : Theme.colors.textTertiary
             }
             style={styles.rightIcon}
           />
@@ -108,6 +110,7 @@ export const ListRow: React.FC<ListRowProps> = React.memo(({
       <TouchableOpacity
         style={styles.row}
         onPress={onPress}
+        onLongPress={onLongPress}
         activeOpacity={0.7}
         testID={testID}
         accessibilityRole="button"

@@ -60,14 +60,24 @@ export default function TasksScreen({ navigation }: TasksScreenProps) {
   const todayProgress = useMemo(() => getTodayProgress(), [getTodayProgress]);
 
   // Separate must-do and additional tasks
-  const mustDoTasks = useMemo(
-    () => todayProgress.tasks?.filter(t => t.isMustDo) || [],
-    [todayProgress.tasks]
-  );
-  const additionalTasks = useMemo(
-    () => todayProgress.tasks?.filter(t => !t.isMustDo) || [],
-    [todayProgress.tasks]
-  );
+  // Separate must-do and additional tasks with strict capping
+  const mustDoTasks = useMemo(() => {
+    const allMustDo = todayProgress.tasks?.filter(t => t.isMustDo) || [];
+    // Strict cap at REQUIRED_DAILY_MUST_DO_TASKS
+    return allMustDo.slice(0, REQUIRED_DAILY_MUST_DO_TASKS);
+  }, [todayProgress.tasks]);
+
+  const additionalTasks = useMemo(() => {
+    const allMustDo = todayProgress.tasks?.filter(t => t.isMustDo) || [];
+    // Identify overflow must-dos and force them to be additional
+    const overflowMustDo = allMustDo.slice(REQUIRED_DAILY_MUST_DO_TASKS).map(t => ({
+      ...t,
+      isMustDo: false
+    }));
+
+    const properAdditional = todayProgress.tasks?.filter(t => !t.isMustDo) || [];
+    return [...overflowMustDo, ...properAdditional];
+  }, [todayProgress.tasks]);
 
   // Initialize with 3 must-do slots (required for daily challenge)
   const [editableMustDo, setEditableMustDo] = useState<ExtendedTask[]>(() => {
@@ -127,8 +137,8 @@ export default function TasksScreen({ navigation }: TasksScreenProps) {
 
   // Sync local state when todayProgress changes (e.g., from another screen)
   useEffect(() => {
-    const currentMustDo = todayProgress.tasks?.filter(t => t.isMustDo) || [];
-    const currentAdditional = todayProgress.tasks?.filter(t => !t.isMustDo) || [];
+    const currentMustDo = mustDoTasks;
+    const currentAdditional = additionalTasks;
 
     // Only update if different (avoid unnecessary re-renders)
     if (!areTasksEqual(currentMustDo, editableMustDoRef.current)) {
@@ -148,12 +158,12 @@ export default function TasksScreen({ navigation }: TasksScreenProps) {
     if (!areTasksEqual(currentAdditional, editableAdditionalRef.current)) {
       updateAdditional(() => currentAdditional);
     }
-  }, [todayProgress.tasks, updateMustDo, updateAdditional]);
+  }, [mustDoTasks, additionalTasks, updateMustDo, updateAdditional]);
 
   useEffect(() => {
     editableMustDoRef.current = editableMustDo;
   }, [editableMustDo]);
-  
+
   useEffect(() => {
     editableAdditionalRef.current = editableAdditional;
   }, [editableAdditional]);
@@ -163,7 +173,7 @@ export default function TasksScreen({ navigation }: TasksScreenProps) {
     // Read from refs to get latest state (avoids stale closures)
     const mustDo = editableMustDoRef.current;
     const additional = editableAdditionalRef.current;
-    
+
     // Normalize task IDs (replace temp IDs with permanent ones)
     const validMustDo = mustDo.map(t => ({
       ...t,
@@ -232,7 +242,7 @@ export default function TasksScreen({ navigation }: TasksScreenProps) {
     lightHaptic();
     const task = isMustDo ? editableMustDo[index] : editableAdditional[index];
     const wasCompleted = task?.completed || false;
-    
+
     if (isMustDo) {
       updateMustDo(prev => {
         const updated = [...prev];
@@ -246,15 +256,15 @@ export default function TasksScreen({ navigation }: TasksScreenProps) {
         return updated;
       });
     }
-    
+
     // Track task completion
     if (!wasCompleted) {
-      trackEvent('task_completed', { 
+      trackEvent('task_completed', {
         is_must_do: isMustDo,
-        task_index: index 
+        task_index: index
       });
     }
-    
+
     // Immediate autosave for checkbox
     autosave();
   }, [autosave, updateMustDo, updateAdditional, editableMustDo, editableAdditional]);
@@ -355,6 +365,7 @@ export default function TasksScreen({ navigation }: TasksScreenProps) {
         label: 'Back to Today',
       }}
       scroll={false}
+      headerContainerStyle={{ paddingTop: 0 }}
     >
       {/* Root container with flex:1 - ensures proper layout */}
       <View style={styles.rootContainer}>
@@ -585,8 +596,8 @@ const TaskRow: React.FC<TaskRowProps> = ({
   const checkboxColor = isDisabled
     ? tokens.colors.textTertiary
     : task.completed
-    ? tokens.colors.success
-    : tokens.colors.primary;
+      ? tokens.colors.success
+      : tokens.colors.primary;
   const rowBackground = isDark ? 'rgba(26, 24, 36, 0.65)' : 'rgba(255, 255, 255, 0.75)';
   const rowBorder = isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(124, 58, 237, 0.12)';
   const deleteBackground = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(28, 27, 34, 0.04)';
@@ -768,12 +779,12 @@ const styles = StyleSheet.create({
     borderWidth: 0,
     ...(Platform.OS === 'web'
       ? ({
-          outlineStyle: 'none',
-          outlineWidth: 0,
-          outline: 'none',
-          border: 'none',
-          minWidth: 0,
-        } as any)
+        outlineStyle: 'none',
+        outlineWidth: 0,
+        outline: 'none',
+        border: 'none',
+        minWidth: 0,
+      } as any)
       : null),
   },
   taskInputCompleted: {

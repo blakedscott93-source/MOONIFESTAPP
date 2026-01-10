@@ -9,6 +9,7 @@ export interface GratitudeCheckIn {
   text: string;
   createdAt: string; // UTC ISO string
   timezoneId: string; // IANA timezone identifier
+  audioUri?: string; // Optional path to voice recording
 }
 
 export interface DayCompletionStatus {

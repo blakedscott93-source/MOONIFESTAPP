@@ -18,9 +18,20 @@ import {
   KeyboardAvoidingView,
   Animated,
   FlatList,
+  ScrollView,
 } from 'react-native';
+import { GlassCard } from '../components/ui';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import {
+  purchasePremiumRevenueCat,
+  restorePurchases,
+  getSubscriptionPricing,
+  isPremiumConfigured,
+  isPremiumUser,
+} from '../utils/premium';
+import { PremiumGate } from '../components/PremiumGate';
+import { showInterstitial } from '../utils/ads';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Screen } from '../components/layout/Screen';
 import { tokens } from '../theme/tokens';
@@ -33,6 +44,7 @@ import { mediumHaptic, lightHaptic } from '../utils/haptics';
 import { VisionTabProps } from '../types/navigation';
 import { useScreenTracking } from '../hooks/useScreenTracking';
 import { trackEvent } from '../utils/analytics';
+import { Logger } from '../utils/logger';
 
 const { width } = Dimensions.get('window');
 const GRID_COLUMNS = 3;
@@ -50,6 +62,8 @@ interface VisionBoardPhoto {
   createdAt: string;
   dayKey?: string;
 }
+
+
 
 const STORAGE_KEY_PHOTOS = '@vision_board_photos';
 
@@ -70,13 +84,28 @@ export default function VisionBoardScreen({ navigation, route }: VisionTabProps)
   const [selectedPhoto, setSelectedPhoto] = useState<VisionBoardPhoto | null>(null);
   const [imageErrors, setImageErrors] = useState<Record<string, boolean>>({});
   const [gridWidth, setGridWidth] = useState(0);
+  const [isPremium, setIsPremium] = useState(false);
+  const [showPremiumGate, setShowPremiumGate] = useState(false);
   const timeoutsRef = useRef<NodeJS.Timeout[]>([]);
   const photosRef = useRef<VisionBoardPhoto[]>([]);
-  
+
   // Keep ref in sync with state
   useEffect(() => {
     photosRef.current = photos;
   }, [photos]);
+
+  // Check premium status on focus
+  useEffect(() => {
+    const checkPremium = async () => {
+      const premium = await isPremiumUser();
+      setIsPremium(premium);
+    };
+
+    const unsubscribe = navigation.addListener('focus', checkPremium);
+    checkPremium();
+
+    return unsubscribe;
+  }, [navigation]);
 
   // Animation refs for fullscreen
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -113,30 +142,35 @@ export default function VisionBoardScreen({ navigation, route }: VisionTabProps)
     };
   }, []);
 
+  // Check if we need to show the daily prompt
+  const needsTodayImage = !hasVisionImageAddedToday();
+  // We'll show the card if: 1. It's needed AND 2. We're not in the middle of adding one
+  const showRitualCard = needsTodayImage;
+
   const loadData = async () => {
     try {
       const photosData = await AsyncStorage.getItem(STORAGE_KEY_PHOTOS);
       const loadedPhotos: VisionBoardPhoto[] = photosData ? JSON.parse(photosData) : [];
-      
+
       // Validate and filter out invalid photos
       const validPhotos = loadedPhotos.filter(photo => {
         if (!photo.id || !photo.imageUri || !photo.caption) {
-          console.warn('Invalid photo found, skipping:', photo);
+          Logger.warn('Invalid photo found, skipping:', photo);
           return false;
         }
         return true;
       });
-      
+
       if (validPhotos.length !== loadedPhotos.length) {
-        console.log(`Filtered ${loadedPhotos.length - validPhotos.length} invalid photos`);
+        Logger.log(`Filtered ${loadedPhotos.length - validPhotos.length} invalid photos`);
         // Save cleaned data
         await AsyncStorage.setItem(STORAGE_KEY_PHOTOS, JSON.stringify(validPhotos));
       }
-      
-      console.log(`Loaded ${validPhotos.length} vision board photos`);
+
+      Logger.log(`Loaded ${validPhotos.length} vision board photos`);
       setPhotos(validPhotos);
     } catch (error) {
-      console.error('Error loading vision board data:', error);
+      Logger.error('Error loading vision board data:', error);
       showError('Error', 'Failed to load your vision boards');
     } finally {
       setLoading(false);
@@ -149,7 +183,7 @@ export default function VisionBoardScreen({ navigation, route }: VisionTabProps)
       setPhotos(newPhotos);
       return true;
     } catch (error) {
-      console.error('Error saving photos:', error);
+      Logger.error('Error saving photos:', error);
       showError('Error', 'Failed to save photo');
       return false;
     }
@@ -158,11 +192,24 @@ export default function VisionBoardScreen({ navigation, route }: VisionTabProps)
   // ============================================
   // IMAGE PICKING
   // ============================================
-  const requestPermissions = async () => {
+  const requestLibraryPermissions = async () => {
     if (Platform.OS !== 'web') {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('Permissions Required', 'We need photo library permissions to add images.', [
+        Alert.alert('Permissions Required', 'We need access to your photos to add them to your vision board.', [
+          { text: 'OK' },
+        ]);
+        return false;
+      }
+    }
+    return true;
+  };
+
+  const requestCameraPermissions = async () => {
+    if (Platform.OS !== 'web') {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permissions Required', 'We need access to your camera to take photos for your vision board.', [
           { text: 'OK' },
         ]);
         return false;
@@ -172,6 +219,19 @@ export default function VisionBoardScreen({ navigation, route }: VisionTabProps)
   };
 
   const addPhoto = async () => {
+    // Check limit for free users
+    if (!isPremium && photos.length >= 9) {
+      Alert.alert(
+        'Vision Board Limit Reached',
+        'Upgrade to Vortex Premium to add unlimited vision board photos!',
+        [
+          { text: 'Upgrade', onPress: () => (navigation as any).navigate('Premium', { fromSettings: true }) },
+          { text: 'Cancel', style: 'cancel' }
+        ]
+      );
+      return;
+    }
+
     if (Platform.OS === 'web') {
       await pickImageFromGallery();
       return;
@@ -184,14 +244,14 @@ export default function VisionBoardScreen({ navigation, route }: VisionTabProps)
         {
           text: 'Take Photo',
           onPress: async () => {
-            const hasPermission = await requestPermissions();
+            const hasPermission = await requestCameraPermissions();
             if (hasPermission) await pickImageFromCamera();
           },
         },
         {
           text: 'Choose from Gallery',
           onPress: async () => {
-            const hasPermission = await requestPermissions();
+            const hasPermission = await requestLibraryPermissions();
             if (hasPermission) await pickImageFromGallery();
           },
         },
@@ -221,7 +281,7 @@ export default function VisionBoardScreen({ navigation, route }: VisionTabProps)
         setShowPhotoModal(true);
       }
     } catch (error) {
-      console.error('Error picking image from camera:', error);
+      Logger.error('Error picking image from camera:', error);
       showError('Error', 'Failed to take photo');
     }
   };
@@ -246,7 +306,7 @@ export default function VisionBoardScreen({ navigation, route }: VisionTabProps)
         setShowPhotoModal(true);
       }
     } catch (error) {
-      console.error('Error picking image from gallery:', error);
+      Logger.error('Error picking image from gallery:', error);
       showError('Error', 'Failed to select image');
     }
   };
@@ -277,10 +337,10 @@ export default function VisionBoardScreen({ navigation, route }: VisionTabProps)
         createdAt: new Date().toISOString(),
         dayKey: getLocalDayKey(),
       };
-      
-      console.log('Saving photo:', newPhoto.id, newPhoto.imageUri.substring(0, 50) + '...');
+
+      Logger.log('Saving photo:', newPhoto.id, newPhoto.imageUri.substring(0, 50) + '...');
       const success = await savePhotos([...photos, newPhoto]);
-      
+
       if (!success) {
         showError('Error', 'Failed to save photo');
         return;
@@ -290,14 +350,14 @@ export default function VisionBoardScreen({ navigation, route }: VisionTabProps)
         await addGlowPoints(15, 'Added vision image');
         await markVisionImageAdded();
         showPoints(15, 'Vision image added');
-        trackEvent('vision_image_added', { 
+        trackEvent('vision_image_added', {
           is_today: true,
           has_caption: !!captionInput.trim(),
           caption_length: captionInput.trim().length
         });
 
       } else {
-        trackEvent('vision_image_updated', { 
+        trackEvent('vision_image_updated', {
           is_today: true,
           has_caption: !!captionInput.trim()
         });
@@ -307,8 +367,11 @@ export default function VisionBoardScreen({ navigation, route }: VisionTabProps)
       setShowPhotoModal(false);
       setPendingImageUri(null);
       setCaptionInput('');
+
+      // Show interstitial ad if applicable
+      await showInterstitial();
     } catch (error) {
-      console.error('Error saving photo:', error);
+      Logger.error('Error saving photo:', error);
       showError('Error', 'Failed to save photo');
     }
   };
@@ -316,25 +379,25 @@ export default function VisionBoardScreen({ navigation, route }: VisionTabProps)
   const deletePhoto = async (photoId: string) => {
     try {
       mediumHaptic();
-      
+
       // Get current photos from ref to avoid stale closure
       const currentPhotos = photosRef.current;
       const updatedPhotos = currentPhotos.filter(p => p.id !== photoId);
-      
+
       // Update state
       setPhotos(updatedPhotos);
-      
+
       // Save to storage
       try {
         await AsyncStorage.setItem(STORAGE_KEY_PHOTOS, JSON.stringify(updatedPhotos));
       } catch (error) {
-        console.error('Error saving photos after delete:', error);
+        Logger.error('Error saving photos after delete:', error);
         // Revert state on error
         setPhotos(currentPhotos);
         showError('Error', 'Failed to save changes');
         return;
       }
-      
+
       // Close fullscreen if this photo was selected
       if (selectedPhoto?.id === photoId) {
         setShowFullscreenModal(false);
@@ -348,11 +411,11 @@ export default function VisionBoardScreen({ navigation, route }: VisionTabProps)
         const { [photoId]: _removed, ...rest } = prev;
         return rest;
       });
-      
+
       trackEvent('vision_image_deleted', { photo_id: photoId });
       showSuccess('Deleted', 'Vision image removed');
     } catch (error) {
-      console.error('Error deleting photo:', error);
+      Logger.error('Error deleting photo:', error);
       showError('Error', 'Failed to delete photo');
     }
   };
@@ -360,7 +423,7 @@ export default function VisionBoardScreen({ navigation, route }: VisionTabProps)
   const openFullscreen = (photo: VisionBoardPhoto) => {
     setSelectedPhoto(photo);
     setShowFullscreenModal(true);
-    
+
     // Animate in
     fadeAnim.setValue(0);
     scaleAnim.setValue(0.8);
@@ -459,14 +522,14 @@ export default function VisionBoardScreen({ navigation, route }: VisionTabProps)
             style={styles.gridImage}
             resizeMode="cover"
             onError={() => {
-              console.error('Error loading image:', item.imageUri);
+              Logger.error('Error loading image:', item.imageUri);
               setImageErrors(prev => ({
                 ...prev,
                 [item.id]: true,
               }));
             }}
             onLoad={() => {
-              console.log('Image loaded successfully:', item.id);
+              Logger.log('Image loaded successfully:', item.id);
             }}
           />
         ) : (
@@ -742,7 +805,10 @@ const styles = StyleSheet.create({
   loadingText: {
     ...tokens.typography.body,
   },
-  
+
+  // Header & Ritual
+
+
   // Empty State
   emptyContainer: {
     flex: 1,
@@ -761,14 +827,11 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     ...tokens.typography.h2,
-    fontSize: 24,
-    fontWeight: '700',
     marginBottom: tokens.spacing.sm,
     textAlign: 'center',
   },
   emptySubtitle: {
     ...tokens.typography.body,
-    fontSize: 16,
     textAlign: 'center',
     marginBottom: tokens.spacing.xl,
     paddingHorizontal: tokens.spacing.xl,
@@ -784,7 +847,6 @@ const styles = StyleSheet.create({
   },
   emptyButtonText: {
     ...tokens.typography.bodyBold,
-    fontSize: 16,
     color: '#FFFFFF',
   },
 
@@ -850,8 +912,6 @@ const styles = StyleSheet.create({
   },
   modalTitle: {
     ...tokens.typography.h3,
-    fontSize: 20,
-    fontWeight: '700',
     marginBottom: tokens.spacing.md,
     letterSpacing: -0.3,
   },
@@ -862,8 +922,6 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     minHeight: 100,
     textAlignVertical: 'top',
-    fontSize: 16,
-    lineHeight: 24,
     marginBottom: tokens.spacing.lg,
   },
   modalActions: {
@@ -881,8 +939,6 @@ const styles = StyleSheet.create({
   },
   modalCancelText: {
     ...tokens.typography.bodyBold,
-    fontWeight: '600',
-    fontSize: 16,
   },
   modalSaveButton: {
     flex: 1,
@@ -894,8 +950,6 @@ const styles = StyleSheet.create({
   },
   modalSaveText: {
     ...tokens.typography.bodyBold,
-    fontWeight: '600',
-    fontSize: 16,
     color: '#FFFFFF',
   },
 
@@ -956,11 +1010,7 @@ const styles = StyleSheet.create({
   },
   fullscreenCaption: {
     ...tokens.typography.h3,
-    fontSize: 20,
     color: '#FFFFFF',
-    fontWeight: '600',
-    lineHeight: 28,
-    letterSpacing: -0.3,
     marginBottom: tokens.spacing.sm,
   },
   fullscreenDeleteButton: {

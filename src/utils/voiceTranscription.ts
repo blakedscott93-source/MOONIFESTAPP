@@ -1,5 +1,6 @@
 import { Platform } from 'react-native';
 import * as FileSystem from 'expo-file-system';
+import { Logger } from './logger';
 
 // Safely import env variables with fallback for web
 let OPENAI_API_KEY: string | undefined;
@@ -7,12 +8,12 @@ let GOOGLE_CLOUD_API_KEY: string | undefined;
 let DEEPGRAM_API_KEY: string | undefined;
 try {
   const env = require('@env');
-  OPENAI_API_KEY = env.OPENAI_API_KEY;
+  OPENAI_API_KEY = process.env.EXPO_PUBLIC_OPENAI_API_KEY || env.EXPO_PUBLIC_OPENAI_API_KEY || env.OPENAI_API_KEY;
   GOOGLE_CLOUD_API_KEY = env.GOOGLE_CLOUD_API_KEY;
   DEEPGRAM_API_KEY = env.DEEPGRAM_API_KEY;
 } catch (error) {
   // @env might not be available on web or if .env file doesn't exist
-  OPENAI_API_KEY = undefined;
+  OPENAI_API_KEY = process.env.EXPO_PUBLIC_OPENAI_API_KEY;
   GOOGLE_CLOUD_API_KEY = undefined;
   DEEPGRAM_API_KEY = undefined;
 }
@@ -57,9 +58,27 @@ export async function transcribeAudio(
   audioUri: string,
   options: TranscriptionOptions = {}
 ): Promise<TranscriptionResult> {
+  if (OPENAI_API_KEY) {
+    return transcribeWithWhisper(audioUri, options);
+  }
+
+  if (GOOGLE_CLOUD_API_KEY) {
+    return transcribeWithGoogle(audioUri, options);
+  }
+
+  if (DEEPGRAM_API_KEY) {
+    return transcribeWithDeepgram(audioUri, options);
+  }
+
+  // Fallback to mock if in dev
+  if (__DEV__) {
+    Logger.log('No transcription keys found, using mock');
+    return mockTranscription(audioUri, options);
+  }
+
   return {
     text: '',
-    error: 'Transcription is disabled in this build',
+    error: 'Transcription configuration missing. Please add EXPO_PUBLIC_OPENAI_API_KEY to .env',
   };
 }
 
@@ -139,7 +158,7 @@ async function transcribeWithWhisper(
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('Whisper API error response:', errorText);
+      Logger.error('Whisper API error response:', errorText);
       let errorMessage = 'Whisper API error';
       try {
         const error = JSON.parse(errorText);
@@ -158,7 +177,7 @@ async function transcribeWithWhisper(
       language: options.language || 'en-US',
     };
   } catch (error) {
-    console.error('Whisper transcription error:', error);
+    Logger.error('Whisper transcription error:', error);
     return {
       text: '',
       error: error instanceof Error ? error.message : 'Whisper API error',
@@ -236,7 +255,7 @@ async function transcribeWithGoogle(
       language: options.language || 'en-US',
     };
   } catch (error) {
-    console.error('Google Speech transcription error:', error);
+    Logger.error('Google Speech transcription error:', error);
     return {
       text: '',
       error: error instanceof Error ? error.message : 'Google Speech API error',
@@ -291,7 +310,7 @@ async function transcribeWithDeepgram(
       language: options.language || 'en-US',
     };
   } catch (error) {
-    console.error('Deepgram transcription error:', error);
+    Logger.error('Deepgram transcription error:', error);
     return {
       text: '',
       error: error instanceof Error ? error.message : 'Deepgram API error',
@@ -303,7 +322,7 @@ async function transcribeWithDeepgram(
  * Check if transcription is available
  */
 export function isTranscriptionAvailable(): boolean {
-  return false;
+  return !!(OPENAI_API_KEY || GOOGLE_CLOUD_API_KEY || DEEPGRAM_API_KEY);
 }
 
 
@@ -311,5 +330,8 @@ export function isTranscriptionAvailable(): boolean {
  * Get recommended service based on configuration
  */
 export function getTranscriptionService(): string {
-  return 'Disabled';
+  if (OPENAI_API_KEY) return 'OpenAI Whisper';
+  if (GOOGLE_CLOUD_API_KEY) return 'Google Cloud';
+  if (DEEPGRAM_API_KEY) return 'Deepgram';
+  return 'None';
 }

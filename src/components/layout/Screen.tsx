@@ -1,3 +1,4 @@
+
 /**
  * Screen Layout Component
  * Apple-clean screen wrapper with optional header and scroll
@@ -9,7 +10,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../../theme/ThemeProvider';
 import { tokens } from '../../theme/tokens';
 import { IconButton } from '../ui/IconButton';
-import { StarfieldBackground } from '../StarfieldBackground';
+import { AppBackground } from '../AppBackground';
 
 interface ScreenProps {
   children: ReactNode;
@@ -25,6 +26,7 @@ interface ScreenProps {
   headerStyle?: 'default' | 'compact';
   refreshControl?: React.ReactElement<any>;
   contentContainerStyle?: ViewStyle;
+  headerContainerStyle?: ViewStyle;
 }
 
 /**
@@ -40,6 +42,7 @@ export const Screen: React.FC<ScreenProps> = ({
   headerStyle = 'compact',
   refreshControl,
   contentContainerStyle,
+  headerContainerStyle,
 }) => {
   const { theme, isDark } = useTheme();
   const paddingHorizontal = theme?.spacing?.lg ?? tokens.spacing.lg;
@@ -54,58 +57,71 @@ export const Screen: React.FC<ScreenProps> = ({
   );
 
   return (
-    <SafeAreaView
-      style={[styles.container, { backgroundColor: bgColor }]}
-      edges={['top', 'bottom']}
-    >
-      {/* Starfield background - adapts to light/dark mode */}
-      <StarfieldBackground />
-      {/* Optional Header */}
-      {title && (
-        <View style={headerStyle === 'compact' ? styles.compactHeader : styles.defaultHeader}>
-          <View style={[styles.headerContent, headerStyle === 'compact' && { paddingHorizontal }]}>
-            <View style={styles.headerTextBlock}>
-              <Text style={[styles.title, { color: textPrimary }]}>{title}</Text>
-              {subtitle && (
-                <Text style={[styles.subtitle, { color: textSecondary }]}>
-                  {subtitle}
-                </Text>
+    <View style={styles.container}>
+      {/* Premium Gradient Background - Serene Flow (Fills entire screen) */}
+      <View style={StyleSheet.absoluteFill}>
+        <AppBackground />
+      </View>
+
+      {/* Safe Area Content */}
+      <SafeAreaView
+        style={styles.safeArea}
+        edges={['top', 'bottom']}
+      >
+        {/* Optional Header */}
+        {title && (
+          <View style={[
+            headerStyle === 'compact' ? styles.compactHeader : styles.defaultHeader,
+            headerContainerStyle
+          ]}>
+            <View style={[styles.headerContent, headerStyle === 'compact' && { paddingHorizontal }]}>
+              <View style={styles.headerTextBlock}>
+                <Text style={[styles.title, { color: textPrimary }]}>{title}</Text>
+                {subtitle && (
+                  <Text style={[styles.subtitle, { color: textSecondary }]}>
+                    {subtitle}
+                  </Text>
+                )}
+              </View>
+              {rightAction && (
+                <IconButton
+                  icon={rightAction.icon as any}
+                  onPress={rightAction.onPress}
+                  accessibilityLabel={rightAction.label || 'Action'}
+                  variant="glass"
+                  iconSize={22}
+                />
               )}
             </View>
-            {rightAction && (
-              <IconButton
-                icon={rightAction.icon as any}
-                onPress={rightAction.onPress}
-                accessibilityLabel={rightAction.label || 'Action'}
-                variant="glass"
-                iconSize={22}
-              />
-            )}
           </View>
-        </View>
-      )}
+        )}
 
-      {/* Content */}
-      {scroll ? (
-        <ScrollView
-          style={styles.scrollView}
-          contentContainerStyle={[styles.scrollContent, contentContainerStyle]}
-          showsVerticalScrollIndicator={false}
-          refreshControl={refreshControl}
-        >
-          {content}
-        </ScrollView>
-      ) : (
-        content
-      )}
-    </SafeAreaView>
+        {/* Content */}
+        {scroll ? (
+          <ScrollView
+            style={styles.scrollView}
+            contentContainerStyle={[styles.scrollContent, contentContainerStyle]}
+            showsVerticalScrollIndicator={false}
+            refreshControl={refreshControl}
+          >
+            {content}
+          </ScrollView>
+        ) : (
+          content
+        )}
+      </SafeAreaView>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: tokens.colors.bg,
+    backgroundColor: tokens.colors.bg, // Fallback, but covered by AppBackground
+  },
+  safeArea: {
+    flex: 1,
+    backgroundColor: 'transparent',
   },
   compactHeader: {
     paddingTop: 8,

@@ -31,6 +31,7 @@ import MeditationScreen from '../screens/MeditationScreen';
 import VisionBoardScreen from '../screens/VisionBoardScreen';
 import TasksScreen from '../screens/TasksScreen';
 import ProgressScreen from '../screens/ProgressScreen';
+import AuthScreen from '../screens/AuthScreen';
 import ToolsScreen from '../screens/ToolsScreen';
 import CommunityScreen from '../screens/CommunityScreen';
 import SavedAffirmationsScreen from '../screens/SavedAffirmationsScreen';
@@ -38,6 +39,8 @@ import HelpFAQScreen from '../screens/HelpFAQScreen';
 import MoodInsightsScreen from '../screens/MoodInsightsScreen';
 import PrivacyPolicyScreen from '../screens/PrivacyPolicyScreen';
 import TermsOfServiceScreen from '../screens/TermsOfServiceScreen';
+import OnboardingPaywallScreen from '../screens/OnboardingPaywallScreen';
+import OnboardingQuizScreen from '../screens/OnboardingQuizScreen';
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
 const RootStack = createStackNavigator<RootStackParamList>();
@@ -124,9 +127,9 @@ function JournalStack() {
                 {
                   scale: next
                     ? next.progress.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [1, 0.95],
-                      })
+                      inputRange: [0, 1],
+                      outputRange: [1, 0.95],
+                    })
                     : 1,
                 },
               ],
@@ -161,7 +164,7 @@ function JournalStack() {
       <JournalStackNav.Screen
         name="VoiceJournal"
         component={VoiceJournalScreen}
-        options={{ 
+        options={{
           headerShown: false,
           presentation: 'modal', // Modal presentation for voice entry
         }}
@@ -260,10 +263,10 @@ function MainTabs() {
         component={HomeScreen}
         options={{
           tabBarIcon: ({ color, size, focused }) => (
-            <Ionicons 
-              name={focused ? "home" : "home-outline"} 
-              size={size} 
-              color={color} 
+            <Ionicons
+              name={focused ? "home" : "home-outline"}
+              size={size}
+              color={color}
             />
           ),
           tabBarLabel: 'Today',
@@ -275,10 +278,10 @@ function MainTabs() {
         component={AffirmationsStack}
         options={{
           tabBarIcon: ({ color, size, focused }) => (
-            <Ionicons 
-              name={focused ? "sparkles" : "sparkles-outline"} 
-              size={size} 
-              color={color} 
+            <Ionicons
+              name={focused ? "sparkles" : "sparkles-outline"}
+              size={size}
+              color={color}
             />
           ),
           tabBarLabel: 'Affirm', // Shorter label for better spacing
@@ -306,10 +309,10 @@ function MainTabs() {
         component={JournalStack}
         options={{
           tabBarIcon: ({ color, size, focused }) => (
-            <Ionicons 
-              name={focused ? "book" : "book-outline"} 
-              size={size} 
-              color={color} 
+            <Ionicons
+              name={focused ? "book" : "book-outline"}
+              size={size}
+              color={color}
             />
           ),
           tabBarLabel: 'Journal',
@@ -335,14 +338,105 @@ function MainTabs() {
   );
 }
 
+// First-run detection hook
+function useFirstRun() {
+  const [isFirstRun, setIsFirstRun] = React.useState<boolean | null>(null);
+
+  React.useEffect(() => {
+    const checkFirstRun = async () => {
+      try {
+        const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+        // Check for onboarding completion specifically, not just paywall view
+        const hasSeenOnboarding = await AsyncStorage.getItem('@hasSeenOnboardingPaywall');
+        setIsFirstRun(hasSeenOnboarding !== 'true');
+      } catch {
+        setIsFirstRun(false); // Default to not showing if error, to be safe
+      }
+    };
+    checkFirstRun();
+  }, []);
+
+  return isFirstRun;
+}
+
+// Session detection hook
+function useSession() {
+  const [session, setSession] = React.useState<any>(null);
+  const [loading, setLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    const checkSession = async () => {
+      try {
+        const { getSupabaseClient } = require('../config/supabase');
+        const client = getSupabaseClient();
+        if (client) {
+          const { data } = await client.auth.getSession();
+          setSession(data.session);
+
+          const { data: authListener } = client.auth.onAuthStateChange((_event: any, session: any) => {
+            setSession(session);
+          });
+          return () => authListener?.subscription.unsubscribe();
+        }
+      } catch (e) {
+        console.log('Session check failed', e);
+      } finally {
+        setLoading(false);
+      }
+    };
+    checkSession();
+  }, []);
+
+  return { session, loading };
+}
+
 // Root Navigator - wraps tabs and allows modal screens
 export default function AppNavigator() {
+  const isFirstRun = useFirstRun();
+  const { session, loading: sessionLoading } = useSession();
+
+  // Show nothing while checking first-run status or session
+  if (isFirstRun === null || sessionLoading) {
+    return null;
+  }
+
+  // Logic: 
+  // 1. If NOT logged in -> AuthScreen (Always first)
+  // 2. If logged in AND first run -> OnboardingQuiz
+  // 3. If logged in AND NOT first run -> MainTabs
+
+  let initialScaleRoute = 'MainTabs';
+  if (!session) {
+    initialScaleRoute = 'AuthScreen';
+  } else if (isFirstRun) {
+    initialScaleRoute = 'OnboardingQuiz';
+  }
+
   return (
     <RootStack.Navigator
       screenOptions={{
         headerShown: false,
       }}
+      initialRouteName={initialScaleRoute as keyof RootStackParamList}
     >
+      <RootStack.Screen
+        name="OnboardingQuiz"
+        component={OnboardingQuizScreen}
+        options={{ headerShown: false }}
+      />
+      <RootStack.Screen
+        name="OnboardingPaywall"
+        component={OnboardingPaywallScreen}
+        options={{ headerShown: false }}
+      />
+      <RootStack.Screen
+        name="Premium"
+        component={OnboardingPaywallScreen}
+        options={{
+          presentation: 'modal',
+          headerShown: false,
+        }}
+      />
       <RootStack.Screen
         name="MainTabs"
         component={MainTabs}
@@ -369,6 +463,12 @@ export default function AppNavigator() {
         options={{ headerShown: false }}
       />
       <RootStack.Screen
+        name="AuthScreen"
+        component={AuthScreen}
+        options={{ headerShown: false }}
+        initialParams={{ nextScreen: isFirstRun ? 'OnboardingQuiz' : 'MainTabs' }}
+      />
+      <RootStack.Screen
         name="MeditationScreen"
         component={MeditationScreen}
         options={{
@@ -380,7 +480,7 @@ export default function AppNavigator() {
         name="TasksScreen"
         component={TasksScreen}
         options={{
-          presentation: 'modal',
+          presentation: 'fullScreenModal',
           headerShown: false,
         }}
       />
