@@ -1,21 +1,13 @@
 /**
  * OpenAI Chat Integration
- * Provides AI-powered chatbot responses using OpenAI's GPT API
  * 
- * Setup:
- * 1. Get API key from https://platform.openai.com/api-keys
- * 2. Add to .env: OPENAI_API_KEY=your-key-here
- * 3. Install: npm install openai (optional, using fetch directly)
+ * Direct OpenAI API integration for AI chat functionality.
+ * Note: This feature is currently disabled pending future release.
  */
 
-// Safely import env variables
-let OPENAI_API_KEY: string | undefined;
-try {
-  const env = require('@env');
-  OPENAI_API_KEY = env.OPENAI_API_KEY;
-} catch (error) {
-  OPENAI_API_KEY = undefined;
-}
+import { Logger } from './logger';
+
+const OPENAI_API_KEY = process.env.EXPO_PUBLIC_OPENAI_API_KEY;
 
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant';
@@ -28,7 +20,7 @@ export interface ChatResponse {
 }
 
 /**
- * System prompt for the manifestation coach persona
+ * System prompt for the manifestation coach
  */
 const SYSTEM_PROMPT = `You are Luna, a friendly and encouraging manifestation coach for the Vortex app. You help users with:
 
@@ -50,30 +42,30 @@ Your personality:
 If asked about something outside manifestation/wellness, politely redirect to how you can help with their manifestation journey.`;
 
 /**
- * Check if OpenAI is configured
+ * Check if AI chat is configured
  */
 export function isOpenAIConfigured(): boolean {
-  return !!(OPENAI_API_KEY && OPENAI_API_KEY !== 'your-openai-api-key-here');
+  return !!OPENAI_API_KEY;
 }
 
 /**
- * Get AI response from OpenAI
+ * Get AI response via OpenAI API
  */
 export async function getAIResponse(
   userMessage: string,
   conversationHistory: ChatMessage[] = []
 ): Promise<ChatResponse> {
-  if (!isOpenAIConfigured()) {
+  if (!OPENAI_API_KEY) {
     return {
       text: '',
-      error: 'OpenAI API key not configured',
+      error: 'AI chat not configured',
     };
   }
 
   try {
     const messages: ChatMessage[] = [
       { role: 'system', content: SYSTEM_PROMPT },
-      ...conversationHistory.slice(-10), // Keep last 10 messages for context
+      ...conversationHistory.slice(-10),
       { role: 'user', content: userMessage },
     ];
 
@@ -84,10 +76,10 @@ export async function getAIResponse(
         'Authorization': `Bearer ${OPENAI_API_KEY}`,
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini', // Cost-effective model, can upgrade to gpt-4 if needed
+        model: 'gpt-4o-mini',
         messages: messages.map(m => ({ role: m.role, content: m.content })),
         temperature: 0.7,
-        max_tokens: 500, // Keep responses concise
+        max_tokens: 500,
         top_p: 1,
         frequency_penalty: 0.5,
         presence_penalty: 0.5,
@@ -95,22 +87,17 @@ export async function getAIResponse(
     });
 
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.error?.message || `OpenAI API error: ${response.statusText}`);
+      const errorText = await response.text();
+      Logger.error('OpenAI chat error:', errorText);
+      return { text: '', error: 'Chat request failed' };
     }
 
-    const data = await response.json();
-    const assistantMessage = data.choices[0]?.message?.content;
+    const result = await response.json();
+    const responseText = result.choices?.[0]?.message?.content || '';
 
-    if (!assistantMessage) {
-      throw new Error('No response from OpenAI');
-    }
-
-    return {
-      text: assistantMessage.trim(),
-    };
+    return { text: responseText };
   } catch (error) {
-    console.error('OpenAI API error:', error);
+    Logger.error('AI chat error:', error);
     return {
       text: '',
       error: error instanceof Error ? error.message : 'Failed to get AI response',

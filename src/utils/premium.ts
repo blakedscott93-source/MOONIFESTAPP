@@ -9,16 +9,24 @@
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
 import { Logger } from './logger';
+import { addBreadcrumb } from './sentry';
 import { Platform } from 'react-native';
 import { useState, useEffect } from 'react';
 
 const PREMIUM_STORAGE_KEY = '@is_premium_user';
 const PREMIUM_EXPIRY_KEY = '@premium_expiry_date';
 const SUBSCRIPTION_TYPE_KEY = '@subscription_type';
-const REVENUECAT_ENTITLEMENT_ID = 'Moonifest Pro';
+const DEFAULT_REVENUECAT_ENTITLEMENT_ID = 'premium';
 
-export type SubscriptionType = 'monthly' | 'yearly' | 'lifetime' | 'trial' | null;
+// SecureStore keys for enhanced security
+const SECURE_PREMIUM_KEY = 'premium_status';
+const SECURE_EXPIRY_KEY = 'premium_expiry';
+const SECURE_TYPE_KEY = 'premium_type';
+const MIGRATION_DONE_KEY = '@premium_migrated_to_secure';
+
+export type SubscriptionType = 'monthly' | 'yearly' | 'trial' | null;
 export type PaymentProvider = 'revenuecat' | 'stripe' | 'local' | null;
 
 export interface PremiumStatus {
@@ -40,6 +48,16 @@ try {
 function getEnvValue(key: string): string | undefined {
   return env?.[key] ?? (process.env as any)?.[key];
 }
+
+function getRevenueCatEntitlementId(): string {
+  return (
+    process.env.EXPO_PUBLIC_REVENUECAT_ENTITLEMENT_ID ||
+    getEnvValue('EXPO_PUBLIC_REVENUECAT_ENTITLEMENT_ID') ||
+    DEFAULT_REVENUECAT_ENTITLEMENT_ID
+  );
+}
+
+const REVENUECAT_ENTITLEMENT_ID = getRevenueCatEntitlementId();
 
 // Optional RevenueCat import
 let Purchases: any = null;
@@ -66,8 +84,11 @@ try {
  * Call this on app startup
  */
 export async function initializePremium(): Promise<void> {
+  // Run SecureStore migration first
+  await migratePremiumToSecureStore();
+
   // Check if RevenueCat is configured
-  const revenueCatApiKey = getRevenueCatApiKey();
+  const { apiKey: revenueCatApiKey, keyName } = getRevenueCatKeyInfo();
 
   if (Purchases && revenueCatApiKey && (Platform.OS === 'ios' || Platform.OS === 'android')) {
     try {
@@ -89,7 +110,42 @@ export async function initializePremium(): Promise<void> {
         appUserID: await getOrCreateUserId(),
       });
       revenueCatConfigured = true;
+
+      // Add listener for customer info updates (syncs premium status in real-time)
+      try {
+        if (typeof Purchases.addCustomerInfoUpdateListener === 'function') {
+          Purchases.addCustomerInfoUpdateListener((customerInfo: any) => {
+            const isPremium = isRevenueCatPremium(customerInfo);
+            syncPremiumStatus(isPremium, 'revenuecat');
+            addBreadcrumb({
+              message: 'RevenueCat customer info updated via listener',
+              category: 'premium',
+              level: 'info',
+              data: {
+                isPremium,
+                activeEntitlements: Object.keys(customerInfo?.entitlements?.active || {}),
+              },
+            });
+          });
+        }
+      } catch (listenerError) {
+        // Listener setup failed, but RevenueCat still configured
+        Logger.warn('Could not add customer info listener:', listenerError);
+      }
+
+      addBreadcrumb({
+        message: 'RevenueCat configured',
+        category: 'revenuecat',
+        level: 'info',
+        data: { platform: Platform.OS, keyName: keyName || 'unknown' },
+      });
     } catch (error) {
+      addBreadcrumb({
+        message: 'RevenueCat configure failed',
+        category: 'revenuecat',
+        level: 'error',
+        data: { platform: Platform.OS, keyName: keyName || 'unknown' },
+      });
       Logger.error('RevenueCat initialization failed:', error);
     }
   }
@@ -123,36 +179,97 @@ async function getOrCreateUserId(): Promise<string> {
   return userId;
 }
 
-function getRevenueCatApiKey(): string | undefined {
+function getRevenueCatKeyInfo(): { apiKey?: string; keyName: string | null } {
   // Prefer per-platform keys, with a legacy single-key fallback.
-  const iosKey = getEnvValue('EXPO_PUBLIC_REVENUECAT_IOS_API_KEY');
-  const androidKey = getEnvValue('EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY');
-  const fallbackKey = getEnvValue('EXPO_PUBLIC_REVENUECAT_API_KEY');
+  // NOTE: We access process.env directly to ensure Metro bundler can inline the values.
+  const iosKey =
+    process.env.EXPO_PUBLIC_REVENUECAT_IOS_API_KEY ||
+    getEnvValue('EXPO_PUBLIC_REVENUECAT_IOS_API_KEY');
+  const androidKey =
+    process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY ||
+    getEnvValue('EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY');
+  const fallbackKey =
+    process.env.EXPO_PUBLIC_REVENUECAT_API_KEY ||
+    getEnvValue('EXPO_PUBLIC_REVENUECAT_API_KEY');
 
-  if (Platform.OS === 'ios') return iosKey || fallbackKey;
-  if (Platform.OS === 'android') return androidKey || fallbackKey;
-  return undefined;
+  if (Platform.OS === 'ios') {
+    if (iosKey) return { apiKey: iosKey, keyName: 'EXPO_PUBLIC_REVENUECAT_IOS_API_KEY' };
+    if (fallbackKey) return { apiKey: fallbackKey, keyName: 'EXPO_PUBLIC_REVENUECAT_API_KEY' };
+    return { apiKey: undefined, keyName: null };
+  }
+  if (Platform.OS === 'android') {
+    if (androidKey) return { apiKey: androidKey, keyName: 'EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY' };
+    if (fallbackKey) return { apiKey: fallbackKey, keyName: 'EXPO_PUBLIC_REVENUECAT_API_KEY' };
+    return { apiKey: undefined, keyName: null };
+  }
+  return { apiKey: undefined, keyName: null };
+}
+
+function getRevenueCatApiKey(): string | undefined {
+  return getRevenueCatKeyInfo().apiKey;
 }
 
 async function ensureRevenueCatConfigured(): Promise<boolean> {
   if (!Purchases) return false;
   if (Platform.OS !== 'ios' && Platform.OS !== 'android') return false;
 
-  const apiKey = getRevenueCatApiKey();
+  const { apiKey, keyName } = getRevenueCatKeyInfo();
   if (!apiKey) return false;
   if (revenueCatConfigured) return true;
 
   try {
+    if (__DEV__) {
+      try {
+        if (typeof Purchases.setDebugLogsEnabled === 'function') {
+          Purchases.setDebugLogsEnabled(true);
+        } else if (Purchases.LOG_LEVEL && typeof Purchases.setLogLevel === 'function') {
+          Purchases.setLogLevel(Purchases.LOG_LEVEL.DEBUG);
+        }
+      } catch {
+        // Ignore logging configuration errors
+      }
+    }
+
     await Purchases.configure({
       apiKey,
       appUserID: await getOrCreateUserId(),
     });
     revenueCatConfigured = true;
+    addBreadcrumb({
+      message: 'RevenueCat configured (ensure)',
+      category: 'revenuecat',
+      level: 'info',
+      data: { platform: Platform.OS, keyName: keyName || 'unknown' },
+    });
     return true;
   } catch {
+    addBreadcrumb({
+      message: 'RevenueCat configure failed (ensure)',
+      category: 'revenuecat',
+      level: 'error',
+      data: { platform: Platform.OS, keyName: keyName || 'unknown' },
+    });
     return false;
   }
 }
+
+/**
+ * Identify user in RevenueCat (Sync with Supabase Auth)
+ */
+export async function identifyUser(userId: string): Promise<void> {
+  if (!Purchases || !userId) return;
+
+  try {
+    const configured = await ensureRevenueCatConfigured();
+    if (configured) {
+      await Purchases.logIn(userId);
+      await syncPremiumStatus(await isPremiumUser(), 'revenuecat');
+    }
+  } catch (error) {
+    Logger.error('Error identifying user in RevenueCat:', error);
+  }
+}
+
 
 /**
  * Check if premium service is configured with API keys
@@ -184,7 +301,32 @@ async function getCustomerInfoSafe(): Promise<any | null> {
 }
 
 function isRevenueCatPremium(customerInfo: any): boolean {
-  return !!customerInfo?.entitlements?.active?.[REVENUECAT_ENTITLEMENT_ID];
+  // Check for the configured entitlement ID first
+  if (customerInfo?.entitlements?.active?.[REVENUECAT_ENTITLEMENT_ID]) {
+    return true;
+  }
+
+  // Fallback: Check if user has ANY active entitlement (handles ID mismatch)
+  const activeEntitlements = customerInfo?.entitlements?.active;
+  if (activeEntitlements && Object.keys(activeEntitlements).length > 0) {
+    // Log the mismatch for debugging
+    addBreadcrumb({
+      message: 'Premium detected via fallback (entitlement ID may be misconfigured)',
+      category: 'premium',
+      level: 'warning',
+      data: {
+        expectedId: REVENUECAT_ENTITLEMENT_ID,
+        actualIds: Object.keys(activeEntitlements),
+      },
+    });
+    Logger.warn('RevenueCat entitlement ID mismatch:', {
+      expected: REVENUECAT_ENTITLEMENT_ID,
+      found: Object.keys(activeEntitlements),
+    });
+    return true;
+  }
+
+  return false;
 }
 
 /**
@@ -192,17 +334,68 @@ function isRevenueCatPremium(customerInfo: any): boolean {
  * Checks RevenueCat first, then Stripe, then local storage
  */
 export async function isPremiumUser(): Promise<boolean> {
+  addBreadcrumb({
+    message: 'isPremiumUser check started',
+    category: 'premium',
+    level: 'info',
+    data: { hasPurchasesSDK: !!Purchases, platform: Platform.OS },
+  });
+
   // Check RevenueCat
   if (Purchases) {
     try {
-      await ensureRevenueCatConfigured();
-      const customerInfo = await getCustomerInfoSafe();
-      const isPremium = isRevenueCatPremium(customerInfo);
-      if (isPremium) {
-        await syncPremiumStatus(true, 'revenuecat');
-        return true;
+      const configured = await ensureRevenueCatConfigured();
+      if (!configured) {
+        addBreadcrumb({
+          message: 'RevenueCat not configured, skipping',
+          category: 'premium',
+          level: 'warning',
+        });
+      } else {
+        const customerInfo = await getCustomerInfoSafe();
+
+        // Log detailed customer info for debugging
+        addBreadcrumb({
+          message: 'RevenueCat customer info retrieved',
+          category: 'premium',
+          level: 'info',
+          data: {
+            hasCustomerInfo: !!customerInfo,
+            hasEntitlements: !!customerInfo?.entitlements,
+            activeEntitlementIds: Object.keys(customerInfo?.entitlements?.active || {}),
+            allEntitlementIds: Object.keys(customerInfo?.entitlements?.all || {}),
+            expectedEntitlement: REVENUECAT_ENTITLEMENT_ID,
+          },
+        });
+
+        const isPremium = isRevenueCatPremium(customerInfo);
+        if (isPremium) {
+          addBreadcrumb({
+            message: 'User is premium via RevenueCat',
+            category: 'premium',
+            level: 'info',
+          });
+          await syncPremiumStatus(true, 'revenuecat');
+          return true;
+        } else {
+          addBreadcrumb({
+            message: 'User is NOT premium via RevenueCat',
+            category: 'premium',
+            level: 'info',
+            data: {
+              activeEntitlements: Object.keys(customerInfo?.entitlements?.active || {}),
+              checkingFor: REVENUECAT_ENTITLEMENT_ID,
+            },
+          });
+        }
       }
     } catch (error) {
+      addBreadcrumb({
+        message: 'Error checking RevenueCat premium status',
+        category: 'premium',
+        level: 'error',
+        data: { error: String(error) },
+      });
       Logger.error('Error checking RevenueCat premium status:', error);
     }
   }
@@ -220,6 +413,11 @@ export async function isPremiumUser(): Promise<boolean> {
           return false;
         }
       }
+      addBreadcrumb({
+        message: 'User is premium via local storage',
+        category: 'premium',
+        level: 'info',
+      });
       return true;
     }
   } catch (error) {
@@ -267,10 +465,89 @@ export async function getPremiumStatus(): Promise<PremiumStatus> {
 }
 
 /**
- * Sync premium status to local storage
+ * Migrate premium status from AsyncStorage to SecureStore (run once)
+ */
+export async function migratePremiumToSecureStore(): Promise<void> {
+  try {
+    // Check if already migrated
+    const migrated = await AsyncStorage.getItem(MIGRATION_DONE_KEY);
+    if (migrated === 'true') return;
+
+    // Read from old AsyncStorage
+    const oldPremium = await AsyncStorage.getItem(PREMIUM_STORAGE_KEY);
+    const oldExpiry = await AsyncStorage.getItem(PREMIUM_EXPIRY_KEY);
+    const oldType = await AsyncStorage.getItem(SUBSCRIPTION_TYPE_KEY);
+
+    // Write to SecureStore
+    if (oldPremium) {
+      await SecureStore.setItemAsync(SECURE_PREMIUM_KEY, oldPremium);
+    }
+    if (oldExpiry) {
+      await SecureStore.setItemAsync(SECURE_EXPIRY_KEY, oldExpiry);
+    }
+    if (oldType) {
+      await SecureStore.setItemAsync(SECURE_TYPE_KEY, oldType);
+    }
+
+    // Mark migration complete
+    await AsyncStorage.setItem(MIGRATION_DONE_KEY, 'true');
+
+    Logger.log('Premium status migrated to SecureStore');
+  } catch (error) {
+    Logger.error('Premium migration error:', error);
+  }
+}
+
+/**
+ * Get premium status from SecureStore
+ */
+async function getSecurePremiumStatus(): Promise<boolean> {
+  try {
+    const status = await SecureStore.getItemAsync(SECURE_PREMIUM_KEY);
+    if (status !== 'true') return false;
+
+    // Check expiry
+    const expiry = await SecureStore.getItemAsync(SECURE_EXPIRY_KEY);
+    if (expiry) {
+      const expiryDate = new Date(expiry);
+      if (expiryDate < new Date()) {
+        await setSecurePremiumStatus(false);
+        return false;
+      }
+    }
+
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Set premium status in SecureStore
+ */
+async function setSecurePremiumStatus(
+  isPremium: boolean,
+  expiryDate?: string
+): Promise<void> {
+  try {
+    await SecureStore.setItemAsync(SECURE_PREMIUM_KEY, isPremium ? 'true' : 'false');
+    if (expiryDate) {
+      await SecureStore.setItemAsync(SECURE_EXPIRY_KEY, expiryDate);
+    } else if (!isPremium) {
+      await SecureStore.deleteItemAsync(SECURE_EXPIRY_KEY);
+    }
+  } catch (error) {
+    Logger.error('Error setting secure premium status:', error);
+  }
+}
+
+/**
+ * Sync premium status to local storage (writes to both for backward compatibility)
  */
 async function syncPremiumStatus(isPremium: boolean, provider: PaymentProvider): Promise<void> {
+  // Write to both storages for compatibility during rollout
   await AsyncStorage.setItem(PREMIUM_STORAGE_KEY, isPremium ? 'true' : 'false');
+  await setSecurePremiumStatus(isPremium);
   if (provider) {
     // Store provider info if needed
   }
@@ -304,7 +581,7 @@ export async function setPremiumStatus(
  * Purchase premium subscription via RevenueCat
  */
 export async function purchasePremiumRevenueCat(
-  plan: 'monthly' | 'yearly' | 'lifetime' = 'yearly',
+  plan: 'monthly' | 'yearly' = 'yearly',
   offeringId?: string
 ): Promise<boolean> {
   if (!Purchases) {
@@ -331,7 +608,7 @@ export async function purchasePremiumRevenueCat(
     }
 
     // Prefer the requested plan if available, fallback to first package
-    const targetPackageType = plan === 'yearly' ? 'ANNUAL' : plan === 'monthly' ? 'MONTHLY' : 'LIFETIME';
+    const targetPackageType = plan === 'yearly' ? 'ANNUAL' : 'MONTHLY';
     const matchedPackage = offering.availablePackages.find(
       (pkg: any) => String(pkg.packageType || '').toUpperCase().includes(targetPackageType)
     );
@@ -412,47 +689,173 @@ export function getSubscriptionPricing(): {
 }
 
 /**
+ * Trial info aggregated from available packages
+ */
+export interface TrialInfo {
+  hasFreeTrial: boolean;
+  trialDays: number;
+}
+
+/**
+ * Extract trial information from a RevenueCat package
+ * The free trial is in the introPrice/introductoryPrice field when available
+ */
+function extractTrialInfo(pkg: any): TrialInfo {
+  if (!pkg) {
+    return { hasFreeTrial: false, trialDays: 0 };
+  }
+  try {
+    const product = pkg?.product || pkg?.storeProduct;
+    const introPrice = product?.introPrice || product?.introductoryPrice;
+
+    if (introPrice) {
+      const isFree = introPrice.price === 0 ||
+        introPrice.priceString === '$0.00' ||
+        introPrice.paymentMode === 'FREE_TRIAL' ||
+        introPrice.paymentMode === 0;
+
+      if (isFree && introPrice.periodNumberOfUnits) {
+        const unitRaw = introPrice.periodUnit;
+        const count = introPrice.periodNumberOfUnits;
+        const unit = typeof unitRaw === 'string' ? unitRaw.toUpperCase() : unitRaw;
+        let days = count;
+
+        if (unit === 0 || unit === 'DAY' || unit === 'D') {
+          days = count;
+        } else if (unit === 1 || unit === 'WEEK' || unit === 'W') {
+          days = count * 7;
+        } else if (unit === 2 || unit === 'MONTH' || unit === 'M') {
+          days = count * 30;
+        } else if (unit === 3 || unit === 'YEAR' || unit === 'Y') {
+          days = count * 365;
+        }
+
+        return { hasFreeTrial: true, trialDays: days };
+      }
+    }
+
+    const freeTrialPeriod = product?.freeTrialPeriod;
+    if (freeTrialPeriod) {
+      const match = freeTrialPeriod.match(/P(\d+)([DWMY])/);
+      if (match) {
+        const count = parseInt(match[1], 10);
+        const unit = match[2];
+        let days = count;
+        if (unit === 'W') days = count * 7;
+        else if (unit === 'M') days = count * 30;
+        else if (unit === 'Y') days = count * 365;
+        return { hasFreeTrial: true, trialDays: days };
+      }
+    }
+  } catch {
+    // Ignore parsing errors
+  }
+
+  return { hasFreeTrial: false, trialDays: 0 };
+}
+
+/**
+ * Exported helper for UI components to show trial info per package.
+ */
+export function getTrialInfoForPackage(pkg: any): TrialInfo {
+  return extractTrialInfo(pkg);
+}
+
+/**
  * Hook to fetch and return RevenueCat offerings
  */
 export function usePremiumOfferings() {
   const [packages, setPackages] = useState<any[]>([]);
   const [isConfigured, setIsConfigured] = useState(false);
   const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    loadOfferings();
-  }, []);
+  const [hasOfferings, setHasOfferings] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [trialInfo, setTrialInfo] = useState<TrialInfo>({ hasFreeTrial: false, trialDays: 0 });
 
   const loadOfferings = async () => {
+    setLoading(true);
+    setError(null);
     try {
       const configured = await isPremiumConfigured();
       setIsConfigured(configured);
 
-      if (configured && Purchases) {
-        try {
-          const offerings = await Purchases.getOfferings();
-          if (offerings.current?.availablePackages?.length) {
-            setPackages(offerings.current.availablePackages);
-          }
-        } catch (e) {
-          Logger.warn('Failed to load offerings', e);
+      if (!configured || !Purchases) {
+        setPackages([]);
+        setHasOfferings(false);
+        setTrialInfo({ hasFreeTrial: false, trialDays: 0 });
+        setError('Purchases not configured');
+        addBreadcrumb({
+          message: 'RevenueCat offerings skipped (not configured)',
+          category: 'revenuecat',
+          level: 'warning',
+          data: { platform: Platform.OS },
+        });
+        return;
+      }
+
+      const offerings = await Purchases.getOfferings();
+      const availablePackages = offerings.current?.availablePackages ?? [];
+      const offeringId = offerings.current?.identifier ?? offerings.current?.id ?? null;
+
+      setPackages(availablePackages);
+      setHasOfferings(availablePackages.length > 0);
+
+      // Extract trial info from the first package that has a trial
+      let foundTrial: TrialInfo = { hasFreeTrial: false, trialDays: 0 };
+      for (const pkg of availablePackages) {
+        const info = extractTrialInfo(pkg);
+        if (info.hasFreeTrial) {
+          foundTrial = info;
+          break;
         }
       }
+      setTrialInfo(foundTrial);
+
+      if (!availablePackages.length) {
+        setError('No offerings available');
+      }
+
+      addBreadcrumb({
+        message: availablePackages.length ? 'RevenueCat offerings loaded' : 'RevenueCat offerings empty',
+        category: 'revenuecat',
+        level: availablePackages.length ? 'info' : 'warning',
+        data: {
+          platform: Platform.OS,
+          offeringId: offeringId || 'unknown',
+          packageCount: availablePackages.length,
+          hasFreeTrial: foundTrial.hasFreeTrial,
+          trialDays: foundTrial.trialDays,
+        },
+      });
     } catch (e) {
-      Logger.warn('Error checking premium config', e);
+      setPackages([]);
+      setHasOfferings(false);
+      setTrialInfo({ hasFreeTrial: false, trialDays: 0 });
+      setError(e instanceof Error ? e.message : 'Failed to load offerings');
+      addBreadcrumb({
+        message: 'RevenueCat offerings load failed',
+        category: 'revenuecat',
+        level: 'error',
+        data: { platform: Platform.OS },
+      });
+      Logger.warn('Failed to load offerings', e);
     } finally {
       setLoading(false);
     }
   };
 
-  return { packages, isConfigured, loading };
+  useEffect(() => {
+    loadOfferings();
+  }, []);
+
+  return { packages, isConfigured, loading, hasOfferings, error, trialInfo, reload: loadOfferings };
 }
 
 /**
  * Helper to find a package by type/identifier robustly
  * Handles: "ANNUAL", "Annual", "$rc_annual", "yearly", etc.
  */
-export function findPackage(packages: any[], type: 'ANNUAL' | 'MONTHLY' | 'LIFETIME') {
+export function findPackage(packages: any[], type: 'ANNUAL' | 'MONTHLY') {
   if (!packages || !packages.length) return null;
 
   return packages.find((pkg) => {
@@ -466,9 +869,6 @@ export function findPackage(packages: any[], type: 'ANNUAL' | 'MONTHLY' | 'LIFET
     }
     if (type === 'MONTHLY') {
       return id.includes('MONTHLY') || pkgType === 'MONTHLY' || pkgType === '7';
-    }
-    if (type === 'LIFETIME') {
-      return id.includes('LIFETIME') || pkgType === 'LIFETIME' || pkgType === '2';
     }
     return false;
   });

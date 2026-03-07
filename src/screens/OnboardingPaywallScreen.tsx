@@ -15,6 +15,7 @@ import {
     Alert,
     Platform,
     Dimensions,
+    Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -27,6 +28,7 @@ import {
     isPremiumConfigured,
     usePremiumOfferings,
     findPackage,
+    getTrialInfoForPackage,
 } from '../utils/premium';
 import { scheduleTrialNotifications } from '../utils/trialNotifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -48,7 +50,13 @@ export default function OnboardingPaywallScreen({ navigation, route }: Onboardin
 
     const isModal = route?.params?.fromSettings || false;
 
-    const { packages, isConfigured } = usePremiumOfferings();
+    const {
+        packages,
+        isConfigured,
+        loading: offeringsLoading,
+        hasOfferings,
+        reload: reloadOfferings,
+    } = usePremiumOfferings();
     const defaultPricing = getSubscriptionPricing();
 
     const getPackage = (type: 'ANNUAL' | 'MONTHLY') => {
@@ -57,15 +65,30 @@ export default function OnboardingPaywallScreen({ navigation, route }: Onboardin
 
     const annualPkg = getPackage('ANNUAL');
     const monthlyPkg = getPackage('MONTHLY');
+    const annualTrialInfo = getTrialInfoForPackage(annualPkg);
+    const monthlyTrialInfo = getTrialInfoForPackage(monthlyPkg);
+    const selectedTrialInfo = selectedPlan === 'yearly' ? annualTrialInfo : monthlyTrialInfo;
+    // Default to 7 days if trial info not available (matches Apple Connect configuration)
+    const hasFreeTrial = selectedTrialInfo.hasFreeTrial || (!offeringsLoading && hasOfferings);
+    const trialDays = selectedTrialInfo.trialDays > 0 ? selectedTrialInfo.trialDays : (hasFreeTrial ? 7 : 0);
 
     const yearlyPrice = annualPkg?.product.priceString || defaultPricing.yearlyPrice;
     const monthlyPrice = monthlyPkg?.product.priceString || defaultPricing.monthlyPrice;
     const annualMonthlyPrice = annualPkg
         ? (annualPkg.product.price / 12).toFixed(2)
         : defaultPricing.yearlyPerMonth;
+    const annualMonthlyPriceLabel = annualPkg
+        ? `${annualPkg.product.currencyCode ? `${annualPkg.product.currencyCode} ` : '$'}${annualMonthlyPrice}`
+        : defaultPricing.yearlyPerMonth;
     const savings = annualPkg && monthlyPkg
         ? Math.round((1 - (annualPkg.product.price / (monthlyPkg.product.price * 12))) * 100)
         : defaultPricing.yearlySavingsPercent;
+    const canPurchase = !isPurchasing && !isRestoring && !offeringsLoading && hasOfferings;
+    const offeringsMessage = !hasOfferings
+        ? (isConfigured
+            ? 'Subscriptions are not available right now. Please try again.'
+            : 'Purchases are not configured yet. Please try again later.')
+        : null;
 
     const markOnboardingComplete = async () => {
         await AsyncStorage.setItem('@hasSeenOnboardingPaywall', 'true');
@@ -88,7 +111,7 @@ export default function OnboardingPaywallScreen({ navigation, route }: Onboardin
                             if (isModal) {
                                 navigation.goBack();
                             } else {
-                                navigation.replace('MainTabs');
+                                navigation.replace('MainTabs', { showTutorial: true });
                             }
                         }
                     }
@@ -122,7 +145,7 @@ export default function OnboardingPaywallScreen({ navigation, route }: Onboardin
                             if (isModal) {
                                 navigation.goBack();
                             } else {
-                                navigation.replace('MainTabs');
+                                navigation.replace('MainTabs', { showTutorial: true });
                             }
                         }
                     }
@@ -143,10 +166,15 @@ export default function OnboardingPaywallScreen({ navigation, route }: Onboardin
             return;
         }
         await markOnboardingComplete();
-        navigation.replace('MainTabs');
+        navigation.replace('MainTabs', { showTutorial: true });
     };
 
     const storeLabel = Platform.OS === 'ios' ? 'App Store' : 'Play Store';
+    const accountLabel = Platform.OS === 'ios' ? 'Apple ID' : 'Google Play account';
+    const manageSubscriptionsUrl = Platform.OS === 'ios'
+        ? 'https://apps.apple.com/account/subscriptions'
+        : 'https://play.google.com/store/account/subscriptions';
+    const standardEulaUrl = 'https://www.apple.com/legal/internet-services/itunes/dev/stdeula/';
 
     const benefits = [
         { icon: 'sparkles', text: 'All affirmation & meditation sessions' },
@@ -183,12 +211,13 @@ export default function OnboardingPaywallScreen({ navigation, route }: Onboardin
                     )}
                 </TouchableOpacity>
 
-                {/* Hero Section */}
                 <View style={styles.heroSection}>
                     <Text style={styles.emoji}>✨</Text>
                     <Text style={styles.title}>Unlock Your Full{'\n'}Manifestation Potential</Text>
                     <Text style={styles.subtitle}>
-                        Start your 7-day free trial and transform your mindset
+                        {hasFreeTrial
+                            ? `Start your ${trialDays}-day free trial and transform your mindset`
+                            : 'Transform your mindset with Vortex Premium'}
                     </Text>
                 </View>
 
@@ -218,10 +247,15 @@ export default function OnboardingPaywallScreen({ navigation, route }: Onboardin
                         </View>
                         <View style={styles.planContent}>
                             <View style={styles.planText}>
-                                <Text style={[styles.planTitle, selectedPlan === 'yearly' ? styles.textDark : styles.textLight]}>Annual</Text>
+                                <Text style={[styles.planTitle, selectedPlan === 'yearly' ? styles.textDark : styles.textLight]}>
+                                    Vortex Premium Annual
+                                </Text>
                                 <Text style={[styles.planPrice, selectedPlan === 'yearly' ? styles.textDarkSecondary : styles.textLightSecondary]}>{yearlyPrice}/year</Text>
+                                <Text style={[styles.planMeta, selectedPlan === 'yearly' ? styles.textDarkSecondary : styles.textLightSecondary]}>
+                                    12 months
+                                </Text>
                                 <Text style={styles.planSavings}>
-                                    Just {annualPkg?.product.currencyCode || '$'}{annualMonthlyPrice}/mo · Save {savings}%
+                                    Just {annualMonthlyPriceLabel}/month. Save {savings}%.
                                 </Text>
                             </View>
                             <Ionicons
@@ -240,8 +274,13 @@ export default function OnboardingPaywallScreen({ navigation, route }: Onboardin
                     >
                         <View style={styles.planContent}>
                             <View style={styles.planText}>
-                                <Text style={[styles.planTitle, selectedPlan === 'monthly' ? styles.textDark : styles.textLight]}>Monthly</Text>
+                                <Text style={[styles.planTitle, selectedPlan === 'monthly' ? styles.textDark : styles.textLight]}>
+                                    Vortex Premium Monthly
+                                </Text>
                                 <Text style={[styles.planPrice, selectedPlan === 'monthly' ? styles.textDarkSecondary : styles.textLightSecondary]}>{monthlyPrice}/month</Text>
+                                <Text style={[styles.planMeta, selectedPlan === 'monthly' ? styles.textDarkSecondary : styles.textLightSecondary]}>
+                                    1 month
+                                </Text>
                             </View>
                             <Ionicons
                                 name={selectedPlan === 'monthly' ? 'checkmark-circle' : 'ellipse-outline'}
@@ -252,20 +291,51 @@ export default function OnboardingPaywallScreen({ navigation, route }: Onboardin
                     </TouchableOpacity>
                 </View>
 
+                {/* Offerings Status */}
+                {(offeringsLoading || offeringsMessage) && (
+                    <View style={styles.offeringsStatus}>
+                        {offeringsLoading ? (
+                            <>
+                                <ActivityIndicator color="#FFFFFF" />
+                                <Text style={styles.offeringsStatusText}>Loading subscription options...</Text>
+                            </>
+                        ) : (
+                            <>
+                                <Text style={styles.offeringsStatusText}>{offeringsMessage}</Text>
+                                <TouchableOpacity
+                                    style={styles.retryButton}
+                                    onPress={reloadOfferings}
+                                    disabled={isPurchasing || isRestoring}
+                                    accessibilityRole="button"
+                                    accessibilityLabel="Retry loading subscriptions"
+                                >
+                                    <Text style={styles.retryButtonText}>Retry</Text>
+                                </TouchableOpacity>
+                            </>
+                        )}
+                    </View>
+                )}
+
                 {/* CTA Button */}
                 <TouchableOpacity
-                    style={styles.ctaButton}
+                    style={[styles.ctaButton, !canPurchase && styles.ctaButtonDisabled]}
                     onPress={handlePurchase}
-                    disabled={isPurchasing || isRestoring}
+                    disabled={!canPurchase}
                     activeOpacity={0.9}
                 >
                     {isPurchasing ? (
                         <ActivityIndicator color="#7C3AED" />
                     ) : (
                         <>
-                            <Text style={styles.ctaText}>Start 7-Day Free Trial</Text>
+                            <Text style={styles.ctaText}>
+                                {hasFreeTrial
+                                    ? `Start ${trialDays}-Day Free Trial`
+                                    : 'Subscribe Now'}
+                            </Text>
                             <Text style={styles.ctaSubtext}>
-                                Then {selectedPlan === 'yearly' ? yearlyPrice + '/year' : monthlyPrice + '/month'}
+                                {hasFreeTrial
+                                    ? `Then ${selectedPlan === 'yearly' ? yearlyPrice + '/year' : monthlyPrice + '/month'}`
+                                    : selectedPlan === 'yearly' ? yearlyPrice + '/year' : monthlyPrice + '/month'}
                             </Text>
                         </>
                     )}
@@ -275,7 +345,7 @@ export default function OnboardingPaywallScreen({ navigation, route }: Onboardin
                 <View style={styles.trialInfo}>
                     <Ionicons name="shield-checkmark" size={16} color="rgba(255,255,255,0.9)" />
                     <Text style={styles.trialInfoText}>
-                        Cancel anytime · Secure with {storeLabel}
+                        Cancel anytime. Secure with {storeLabel}.
                     </Text>
                 </View>
 
@@ -292,10 +362,52 @@ export default function OnboardingPaywallScreen({ navigation, route }: Onboardin
                     )}
                 </TouchableOpacity>
 
+                {/* Subscription Details */}
+                <View style={styles.subscriptionDetails}>
+                    <Text style={styles.subscriptionTitle}>Subscription details</Text>
+                    <Text style={styles.subscriptionText}>
+                        Vortex Premium is an auto-renewing subscription.
+                    </Text>
+                    <Text style={styles.subscriptionText}>
+                        Annual (12 months): {yearlyPrice}/year. Equivalent to {annualMonthlyPriceLabel}/month.
+                    </Text>
+                    <Text style={styles.subscriptionText}>
+                        Monthly (1 month): {monthlyPrice}/month.
+                    </Text>
+                    <Text style={styles.subscriptionText}>
+                        Payment will be charged to your {accountLabel} at confirmation of purchase.
+                    </Text>
+                    <Text style={styles.subscriptionText}>
+                        Subscription auto-renews unless canceled at least 24 hours before the end of the current period.
+                    </Text>
+                    <Text style={styles.subscriptionText}>
+                        Account will be charged for renewal within 24 hours prior to the end of the current period.
+                    </Text>
+                    {hasFreeTrial && trialDays > 0 && (
+                        <Text style={styles.subscriptionText}>
+                            Free trial: {trialDays} days for eligible users. Unused portion is forfeited when you purchase.
+                        </Text>
+                    )}
+                    <TouchableOpacity onPress={() => { void Linking.openURL(manageSubscriptionsUrl); }} accessibilityRole="link">
+                        <Text style={styles.manageLink}>Manage subscription</Text>
+                    </TouchableOpacity>
+                </View>
+
                 {/* Social Proof */}
                 <Text style={styles.socialProof}>
-                    Join 10,000+ people transforming their lives ⭐
+                    Join 10,000+ people transforming their lives.
                 </Text>
+
+                {/* Legal Links - Required for App Store Guideline 3.1.2 */}
+                <View style={styles.legalLinks}>
+                    <TouchableOpacity onPress={() => { void Linking.openURL(standardEulaUrl); }} accessibilityRole="link">
+                        <Text style={styles.legalLinkText}>Standard EULA</Text>
+                    </TouchableOpacity>
+                    <Text style={styles.legalSeparator}>|</Text>
+                    <TouchableOpacity onPress={() => navigation.navigate('PrivacyPolicyScreen')} accessibilityRole="link">
+                        <Text style={styles.legalLinkText}>Privacy Policy</Text>
+                    </TouchableOpacity>
+                </View>
             </ScrollView>
         </View>
     );
@@ -437,10 +549,37 @@ const styles = StyleSheet.create({
         fontSize: 16,
         marginBottom: 2,
     },
+    planMeta: {
+        fontSize: 12,
+        marginBottom: 2,
+    },
     planSavings: {
         fontSize: 13,
         color: '#059669',
         fontWeight: '500',
+    },
+    offeringsStatus: {
+        width: '100%',
+        alignItems: 'center',
+        marginBottom: 12,
+        gap: 8,
+    },
+    offeringsStatusText: {
+        color: 'rgba(255,255,255,0.9)',
+        fontSize: 13,
+        textAlign: 'center',
+    },
+    retryButton: {
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.6)',
+    },
+    retryButtonText: {
+        color: '#FFFFFF',
+        fontSize: 13,
+        fontWeight: '600',
     },
     ctaButton: {
         backgroundColor: '#FFFFFF',
@@ -451,6 +590,9 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         marginBottom: 12,
         minHeight: TOUCH_TARGET_MIN + 20,
+    },
+    ctaButtonDisabled: {
+        opacity: 0.6,
     },
     ctaText: {
         fontSize: 18,
@@ -481,10 +623,53 @@ const styles = StyleSheet.create({
         fontSize: 14,
         textDecorationLine: 'underline',
     },
+    subscriptionDetails: {
+        width: '100%',
+        backgroundColor: 'rgba(255,255,255,0.12)',
+        borderRadius: 16,
+        padding: 16,
+        marginBottom: 16,
+    },
+    subscriptionTitle: {
+        color: '#FFFFFF',
+        fontSize: 13,
+        fontWeight: '700',
+        marginBottom: 8,
+        textTransform: 'uppercase',
+        letterSpacing: 0.6,
+    },
+    subscriptionText: {
+        color: 'rgba(255,255,255,0.85)',
+        fontSize: 12,
+        lineHeight: 18,
+        marginBottom: 6,
+    },
+    manageLink: {
+        color: '#FFFFFF',
+        fontSize: 12,
+        textDecorationLine: 'underline',
+        marginTop: 4,
+    },
     socialProof: {
         color: 'rgba(255,255,255,0.9)',
         fontSize: 14,
         textAlign: 'center',
+        marginBottom: 16,
+    },
+    legalLinks: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
         marginBottom: 20,
+    },
+    legalLinkText: {
+        color: 'rgba(255,255,255,0.7)',
+        fontSize: 12,
+        textDecorationLine: 'underline',
+    },
+    legalSeparator: {
+        color: 'rgba(255,255,255,0.5)',
+        fontSize: 12,
     },
 });

@@ -27,6 +27,7 @@ import { HomeSecondaryActions } from '../components/home/HomeSecondaryActions';
 import { DayCompleteCelebration } from '../components/home/DayCompleteCelebration';
 import { IncompleteDayModal } from '../components/IncompleteDayModal';
 import { IncompleteDayInfo } from '../utils/dayRolloverManager';
+import { AppTutorialModal, hasSeenTutorial, resetTutorial } from '../components/AppTutorialModal';
 
 export default function HomeScreen({ navigation, route }: TodayScreenProps) {
   useScreenTracking('Today');
@@ -64,6 +65,7 @@ export default function HomeScreen({ navigation, route }: TodayScreenProps) {
   const [isPremium, setIsPremium] = useState(false);
   const [showIncompleteModal, setShowIncompleteModal] = useState(false);
   const [incompleteDay, setIncompleteDay] = useState<IncompleteDayInfo | null>(null);
+  const [showTutorial, setShowTutorial] = useState(false);
   const gratitudeLabel = REQUIRED_DAILY_GRATITUDE_CHECKINS === 1 ? 'gratitude' : 'gratitudes';
 
   // Animation for streak icon pulse
@@ -77,6 +79,24 @@ export default function HomeScreen({ navigation, route }: TodayScreenProps) {
       navigation.setParams({ fromDailyVisionImage: undefined });
     }
   }, [route?.params?.fromDailyVisionImage, navigation]);
+
+  // Check if tutorial should be shown (after onboarding)
+  useEffect(() => {
+    const checkTutorial = async () => {
+      // Check if user has completed onboarding but hasn't seen tutorial yet
+      const hasCompletedOnboarding = await AsyncStorage.getItem('@hasSeenOnboardingPaywall');
+      const hasSeen = await hasSeenTutorial();
+
+      // Show tutorial if: completed onboarding + hasn't seen tutorial
+      if (hasCompletedOnboarding === 'true' && !hasSeen) {
+        // Small delay to let the home screen render first
+        setTimeout(() => {
+          setShowTutorial(true);
+        }, 500);
+      }
+    };
+    checkTutorial();
+  }, []);
 
   const loadTodayMood = useCallback(async () => {
     const mood = await getTodayMood();
@@ -463,16 +483,6 @@ export default function HomeScreen({ navigation, route }: TodayScreenProps) {
         dailyQuote={dailyQuote}
       />
 
-      {/* DEBUG: Reset Onboarding Trigger */}
-      <TouchableOpacity
-        style={{ padding: 20, alignItems: 'center', opacity: 0.5 }}
-        onPress={handleResetOnboarding}
-      >
-        <Text style={[{ color: tokens.colors.textSecondary }, tokens.typography.small]}>
-          Dev: Reset Onboarding Flow
-        </Text>
-      </TouchableOpacity>
-
       {/* Ad Banner - Only for free users */}
       {!isPremium && <AdBanner />}
 
@@ -504,6 +514,12 @@ export default function HomeScreen({ navigation, route }: TodayScreenProps) {
         onMarkComplete={handleMarkYesterdayComplete}
         onRestartChallenge={handleRestartChallenge}
         onKeepGoing={handleKeepGoing}
+      />
+
+      {/* App Tutorial Modal - shown after onboarding */}
+      <AppTutorialModal
+        visible={showTutorial}
+        onComplete={() => setShowTutorial(false)}
       />
     </Screen>
   );

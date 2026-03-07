@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Alert,
   Image,
+  Alert,
+  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -18,18 +19,29 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import { PulseBackground } from '../components/onboarding/PulseBackground';
 import { PrimaryButton } from '../components/ui/PrimaryButton';
+import { StyledModal } from '../components/StyledModal';
 import { getTokens } from '../theme/tokens';
 import { useTheme } from '../context/ThemeContext';
 import { getSupabaseClient, isSupabaseConfigured } from '../config/supabase';
 import {
   signInWithAppleIdToken,
   signInWithEmailPassword,
+  deleteSupabaseAccount,
   signOutFromSupabase,
   signUpWithEmail,
 } from '../utils/supabaseAuth';
 import { AuthScreenProps } from '../types/navigation';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type AuthMode = 'signin' | 'signup';
+
+interface ModalState {
+  visible: boolean;
+  title: string;
+  message: string;
+  type: 'error' | 'success' | 'info' | 'warning';
+  onClose?: () => void;
+}
 
 export default function AuthScreen({ navigation, route }: AuthScreenProps) {
   const { isDark } = useTheme();
@@ -47,6 +59,25 @@ export default function AuthScreen({ navigation, route }: AuthScreenProps) {
   const [appleLoading, setAppleLoading] = useState(false);
   const [appleAvailable, setAppleAvailable] = useState(false);
   const [currentEmail, setCurrentEmail] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  // Modal state for styled alerts
+  const [modal, setModal] = useState<ModalState>({
+    visible: false,
+    title: '',
+    message: '',
+    type: 'error',
+  });
+
+  const showModal = (title: string, message: string, type: ModalState['type'] = 'error', onClose?: () => void) => {
+    setModal({ visible: true, title, message, type, onClose });
+  };
+
+  const hideModal = () => {
+    const callback = modal.onClose;
+    setModal(prev => ({ ...prev, visible: false }));
+    callback?.();
+  };
 
   const supabaseReady = isSupabaseConfigured;
   const marketingPreference = marketingTouched ? marketingOptIn : undefined;
@@ -81,12 +112,12 @@ export default function AuthScreen({ navigation, route }: AuthScreenProps) {
 
   const handleEmailAuth = async () => {
     if (!supabaseReady) {
-      Alert.alert('Supabase not configured', 'Add your Supabase URL and anon key in .env first.');
+      showModal('Configuration Error', 'Add your Supabase URL and anon key in .env first.', 'error');
       return;
     }
 
     if (!email.trim() || !password.trim()) {
-      Alert.alert('Missing info', 'Please enter your email and password.');
+      showModal('Missing Info', 'Please enter your email and password.', 'warning');
       return;
     }
 
@@ -105,7 +136,7 @@ export default function AuthScreen({ navigation, route }: AuthScreenProps) {
     setIsLoading(false);
 
     if (!result.success) {
-      Alert.alert('Sign in failed', result.error || 'Please try again.');
+      showModal('Sign In Failed', result.error || 'Please try again.', 'error');
       return;
     }
 
@@ -128,10 +159,11 @@ export default function AuthScreen({ navigation, route }: AuthScreenProps) {
           navigation.goBack();
         }
       } else {
-        Alert.alert(
-          'Check your email',
+        showModal(
+          'Check Your Email',
           'We sent a confirmation link. Please verify your email to finish signing up.',
-          [{ text: 'OK', onPress: () => navigation.goBack() }]
+          'success',
+          () => navigation.goBack()
         );
       }
     }
@@ -140,12 +172,12 @@ export default function AuthScreen({ navigation, route }: AuthScreenProps) {
   const handleAppleSignIn = async () => {
     if (appleLoading) return;
     if (!supabaseReady) {
-      Alert.alert('Supabase not configured', 'Add your Supabase URL and anon key in .env first.');
+      showModal('Configuration Error', 'Add your Supabase URL and anon key in .env first.', 'error');
       return;
     }
 
     if (!appleAvailable) {
-      Alert.alert('Apple Sign In unavailable', 'Apple Sign In is only available on iOS devices.');
+      showModal('Not Available', 'Apple Sign In is only available on iOS devices.', 'info');
       return;
     }
 
@@ -159,7 +191,7 @@ export default function AuthScreen({ navigation, route }: AuthScreenProps) {
       });
 
       if (!credential.identityToken) {
-        Alert.alert('Apple Sign In failed', 'Missing identity token.');
+        showModal('Apple Sign In Failed', 'Missing identity token.', 'error');
         return;
       }
 
@@ -176,7 +208,7 @@ export default function AuthScreen({ navigation, route }: AuthScreenProps) {
       });
 
       if (!result.success) {
-        Alert.alert('Apple Sign In failed', result.error || 'Please try again.');
+        showModal('Apple Sign In Failed', result.error || 'Please try again.', 'error');
       } else {
         const nextScreen = route.params?.nextScreen;
         if (nextScreen) {
@@ -187,7 +219,7 @@ export default function AuthScreen({ navigation, route }: AuthScreenProps) {
       }
     } catch (error: any) {
       if (error?.code !== 'ERR_CANCELED') {
-        Alert.alert('Apple Sign In failed', 'Please try again.');
+        showModal('Apple Sign In Failed', 'Please try again.', 'error');
       }
     } finally {
       setAppleLoading(false);
@@ -197,8 +229,46 @@ export default function AuthScreen({ navigation, route }: AuthScreenProps) {
   const handleSignOut = async () => {
     const result = await signOutFromSupabase();
     if (!result.success) {
-      Alert.alert('Sign out failed', result.error || 'Please try again.');
+      showModal('Sign Out Failed', result.error || 'Please try again.', 'error');
     }
+  };
+
+  const handleDeleteAccount = () => {
+    if (isDeleting) return;
+    Alert.alert(
+      'Delete Account',
+      'This will permanently delete your account and cloud data. This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            setIsDeleting(true);
+            const result = await deleteSupabaseAccount();
+            setIsDeleting(false);
+
+            if (!result.success) {
+              showModal('Delete Failed', result.error || 'Please try again.', 'error');
+              return;
+            }
+
+            try {
+              await AsyncStorage.clear();
+            } catch {
+              // Ignore local cleanup errors
+            }
+
+            showModal(
+              'Account Deleted',
+              'Your account has been permanently deleted.',
+              'success',
+              () => navigation.goBack()
+            );
+          },
+        },
+      ]
+    );
   };
 
   const styles = useMemo(() => StyleSheet.create({
@@ -370,6 +440,30 @@ export default function AuthScreen({ navigation, route }: AuthScreenProps) {
       color: tokens.colors.textSecondary,
       marginBottom: tokens.spacing.md,
     },
+    deleteHint: {
+      ...tokens.typography.caption,
+      color: tokens.colors.textSecondary,
+      marginTop: tokens.spacing.md,
+      marginBottom: tokens.spacing.sm,
+      textAlign: 'center',
+    },
+    deleteButton: {
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: 12,
+      borderRadius: tokens.radii.md,
+      borderWidth: 1,
+      borderColor: 'rgba(220, 38, 38, 0.4)',
+      backgroundColor: 'rgba(220, 38, 38, 0.08)',
+    },
+    deleteButtonDisabled: {
+      opacity: 0.6,
+    },
+    deleteButtonText: {
+      ...tokens.typography.bodyBold,
+      color: '#DC2626',
+      fontWeight: '600',
+    },
     infoBanner: {
       marginTop: tokens.spacing.md,
       padding: tokens.spacing.md,
@@ -403,9 +497,9 @@ export default function AuthScreen({ navigation, route }: AuthScreenProps) {
 
           <View style={styles.header}>
             <Image source={require('../../assets/icon-square.png')} style={styles.logo} />
-            <Text style={styles.title}>Save Your Journey</Text>
+            <Text style={styles.title}>Your Journey Begins</Text>
             <Text style={styles.subtitle}>
-              Create an account to sync your progress across devices.
+              Congratulations on taking the first step. Create your profile to secure your personalized manifestation plan.
             </Text>
           </View>
 
@@ -548,10 +642,33 @@ export default function AuthScreen({ navigation, route }: AuthScreenProps) {
                 variant="secondary"
                 onPress={handleSignOut}
               />
+              <Text style={styles.deleteHint}>
+                Delete your account to remove your cloud data from Vortex.
+              </Text>
+              <TouchableOpacity
+                style={[styles.deleteButton, isDeleting && styles.deleteButtonDisabled]}
+                onPress={handleDeleteAccount}
+                disabled={isDeleting}
+              >
+                {isDeleting ? (
+                  <ActivityIndicator color="#DC2626" />
+                ) : (
+                  <Text style={styles.deleteButtonText}>Delete account</Text>
+                )}
+              </TouchableOpacity>
             </View>
           )}
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Styled Modal for alerts */}
+      <StyledModal
+        visible={modal.visible}
+        onClose={hideModal}
+        title={modal.title}
+        message={modal.message}
+        type={modal.type}
+      />
     </View>
   );
 }

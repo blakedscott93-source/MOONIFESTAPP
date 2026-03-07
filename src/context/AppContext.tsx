@@ -85,7 +85,14 @@ const defaultAppState: AppState = {
 };
 
 const getTodayString = (): string => {
-  return new Date().toISOString().split('T')[0];
+  // IMPORTANT: Use local timezone, not UTC!
+  // Previously used toISOString().split('T')[0] which returns UTC date
+  // This caused tasks to "disappear" when UTC date differed from local date
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 };
 
 const buildEmptyDayProgress = (date: string): DayProgress => ({
@@ -299,7 +306,23 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const getTodayProgress = useCallback((): DayProgress => {
     const today = getTodayString();
     if (!appState.dailyProgress[today]) {
-      return buildEmptyDayProgress(today);
+      // New day - carry forward incomplete additional tasks from the most recent day
+      const previousDays = Object.keys(appState.dailyProgress)
+        .filter(d => d < today)
+        .sort((a, b) => b.localeCompare(a)); // Most recent first
+
+      const newProgress = buildEmptyDayProgress(today);
+
+      if (previousDays.length > 0) {
+        const lastDay = appState.dailyProgress[previousDays[0]];
+        // Carry forward additional tasks (non-must-do) that have text, reset completion
+        const carryForwardTasks = (lastDay.tasks || [])
+          .filter(t => !t.isMustDo && t.text.trim() !== '')
+          .map(t => ({ ...t, completed: false }));
+        newProgress.tasks = carryForwardTasks;
+      }
+
+      return newProgress;
     }
     return appState.dailyProgress[today];
   }, [appState.dailyProgress]);

@@ -1,4 +1,5 @@
 import { getSupabaseClient, isSupabaseConfigured } from '../config/supabase';
+import { identifyUser } from './premium';
 
 type AuthResult = { success: boolean; error?: string };
 
@@ -95,6 +96,8 @@ export async function signUpWithEmail(
 
     if (data?.user?.id) {
       await upsertProfile(data.user.id, { fullName, email, marketingOptIn });
+      // Sync with RevenueCat
+      identifyUser(data.user.id);
     }
 
     return { success: true };
@@ -131,6 +134,8 @@ export async function signInWithEmailPassword(
     if (data?.user?.id) {
       await updateUserMetadata({ marketingOptIn });
       await upsertProfile(data.user.id, { email, marketingOptIn });
+      // Sync with RevenueCat
+      identifyUser(data.user.id);
     }
 
     return { success: true };
@@ -170,6 +175,8 @@ export async function signInWithAppleIdToken(
         fullName: update?.fullName,
         marketingOptIn: update?.marketingOptIn,
       });
+      // Sync with RevenueCat
+      identifyUser(data.user.id);
     }
 
     return { success: true };
@@ -195,3 +202,36 @@ export async function signOutFromSupabase(): Promise<AuthResult> {
   }
 }
 
+export async function deleteSupabaseAccount(): Promise<AuthResult> {
+  if (!isSupabaseConfigured) {
+    return { success: false, error: 'Supabase not configured' };
+  }
+
+  const client = getSupabaseClient();
+  if (!client) {
+    return { success: false, error: 'Supabase client not available' };
+  }
+
+  try {
+    const invoke = client.functions?.invoke;
+    if (typeof invoke !== 'function') {
+      return { success: false, error: 'Account deletion not configured' };
+    }
+
+    const { error } = await invoke('delete-account');
+    if (error) {
+      return { success: false, error: error.message };
+    }
+
+    try {
+      await client.auth.signOut();
+    } catch {
+      // Ignore sign-out errors after deletion
+    }
+
+    return { success: true };
+  } catch (error) {
+    console.error('Error deleting account:', error);
+    return { success: false, error: 'Failed to delete account' };
+  }
+}

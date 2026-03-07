@@ -3,6 +3,8 @@
  * Wraps console logging to prevent sensitive data leakage in production.
  */
 
+import { captureError } from './sentry';
+
 const isDev = __DEV__;
 
 export const Logger = {
@@ -17,16 +19,28 @@ export const Logger = {
         }
     },
     error: (...args: any[]) => {
-        // We typically want errors even in production, but we can filter if needed.
-        // For now, let's allow errors but maybe sanitize them in a future step if needed.
-        // Or prefer Sentry for production errors.
         if (isDev) {
             console.error(...args);
         } else {
-            // In production, you might pipe this to Sentry or similar service.
-            // For now, we will still print errors to console for critical debugging if attached,
-            // but you can comment this out to silence strictly.
-            // console.error(...args); 
+            // In production, pipe errors to Sentry
+            try {
+                // Formatting args into a readable message or object
+                const message = args.map(arg =>
+                    typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
+                ).join(' ');
+
+                // Extract the first error object if present for better stack traces
+                const errorObj = args.find(arg => arg instanceof Error);
+
+                if (errorObj) {
+                    captureError(errorObj, { rawArgs: message });
+                } else {
+                    captureError(new Error(message));
+                }
+            } catch (e) {
+                // Fallback if Sentry fails
+                console.error(...args);
+            }
         }
     },
     info: (...args: any[]) => {

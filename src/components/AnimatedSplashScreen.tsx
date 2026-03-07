@@ -60,7 +60,7 @@ export function AnimatedSplashScreen({ onAnimationFinish }: AnimatedSplashScreen
         <Animated.View style={[styles.container, { opacity: fadeAnim }]}>
             <View style={styles.centerContent}>
                 <Animated.Image
-                    source={require('../../assets/icon.png')} // Fallback to icon if splash icon varies
+                    source={require('../../assets/iconfinal.png')}
                     style={[styles.logo, { transform: [{ scale: pulseAnim }] }]}
                     resizeMode="contain"
                 />
@@ -103,7 +103,8 @@ const styles = StyleSheet.create({
     quoteText: {
         color: '#FFFFFF',
         fontSize: 18,
-        fontFamily: 'Sora_400Regular', // Assuming you have this font
+        // Using system font to avoid font-loading race conditions
+        fontWeight: '400',
         textAlign: 'center',
         lineHeight: 28,
         letterSpacing: 0.5,

@@ -17,11 +17,11 @@ export const OfflineIndicator: React.FC = () => {
 
     // Subscribe to network changes
     const unsubscribe = subscribeToNetworkState(async (connected) => {
-      // Prevent initial mount from triggering "Back Online"
+      // Prevent initial mount from triggering any animation
       if (isFirstLoad.current) {
         setIsOnline(connected);
         isFirstLoad.current = false;
-        // Only trigger offline animation if we start offline
+        // Only show indicator if we START offline (not online)
         if (!connected) {
           Animated.spring(slideAnim, {
             toValue: 0,
@@ -30,6 +30,7 @@ export const OfflineIndicator: React.FC = () => {
             useNativeDriver: true,
           }).start();
         }
+        // If online on first load, do NOTHING - no bar shown
         return;
       }
 

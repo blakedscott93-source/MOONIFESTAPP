@@ -12,6 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { tokens } from '../theme/tokens';
 import { PulseBackground } from '../components/onboarding/PulseBackground';
+import { LinearGradient } from 'expo-linear-gradient';
 import Animated, {
     FadeInRight,
     FadeOutLeft,
@@ -24,7 +25,7 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 
 // --- Types ---
 
-type QuestionType = 'single' | 'slider';
+type QuestionType = 'single' | 'slider' | 'info';
 
 interface Question {
     id: string;
@@ -33,6 +34,9 @@ interface Question {
     subtitle?: string;
     options?: { label: string; value: string; icon?: any }[];
     sliderConfig?: { minLabel: string; maxLabel: string };
+    // For 'info' type slides
+    emoji?: string;
+    buttonText?: string;
 }
 
 // --- Data ---
@@ -63,6 +67,30 @@ const QUESTIONS: Question[] = [
         ]
     },
     {
+        id: 'barrier_duration',
+        type: 'single',
+        title: 'How long have you felt blocked?',
+        subtitle: 'It\'s time to break the cycle.',
+        options: [
+            { label: 'Less than a month', value: '1_month', icon: 'hourglass-outline' },
+            { label: '1 - 6 months', value: '6_months', icon: 'calendar-number-outline' },
+            { label: 'Years', value: 'years', icon: 'time-outline' },
+            { label: 'My whole life', value: 'lifetime', icon: 'infinite-outline' }
+        ]
+    },
+    {
+        id: 'side_effects',
+        type: 'single',
+        title: 'How does this affect you most?',
+        subtitle: 'Identifying the pain is the first step to healing.',
+        options: [
+            { label: 'Anxiety & Stress', value: 'anxiety', icon: 'rainy-outline' },
+            { label: 'Self-Doubt', value: 'doubt', icon: 'person-outline' },
+            { label: 'Financial Struggles', value: 'money', icon: 'wallet-outline' },
+            { label: 'Relationship Issues', value: 'relationships', icon: 'heart-dislike-outline' }
+        ]
+    },
+    {
         id: 'energy',
         type: 'slider',
         title: 'How aligned do you feel right now?',
@@ -87,6 +115,31 @@ const QUESTIONS: Question[] = [
         options: [
             { label: 'Yes, I\'m ready!', value: 'ready', icon: 'checkmark-done-circle-outline' }
         ]
+    },
+    // --- HOW TO USE THE APP SLIDES ---
+    {
+        id: 'tutorial_daily',
+        type: 'info',
+        emoji: '🌅',
+        title: 'Fresh Start Every Day',
+        subtitle: 'Your 5 daily tasks reset at midnight. This isn\'t a bug—it\'s by design! Each day is a fresh opportunity to build your manifestation practice.',
+        buttonText: 'Got it!'
+    },
+    {
+        id: 'tutorial_tasks',
+        type: 'info',
+        emoji: '🎯',
+        title: '5 Daily Practices',
+        subtitle: 'Complete all 5 tasks each day: Must-Do Tasks, Affirmations, Gratitude, Meditation, and Vision Board. Complete them all to build your streak!',
+        buttonText: 'Makes sense!'
+    },
+    {
+        id: 'tutorial_ready',
+        type: 'info',
+        emoji: '🚀',
+        title: 'You\'re All Set!',
+        subtitle: 'Consistency is key. Show up daily, complete your tasks, and watch your life transform over the next 45 days.',
+        buttonText: 'Let\'s Begin!'
     }
 ];
 
@@ -252,7 +305,17 @@ export default function OnboardingQuizScreen({ navigation }: any) {
 
     return (
         <View style={styles.container}>
-            <PulseBackground />
+            {/* Use calm gradient for info slides, pulse for quiz questions */}
+            {question.type === 'info' ? (
+                <LinearGradient
+                    colors={['#F5F0FF', '#EDE9FE', '#DDD6FE']}
+                    style={StyleSheet.absoluteFillObject}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                />
+            ) : (
+                <PulseBackground />
+            )}
 
             <SafeAreaView style={styles.content}>
                 {/* Header */}
@@ -310,6 +373,21 @@ export default function OnboardingQuizScreen({ navigation }: any) {
                                     onPress={handleNext}
                                 >
                                     <Text style={styles.bigButtonText}>I Feel Aligned 🌊</Text>
+                                </TouchableOpacity>
+                            </Animated.View>
+                        )}
+
+                        {question.type === 'info' && (
+                            <Animated.View entering={ZoomIn} style={styles.infoWrapper}>
+                                <View style={styles.infoEmojiContainer}>
+                                    <Text style={styles.infoEmoji}>{question.emoji}</Text>
+                                </View>
+
+                                <TouchableOpacity
+                                    style={[styles.bigButton, { marginTop: 40 }]}
+                                    onPress={handleNext}
+                                >
+                                    <Text style={styles.bigButtonText}>{question.buttonText || 'Continue'}</Text>
                                 </TouchableOpacity>
                             </Animated.View>
                         )}
@@ -474,5 +552,23 @@ const styles = StyleSheet.create({
         color: '#FFF',
         fontWeight: '700',
         fontSize: 18
-    }
+    },
+    // Info slide styles
+    infoWrapper: {
+        padding: 20,
+        width: '100%',
+        alignItems: 'center',
+    },
+    infoEmojiContainer: {
+        width: 100,
+        height: 100,
+        borderRadius: 50,
+        backgroundColor: 'rgba(124, 58, 237, 0.15)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: 20,
+    },
+    infoEmoji: {
+        fontSize: 48,
+    },
 });

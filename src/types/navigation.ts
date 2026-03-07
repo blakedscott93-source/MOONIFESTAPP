@@ -14,7 +14,7 @@ import { StackScreenProps } from '@react-navigation/stack';
 // ============================================================================
 
 export type MainTabParamList = {
-  Today: { fromDailyVisionImage?: boolean } | undefined;
+  Today: { fromDailyVisionImage?: boolean; showTutorial?: boolean } | undefined;
   Affirmations: NavigatorScreenParams<AffirmationsStackParamList> | undefined;
   Journal: NavigatorScreenParams<JournalStackParamList> | undefined;
   '45 NOW': NavigatorScreenParams<FortyFiveHardStackParamList> | undefined;

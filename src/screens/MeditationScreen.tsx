@@ -24,6 +24,7 @@ import { useScreenTracking } from '../hooks/useScreenTracking';
 import { trackEvent } from '../utils/analytics';
 import { useTabBarInset } from '../hooks/useTabBarInset';
 import { tokens, fonts } from '../theme/tokens';
+import { Logger } from '../utils/logger';
 
 const formatDuration = (seconds: number) => {
   const minutes = Math.floor(seconds / 60);
@@ -96,7 +97,7 @@ export default function MeditationScreen({ navigation, route }: MeditationScreen
       // Stop any current
       await audioPlayerRef.current.stop();
 
-      console.log('[Meditation] Loading new audio...');
+      Logger.debug('[Meditation] Loading new audio...');
       // Load new
       await audioPlayerRef.current.loadAudio(audioSource, getDefaultBackgroundMusic());
 
@@ -112,7 +113,7 @@ export default function MeditationScreen({ navigation, route }: MeditationScreen
         }
       });
 
-      console.log('[Meditation] Playing...');
+      Logger.debug('[Meditation] Playing...');
       // Play
       await audioPlayerRef.current.play();
       setIsPlaying(true);

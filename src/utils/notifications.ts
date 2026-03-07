@@ -287,6 +287,11 @@ export async function scheduleNotifications(settings: NotificationSettings): Pro
 
   // Schedule affirmation notifications throughout the day (like I AM app)
   // User can customize frequency: 3, 6, or 9 affirmations per day
+  // Shuffle the affirmations array to ensure unique notifications for today
+  const shuffledAffirmations = [...DAILY_AFFIRMATIONS].sort(() => 0.5 - Math.random());
+
+  // Pick the first N affirmations based on frequency
+  // This guarantees no repeats within the same day
   const affirmationTimeSets = {
     3: [
       { hour: 10, minute: 0 },
@@ -316,11 +321,15 @@ export async function scheduleNotifications(settings: NotificationSettings): Pro
 
   const affirmationTimes = affirmationTimeSets[settings.affirmationFrequency] || affirmationTimeSets[3];
 
-  for (const time of affirmationTimes) {
+  for (let i = 0; i < affirmationTimes.length; i++) {
+    const time = affirmationTimes[i];
+    // Determine which affirmation to use (cycling through shuffled list if needed)
+    const affirmation = shuffledAffirmations[i % shuffledAffirmations.length];
+
     await Notifications.scheduleNotificationAsync({
       content: {
         title: '✨ Affirmation',
-        body: getRandomAffirmation(),
+        body: affirmation,
         sound: false, // Silent for relaxation
         priority: Notifications.AndroidNotificationPriority.LOW,
         data: { type: 'daily_affirmation' },

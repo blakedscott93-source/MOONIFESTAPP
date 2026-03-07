@@ -14,8 +14,10 @@ import {
   ActivityIndicator,
   Alert,
   Platform,
+  Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
 import { Theme, TOUCH_TARGET_MIN } from '../utils/theme';
 import {
   purchasePremiumRevenueCat,
@@ -23,6 +25,7 @@ import {
   getSubscriptionPricing,
   usePremiumOfferings,
   findPackage,
+  getTrialInfoForPackage,
 } from '../utils/premium';
 
 interface PremiumGateProps {
@@ -40,11 +43,18 @@ export const PremiumGate: React.FC<PremiumGateProps> = ({
   featureName,
   featureDescription,
 }) => {
+  const navigation = useNavigation<any>();
   const [isPurchasing, setIsPurchasing] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<'monthly' | 'yearly' | 'lifetime'>('yearly');
 
-  const { packages, isConfigured } = usePremiumOfferings();
+  const {
+    packages,
+    isConfigured,
+    loading: offeringsLoading,
+    hasOfferings,
+    reload: reloadOfferings,
+  } = usePremiumOfferings();
 
   // Default fallbacks while loading
   const defaultPricing = getSubscriptionPricing();
@@ -56,6 +66,16 @@ export const PremiumGate: React.FC<PremiumGateProps> = ({
   const annualPkg = getPackage('ANNUAL');
   const monthlyPkg = getPackage('MONTHLY');
   const lifetimePkg = getPackage('LIFETIME');
+  const annualTrialInfo = getTrialInfoForPackage(annualPkg);
+  const monthlyTrialInfo = getTrialInfoForPackage(monthlyPkg);
+  const selectedTrialInfo = selectedPlan === 'yearly'
+    ? annualTrialInfo
+    : selectedPlan === 'monthly'
+      ? monthlyTrialInfo
+      : { hasFreeTrial: false, trialDays: 0 };
+  // Default to 7 days if trial info not available (matches Apple Connect configuration)
+  const hasFreeTrial = selectedTrialInfo.hasFreeTrial || (!offeringsLoading && hasOfferings);
+  const trialDays = selectedTrialInfo.trialDays > 0 ? selectedTrialInfo.trialDays : (hasFreeTrial ? 7 : 0);
 
   // Use real data if available, otherwise fallback
   const yearlyPrice = annualPkg?.product.priceString || defaultPricing.yearlyPrice;
@@ -64,9 +84,18 @@ export const PremiumGate: React.FC<PremiumGateProps> = ({
 
   // Calculate savings
   const annualMonthlyPrice = annualPkg ? (annualPkg.product.price / 12).toFixed(2) : defaultPricing.yearlyPerMonth;
+  const annualMonthlyPriceLabel = annualPkg
+    ? `${annualPkg.product.currencyCode ? `${annualPkg.product.currencyCode} ` : '$'}${annualMonthlyPrice}`
+    : defaultPricing.yearlyPerMonth;
   const savings = annualPkg && monthlyPkg
     ? Math.round((1 - (annualPkg.product.price / (monthlyPkg.product.price * 12))) * 100)
     : defaultPricing.yearlySavingsPercent;
+  const canPurchase = !isPurchasing && !isRestoring && !offeringsLoading && hasOfferings;
+  const offeringsMessage = !hasOfferings
+    ? (isConfigured
+      ? 'Subscriptions are not available right now. Please try again.'
+      : 'Purchases are not configured yet. Please try again later.')
+    : null;
 
   useEffect(() => {
     if (visible) {
@@ -82,18 +111,37 @@ export const PremiumGate: React.FC<PremiumGateProps> = ({
     'Remove all limits',
   ];
 
-  const trialSteps = [
-    {
-      icon: 'lock-closed',
-      title: 'Today: Get instant access',
-      description: 'Unlock everything immediately.',
-    },
-    {
-      icon: 'star',
-      title: 'Premium for life',
-      description: 'Choose the plan that fits your journey.',
-    },
-  ];
+  const storeLabel = Platform.OS === 'ios' ? 'App Store' : 'Play Store';
+  const accountLabel = Platform.OS === 'ios' ? 'Apple ID' : 'Google Play account';
+  const manageSubscriptionsUrl = Platform.OS === 'ios'
+    ? 'https://apps.apple.com/account/subscriptions'
+    : 'https://play.google.com/store/account/subscriptions';
+
+  const trialSteps = hasFreeTrial
+    ? [
+      {
+        icon: 'lock-closed',
+        title: `Today: Start your ${trialDays}-day free trial`,
+        description: 'Unlock everything immediately.',
+      },
+      {
+        icon: 'star',
+        title: 'Cancel anytime',
+        description: `Manage your subscription in the ${storeLabel}.`,
+      },
+    ]
+    : [
+      {
+        icon: 'lock-closed',
+        title: 'Get instant access',
+        description: 'Unlock everything immediately.',
+      },
+      {
+        icon: 'star',
+        title: 'Cancel anytime',
+        description: `Manage your subscription in the ${storeLabel}.`,
+      },
+    ];
 
   const handlePurchase = async (plan: 'monthly' | 'yearly' | 'lifetime') => {
     setIsPurchasing(true);
@@ -151,7 +199,7 @@ export const PremiumGate: React.FC<PremiumGateProps> = ({
   const ctaLabel = `Start Premium Journey`;
 
   const summaryLine = selectedPlan === 'yearly'
-    ? `Unlimited access for ${yearlyPrice} per year (just ${annualPkg?.product.currencyCode || '$'}${annualMonthlyPrice}/mo).`
+    ? `Unlimited access for ${yearlyPrice} per year (just ${annualMonthlyPriceLabel}/month).`
     : selectedPlan === 'monthly'
       ? `Unlimited access for ${monthlyPrice} per month.`
       : `One-time payment of ${lifetimePrice} for lifetime access.`;
@@ -161,8 +209,6 @@ export const PremiumGate: React.FC<PremiumGateProps> = ({
     : selectedPlan === 'monthly'
       ? `Billed monthly at ${monthlyPrice}. Cancel anytime.`
       : `One-time payment. No recurring fees.`;
-
-  const storeLabel = Platform.OS === 'ios' ? 'App Store' : 'Play Store';
 
   return (
     <Modal
@@ -185,7 +231,11 @@ export const PremiumGate: React.FC<PremiumGateProps> = ({
             </View>
 
             <Text style={styles.title}>Unlock Premium</Text>
-            <Text style={styles.subtitle}>Start your 7-day free trial today</Text>
+            <Text style={styles.subtitle}>
+              {hasFreeTrial
+                ? `Start your ${trialDays}-day free trial today`
+                : 'Get unlimited access to premium features'}
+            </Text>
 
             <View style={styles.highlightsContainer}>
               {trialSteps.map((step, index) => (
@@ -227,11 +277,12 @@ export const PremiumGate: React.FC<PremiumGateProps> = ({
                 </View>
                 <View style={styles.planRow}>
                   <View style={styles.planText}>
-                    <Text style={styles.planTitle}>Annual Plan</Text>
+                    <Text style={styles.planTitle}>Vortex Premium Annual</Text>
                     <Text style={styles.planPrice}>
                       {yearlyPrice} per year
                     </Text>
-                    <Text style={styles.planTrial}>Just {annualPkg?.product.currencyCode || '$'}${annualMonthlyPrice}/mo · Save {savings}%</Text>
+                    <Text style={styles.planMeta}>12 months</Text>
+                    <Text style={styles.planTrial}>Just {annualMonthlyPriceLabel}/month. Save {savings}%.</Text>
                   </View>
                   <Ionicons
                     name={selectedPlan === 'yearly' ? 'checkmark-circle' : 'ellipse-outline'}
@@ -251,8 +302,9 @@ export const PremiumGate: React.FC<PremiumGateProps> = ({
               >
                 <View style={styles.planRow}>
                   <View style={styles.planText}>
-                    <Text style={styles.planTitle}>Monthly Plan</Text>
+                    <Text style={styles.planTitle}>Vortex Premium Monthly</Text>
                     <Text style={styles.planPrice}>{monthlyPrice}/month</Text>
+                    <Text style={styles.planMeta}>1 month</Text>
                   </View>
                   <Ionicons
                     name={selectedPlan === 'monthly' ? 'checkmark-circle' : 'ellipse-outline'}
@@ -265,10 +317,34 @@ export const PremiumGate: React.FC<PremiumGateProps> = ({
               <Text style={styles.planFootnote}>{planFootnote}</Text>
             </View>
 
+            {(offeringsLoading || offeringsMessage) && (
+              <View style={styles.offeringsStatus}>
+                {offeringsLoading ? (
+                  <>
+                    <ActivityIndicator size="small" color={Theme.colors.textSecondary} />
+                    <Text style={styles.offeringsStatusText}>Loading subscription options...</Text>
+                  </>
+                ) : (
+                  <>
+                    <Text style={styles.offeringsStatusText}>{offeringsMessage}</Text>
+                    <TouchableOpacity
+                      style={styles.retryButton}
+                      onPress={reloadOfferings}
+                      disabled={isPurchasing || isRestoring}
+                      accessibilityRole="button"
+                      accessibilityLabel="Retry loading subscriptions"
+                    >
+                      <Text style={styles.retryButtonText}>Retry</Text>
+                    </TouchableOpacity>
+                  </>
+                )}
+              </View>
+            )}
+
             <TouchableOpacity
-              style={styles.ctaButton}
+              style={[styles.ctaButton, !canPurchase && styles.ctaButtonDisabled]}
               onPress={() => handlePurchase(selectedPlan)}
-              disabled={isPurchasing || isRestoring}
+              disabled={!canPurchase}
               activeOpacity={0.85}
               accessibilityRole="button"
               accessibilityLabel={ctaLabel}
@@ -277,11 +353,15 @@ export const PremiumGate: React.FC<PremiumGateProps> = ({
                 <ActivityIndicator size="small" color={Theme.colors.textInverse} />
               ) : (
                 <Text style={styles.ctaText}>
-                  {selectedPlan === 'yearly' 
-                    ? `Start 7-Day Free Trial - ${yearlyPrice}/year`
+                  {selectedPlan === 'yearly'
+                    ? (hasFreeTrial
+                      ? `Start ${trialDays}-Day Free Trial - ${yearlyPrice}/year`
+                      : `Subscribe - ${yearlyPrice}/year`)
                     : selectedPlan === 'monthly'
-                    ? `Start 7-Day Free Trial - ${monthlyPrice}/month`
-                    : `Get Lifetime Access - ${lifetimePrice}`}
+                      ? (hasFreeTrial
+                        ? `Start ${trialDays}-Day Free Trial - ${monthlyPrice}/month`
+                        : `Subscribe - ${monthlyPrice}/month`)
+                      : `Get Lifetime Access - ${lifetimePrice}`}
                 </Text>
               )}
             </TouchableOpacity>
@@ -302,6 +382,46 @@ export const PremiumGate: React.FC<PremiumGateProps> = ({
                 <Text style={styles.restoreButtonText}>Restore purchase</Text>
               )}
             </TouchableOpacity>
+
+            <View style={styles.subscriptionDetails}>
+              <Text style={styles.subscriptionTitle}>Subscription details</Text>
+              <Text style={styles.subscriptionText}>
+                Vortex Premium is an auto-renewing subscription.
+              </Text>
+              <Text style={styles.subscriptionText}>
+                Annual (12 months): {yearlyPrice}/year. Equivalent to {annualMonthlyPriceLabel}/month.
+              </Text>
+              <Text style={styles.subscriptionText}>
+                Monthly (1 month): {monthlyPrice}/month.
+              </Text>
+              <Text style={styles.subscriptionText}>
+                Payment will be charged to your {accountLabel} at confirmation of purchase.
+              </Text>
+              <Text style={styles.subscriptionText}>
+                Subscription auto-renews unless canceled at least 24 hours before the end of the current period.
+              </Text>
+              <Text style={styles.subscriptionText}>
+                Account will be charged for renewal within 24 hours prior to the end of the current period.
+              </Text>
+              {hasFreeTrial && trialDays > 0 && (
+                <Text style={styles.subscriptionText}>
+                  Free trial: {trialDays} days for eligible users. Unused portion is forfeited when you purchase.
+                </Text>
+              )}
+              <TouchableOpacity onPress={() => { void Linking.openURL(manageSubscriptionsUrl); }} accessibilityRole="link">
+                <Text style={styles.manageLink}>Manage subscription</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.legalLinks}>
+              <TouchableOpacity onPress={() => navigation.navigate('TermsOfServiceScreen')} accessibilityRole="link">
+                <Text style={styles.legalLinkText}>Terms of Service</Text>
+              </TouchableOpacity>
+              <Text style={styles.legalSeparator}>|</Text>
+              <TouchableOpacity onPress={() => navigation.navigate('PrivacyPolicyScreen')} accessibilityRole="link">
+                <Text style={styles.legalLinkText}>Privacy Policy</Text>
+              </TouchableOpacity>
+            </View>
 
             <Text style={styles.footerNote}>
               Your subscription supports a small team empowering millions of people.
@@ -475,6 +595,11 @@ const styles = StyleSheet.create({
     color: Theme.colors.textSecondary,
     marginTop: 2,
   },
+  planMeta: {
+    ...Theme.typography.small,
+    color: Theme.colors.textSecondary,
+    marginTop: 2,
+  },
   planTrial: {
     ...Theme.typography.small,
     color: Theme.colors.textSecondary,
@@ -484,6 +609,28 @@ const styles = StyleSheet.create({
     ...Theme.typography.small,
     color: Theme.colors.textSecondary,
     textAlign: 'center',
+  },
+  offeringsStatus: {
+    alignItems: 'center',
+    gap: Theme.spacing.xs,
+    marginBottom: Theme.spacing.md,
+  },
+  offeringsStatusText: {
+    ...Theme.typography.small,
+    color: Theme.colors.textSecondary,
+    textAlign: 'center',
+  },
+  retryButton: {
+    paddingHorizontal: Theme.spacing.md,
+    paddingVertical: Theme.spacing.xs,
+    borderRadius: Theme.radius.full,
+    borderWidth: 1,
+    borderColor: Theme.colors.border,
+  },
+  retryButtonText: {
+    ...Theme.typography.small,
+    color: Theme.colors.textSecondary,
+    fontWeight: '600',
   },
   ctaButton: {
     backgroundColor: Theme.colors.success,
@@ -495,6 +642,9 @@ const styles = StyleSheet.create({
     marginBottom: Theme.spacing.sm,
     marginTop: Theme.spacing.md,
     ...Theme.shadow.medium,
+  },
+  ctaButtonDisabled: {
+    opacity: 0.6,
   },
   ctaText: {
     ...Theme.typography.bodyBold,
@@ -520,6 +670,48 @@ const styles = StyleSheet.create({
     color: Theme.colors.textSecondary,
     textDecorationLine: 'underline',
   },
+  subscriptionDetails: {
+    backgroundColor: Theme.colors.surfaceSecondary,
+    borderRadius: Theme.radius.md,
+    padding: Theme.spacing.md,
+    marginBottom: Theme.spacing.md,
+  },
+  subscriptionTitle: {
+    ...Theme.typography.caption,
+    color: Theme.colors.textPrimary,
+    fontWeight: '700',
+    marginBottom: Theme.spacing.xs,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+  },
+  subscriptionText: {
+    ...Theme.typography.small,
+    color: Theme.colors.textSecondary,
+    lineHeight: 18,
+    marginBottom: Theme.spacing.xs,
+  },
+  manageLink: {
+    ...Theme.typography.small,
+    color: Theme.colors.accent,
+    textDecorationLine: 'underline',
+    marginTop: Theme.spacing.xs,
+  },
+  legalLinks: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Theme.spacing.xs,
+    marginBottom: Theme.spacing.md,
+  },
+  legalLinkText: {
+    ...Theme.typography.small,
+    color: Theme.colors.textSecondary,
+    textDecorationLine: 'underline',
+  },
+  legalSeparator: {
+    ...Theme.typography.small,
+    color: Theme.colors.textTertiary,
+  },
   footerNote: {
     ...Theme.typography.small,
     color: Theme.colors.textTertiary,
@@ -527,7 +719,3 @@ const styles = StyleSheet.create({
     marginTop: Theme.spacing.sm,
   },
 });
-
-
-
-

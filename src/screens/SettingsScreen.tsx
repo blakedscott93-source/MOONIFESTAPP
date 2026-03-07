@@ -202,6 +202,12 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
             }
           },
         },
+        {
+          icon: 'trash',
+          label: 'Delete Account',
+          type: 'custom' as const,
+          onPress: () => navigation.navigate('AuthScreen'),
+        },
       ],
     },
     {

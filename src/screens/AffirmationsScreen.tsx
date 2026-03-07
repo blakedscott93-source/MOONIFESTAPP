@@ -246,11 +246,25 @@ export default function AffirmationsScreen({ navigation }: AffirmationsMainScree
       );
       return;
     }
-    if (activeTab === 'affirmations') {
-      const session = GUIDED_SESSIONS.find(item => item.id === card.id);
-      if (!session) {
-        return;
-      }
+
+    // First check if this is a meditation (allows meditation preview cards to work from affirmations tab)
+    const meditation = MEDITATION_SESSIONS.find((m) => m.id === card.id);
+    if (meditation) {
+      (navigation as any).navigate('MeditationScreen', {
+        meditation: {
+          id: meditation.id,
+          title: meditation.title,
+          description: meditation.subtitle,
+          duration: meditation.duration,
+          category: meditation.type,
+        },
+      });
+      return;
+    }
+
+    // Otherwise it's an affirmation
+    const session = GUIDED_SESSIONS.find(item => item.id === card.id);
+    if (session) {
       navigation.navigate('AffirmationPlayer', {
         session: {
           id: session.id,
@@ -261,19 +275,6 @@ export default function AffirmationsScreen({ navigation }: AffirmationsMainScree
           affirmations: session.affirmations,
         },
       });
-
-    } else {
-      const meditation = MEDITATION_SESSIONS.find((m) => m.id === card.id);
-      // Use 'any' cast to allow navigation to root screens not in this stack's param list
-      (navigation as any).navigate('MeditationScreen', meditation ? {
-        meditation: {
-          id: meditation.id,
-          title: meditation.title,
-          description: meditation.subtitle,
-          duration: meditation.duration,
-          category: meditation.type,
-        },
-      } : undefined);
     }
   };
 

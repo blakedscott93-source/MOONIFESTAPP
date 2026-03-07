@@ -2,18 +2,23 @@
   "expo": {
     "name": "Vortex",
     "slug": "moonifest",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/iconfinal.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
+    "runtimeVersion": "1.0.1",
+    "updates": {
+      "enabled": true,
+      "url": "https://u.expo.dev/1bdeb614-b666-471f-8950-549ee5851f11"
+    },
     "splash": {
       "image": "./assets/Splash Icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#000000"
     },
     "ios": {
-      "supportsTablet": true,
+      "supportsTablet": false,
       "bundleIdentifier": "com.moonifest.app",
       "buildNumber": "1",
       "usesAppleSignIn": true,
@@ -23,7 +28,6 @@
         "NSPhotoLibraryUsageDescription": "We need access to your photos so you can add images to your vision board.",
         "NSPhotoLibraryAddUsageDescription": "We need access to save images to your photo library.",
         "NSMicrophoneUsageDescription": "We need access to your microphone so you can record voice journal entries.",
-        "NSUserTrackingUsageDescription": "This identifier will be used to deliver personalized ads to you.",
         "ITSAppUsesNonExemptEncryption": false
       }
     },
@@ -35,7 +39,7 @@
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "package": "com.moonifest.app",
-      "versionCode": 1,
+      "versionCode": 2,
       "permissions": [
         "android.permission.RECORD_AUDIO",
         "android.permission.MODIFY_AUDIO_SETTINGS"
@@ -46,7 +50,6 @@
     },
     "plugins": [
       "@react-native-community/datetimepicker",
-      "@sentry/react-native",
       [
         "expo-image-picker",
         {
@@ -58,14 +61,6 @@
         "expo-av",
         {
           "microphonePermission": "The app accesses your microphone to let you record voice journal entries."
-        }
-      ],
-      [
-        "react-native-google-mobile-ads",
-        {
-          "android_app_id": "ca-app-pub-3940256099942544~3347511713",
-          "ios_app_id": "ca-app-pub-3940256099942544~1458002511",
-          "userTrackingPermission": "This identifier will be used to deliver personalized ads to you."
         }
       ],
       "expo-secure-store"

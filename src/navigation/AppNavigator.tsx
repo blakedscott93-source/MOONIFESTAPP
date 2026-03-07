@@ -5,6 +5,7 @@ import { createStackNavigator } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
 import { FloatingTabBar } from '../components/navigation/FloatingTabBar';
 import { tokens } from '../theme/tokens';
+import { Logger } from '../utils/logger';
 import {
   MainTabParamList,
   RootStackParamList,
@@ -379,7 +380,7 @@ function useSession() {
           return () => authListener?.subscription.unsubscribe();
         }
       } catch (e) {
-        console.log('Session check failed', e);
+        Logger.debug('Session check failed', e);
       } finally {
         setLoading(false);
       }
@@ -393,31 +394,25 @@ function useSession() {
 // Root Navigator - wraps tabs and allows modal screens
 export default function AppNavigator() {
   const isFirstRun = useFirstRun();
-  const { session, loading: sessionLoading } = useSession();
 
-  // Show nothing while checking first-run status or session
-  if (isFirstRun === null || sessionLoading) {
+  // Show nothing while checking first-run status
+  if (isFirstRun === null) {
     return null;
   }
 
-  // Logic: 
-  // 1. If NOT logged in -> AuthScreen (Always first)
-  // 2. If logged in AND first run -> OnboardingQuiz
-  // 3. If logged in AND NOT first run -> MainTabs
+  // Guest-friendly navigation logic:
+  // 1. First run -> OnboardingQuiz (then OnboardingPaywall -> MainTabs)
+  // 2. Returning user -> MainTabs directly
+  // Auth is now OPTIONAL and accessible from Settings for users who want to create an account
 
-  let initialScaleRoute = 'MainTabs';
-  if (!session) {
-    initialScaleRoute = 'AuthScreen';
-  } else if (isFirstRun) {
-    initialScaleRoute = 'OnboardingQuiz';
-  }
+  const initialRoute = isFirstRun ? 'OnboardingQuiz' : 'MainTabs';
 
   return (
     <RootStack.Navigator
       screenOptions={{
         headerShown: false,
       }}
-      initialRouteName={initialScaleRoute as keyof RootStackParamList}
+      initialRouteName={initialRoute as keyof RootStackParamList}
     >
       <RootStack.Screen
         name="OnboardingQuiz"

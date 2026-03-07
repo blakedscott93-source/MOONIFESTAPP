@@ -23,6 +23,7 @@ import {
 import { GlassCard } from '../components/ui';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system/legacy';
 import {
   purchasePremiumRevenueCat,
   restorePurchases,
@@ -66,6 +67,98 @@ interface VisionBoardPhoto {
 
 
 const STORAGE_KEY_PHOTOS = '@vision_board_photos';
+const VISION_BOARD_DIR = `${FileSystem.documentDirectory}vision-board/`;
+
+/**
+ * Ensures the vision board directory exists
+ */
+const ensureVisionBoardDir = async (): Promise<void> => {
+  const dirInfo = await FileSystem.getInfoAsync(VISION_BOARD_DIR);
+  if (!dirInfo.exists) {
+    await FileSystem.makeDirectoryAsync(VISION_BOARD_DIR, { intermediates: true });
+    Logger.log('Created vision board directory');
+  }
+};
+
+/**
+ * Saves an image to the permanent vision board directory
+ * @param tempUri - The temporary URI from ImagePicker
+ * @param photoId - Unique identifier for the photo
+ * @returns The permanent URI or null if failed
+ */
+const saveImagePermanently = async (tempUri: string, photoId: string): Promise<string | null> => {
+  try {
+    // Skip if already a data URI (base64) - these are already permanent
+    if (tempUri.startsWith('data:')) {
+      return tempUri;
+    }
+
+    await ensureVisionBoardDir();
+
+    // Extract file extension more robustly
+    // Handle URIs like: file:///path/to/file.jpg?timestamp=123
+    // or: file:///path/to/cropped123456.jpg
+    let extension = 'jpg'; // Default to jpg for maximum compatibility
+    try {
+      const uriWithoutQuery = tempUri.split('?')[0];
+      const lastDotIndex = uriWithoutQuery.lastIndexOf('.');
+      if (lastDotIndex > 0 && lastDotIndex < uriWithoutQuery.length - 1) {
+        const extractedExt = uriWithoutQuery.substring(lastDotIndex + 1).toLowerCase();
+        // Only use recognized image extensions
+        const validExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'heif'];
+        if (validExtensions.includes(extractedExt)) {
+          // Convert HEIC/HEIF to jpg since we're using Compatible mode
+          extension = (extractedExt === 'heic' || extractedExt === 'heif') ? 'jpg' : extractedExt;
+        }
+      }
+    } catch {
+      Logger.warn('Could not extract extension from URI, using default jpg');
+    }
+
+    const fileName = `${photoId}.${extension}`;
+    const permanentUri = `${VISION_BOARD_DIR}${fileName}`;
+
+    Logger.log('Saving image permanently:', { from: tempUri.substring(0, 60) + '...', to: permanentUri, extension });
+
+    await FileSystem.copyAsync({
+      from: tempUri,
+      to: permanentUri,
+    });
+
+    // Verify the file was saved successfully
+    const fileInfo = await FileSystem.getInfoAsync(permanentUri);
+    if (!fileInfo.exists) {
+      Logger.error('Image file not found after copy operation');
+      return null;
+    }
+
+    Logger.log('Image saved permanently, size:', (fileInfo as any).size || 'unknown');
+    return permanentUri;
+  } catch (error) {
+    Logger.error('Error saving image permanently:', error);
+    return null;
+  }
+};
+
+/**
+ * Deletes an image file from the vision board directory
+ * @param imageUri - The URI of the image to delete
+ */
+const deleteImageFile = async (imageUri: string): Promise<void> => {
+  try {
+    // Only delete if it's in our vision board directory
+    if (imageUri.startsWith(VISION_BOARD_DIR)) {
+      const fileInfo = await FileSystem.getInfoAsync(imageUri);
+      if (fileInfo.exists) {
+        await FileSystem.deleteAsync(imageUri, { idempotent: true });
+        Logger.log('Deleted image file:', imageUri);
+      }
+    }
+  } catch (error) {
+    Logger.error('Error deleting image file:', error);
+    // Don't throw - deletion is best effort
+  }
+};
 
 export default function VisionBoardScreen({ navigation, route }: VisionTabProps) {
   useScreenTracking('VisionBoard');
@@ -264,11 +357,13 @@ export default function VisionBoardScreen({ navigation, route }: VisionTabProps)
   const pickImageFromCamera = async () => {
     try {
       const result = await ImagePicker.launchCameraAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ['images'],
         allowsEditing: true,
         aspect: [1, 1],
-        quality: 0.9,
+        quality: 0.8,
         base64: Platform.OS === 'web',
+        // Force JPEG conversion for iOS compatibility (expo-image-picker 17.0.0+ defaults to HEIC)
+        preferredAssetRepresentationMode: ImagePicker.UIImagePickerPreferredAssetRepresentationMode.Compatible,
       });
 
       if (!result.canceled && result.assets?.[0]) {
@@ -276,6 +371,7 @@ export default function VisionBoardScreen({ navigation, route }: VisionTabProps)
         const resolvedUri = Platform.OS === 'web' && asset.base64
           ? `data:${asset.mimeType || 'image/jpeg'};base64,${asset.base64}`
           : asset.uri;
+        Logger.log('Camera image picked:', asset.uri.substring(0, 50) + '...', 'mimeType:', asset.mimeType);
         setPendingImageUri(resolvedUri);
         setCaptionInput('');
         setShowPhotoModal(true);
@@ -289,11 +385,13 @@ export default function VisionBoardScreen({ navigation, route }: VisionTabProps)
   const pickImageFromGallery = async () => {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ['images'],
         allowsEditing: true,
         aspect: [1, 1],
-        quality: 0.9,
+        quality: 0.8,
         base64: Platform.OS === 'web',
+        // Force JPEG conversion for iOS compatibility (expo-image-picker 17.0.0+ defaults to HEIC)
+        preferredAssetRepresentationMode: ImagePicker.UIImagePickerPreferredAssetRepresentationMode.Compatible,
       });
 
       if (!result.canceled && result.assets?.[0]) {
@@ -301,6 +399,7 @@ export default function VisionBoardScreen({ navigation, route }: VisionTabProps)
         const resolvedUri = Platform.OS === 'web' && asset.base64
           ? `data:${asset.mimeType || 'image/jpeg'};base64,${asset.base64}`
           : asset.uri;
+        Logger.log('Gallery image picked:', asset.uri.substring(0, 50) + '...', 'mimeType:', asset.mimeType);
         setPendingImageUri(resolvedUri);
         setCaptionInput('');
         setShowPhotoModal(true);
@@ -329,10 +428,19 @@ export default function VisionBoardScreen({ navigation, route }: VisionTabProps)
         return;
       }
 
+      const photoId = Date.now().toString();
+
+      // Save image to permanent location (not temporary cache)
+      const permanentUri = await saveImagePermanently(pendingImageUri, photoId);
+      if (!permanentUri) {
+        showError('Error', 'Failed to save image. Please try again.');
+        return;
+      }
+
       const newPhoto: VisionBoardPhoto = {
-        id: Date.now().toString(),
+        id: photoId,
         boardId: 'vision',
-        imageUri: pendingImageUri,
+        imageUri: permanentUri,
         caption: captionInput.trim(),
         createdAt: new Date().toISOString(),
         dayKey: getLocalDayKey(),
@@ -382,6 +490,7 @@ export default function VisionBoardScreen({ navigation, route }: VisionTabProps)
 
       // Get current photos from ref to avoid stale closure
       const currentPhotos = photosRef.current;
+      const photoToDelete = currentPhotos.find(p => p.id === photoId);
       const updatedPhotos = currentPhotos.filter(p => p.id !== photoId);
 
       // Update state
@@ -390,6 +499,11 @@ export default function VisionBoardScreen({ navigation, route }: VisionTabProps)
       // Save to storage
       try {
         await AsyncStorage.setItem(STORAGE_KEY_PHOTOS, JSON.stringify(updatedPhotos));
+
+        // Delete the image file from disk
+        if (photoToDelete) {
+          await deleteImageFile(photoToDelete.imageUri);
+        }
       } catch (error) {
         Logger.error('Error saving photos after delete:', error);
         // Revert state on error

@@ -85,6 +85,7 @@ export default function PrivacyPolicyScreen({ navigation }: PrivacyPolicyScreenP
               </Text>
               <Text style={styles.bulletPoint}>- Access your data at any time</Text>
               <Text style={styles.bulletPoint}>- Export your data (available in Settings)</Text>
+              <Text style={styles.bulletPoint}>- Delete your account from Settings &gt; Account &amp; Data</Text>
               <Text style={styles.bulletPoint}>- Delete your data by uninstalling the app</Text>
               <Text style={styles.bulletPoint}>- Opt out of notifications</Text>
 
